@@ -1,0 +1,17 @@
+{
+  "name": "DAF-Trucks CommerceBox",
+  "short_name": "CommerceBox",
+  "description": "Application commerciale terrain poids lourds DAF — pilotage marché, tournées, affaires et suivi livraisons.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0a0c0f",
+  "theme_color": "#0a0c0f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%230a0c0f'/%3E%3Ctext x='96' y='130' text-anchor='middle' font-size='80' font-weight='900' font-family='Arial' fill='%23e8a020'%3EDAF%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
