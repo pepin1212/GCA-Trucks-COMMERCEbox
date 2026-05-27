@@ -278,7 +278,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v13';
+const APP_BUILD='2026-05-27-bases-v14';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -3021,9 +3021,12 @@ function _dedupVehiclesFromRows(rows){
   return out;
 }
 function _toursKpiFromRows(shown){
-  var kParc=0,kDafRenew=0,kHorsRenew=0;
-  shown.forEach(function(c){kParc+=c.parc||0;kDafRenew+=c.dafRenew||0;kHorsRenew+=c.horsRenew||0;});
-  return {kParc:kParc,kDafRenew:kDafRenew,kHorsRenew:kHorsRenew};
+  var veh=_dedupVehiclesFromRows(shown).filter(function(v){return v.possession!==false&&matchesToursVehicle(v);});
+  return {
+    kParc:veh.length,
+    kDafRenew:veh.filter(isRenewDaf).length,
+    kHorsRenew:veh.filter(isRenewHors).length
+  };
 }
 function _renderOrphanVehiclesList(search){
   var orphans=getOrphanVehicles();
