@@ -1645,143 +1645,130 @@ function renderBasesCard(){
     +'</div></div>';
 }
 
-function bindImportEvents(){
-  var zc=$('zone-crm'),fc=$('file-crm'),zi=$('zone-immat'),fi=$('file-immat');
-  if(zc&&fc){
-    zc.onclick=function(){fc.click();};
-    fc.onchange=function(e){
-      var f=e.target.files[0];if(!f)return;
-      var statusEl=$('crm-status');
-      if(statusEl)statusEl.textContent='Chargement…';
-      parseExcel(f).then(function(data){
-        var diag=$('import-diag');
-        try{
-          var r=importCRM(data);
-          // Preserve manual exclusions from existing data
-          var exRec=DB.getExclusions();
-          DB.saveClients(r.clients);
-          DB.saveExclusions(exRec);
-          buildIndex();
-          _unsavedChanges=true;
-          autoSave();
-          if(statusEl)statusEl.textContent='✓ '+r.clients.length+' clients';
-          renderDiag(r.stats,null,r.cols,[]);
-          toast(r.clients.length+' clients importés');
-          renderMarche();
-        }catch(err){
-          if(statusEl)statusEl.textContent='❌ '+err.message;
-          toast('Erreur: '+err.message);
-        }
-      }).catch(function(err){
-        if(statusEl)statusEl.textContent='❌ '+err.message;
-        toast('Erreur lecture: '+err.message);
-      });
-    };
-  }
-  if(zi&&fi){
-    zi.onclick=function(){fi.click();};
-    fi.onchange=function(e){
-      var f=e.target.files[0];if(!f)return;
-      var statusEl=$('immat-status');
-      if(statusEl)statusEl.textContent='Chargement…';
-      parseExcel(f).then(function(data){
-        var diag=$('import-diag');
-        try{
-          var r=importVehicles(data,DB.getPossession());
-          DB.saveVehicles(r.vehicles);
-          buildIndex();
-          _unsavedChanges=true;
-          autoSave();
-          if(statusEl)statusEl.textContent='✓ '+r.vehicles.length+' véhicules';
-          renderDiag(null,r.stats,[],r.cols);
-          toast(r.vehicles.length+' véhicules importés');
-          renderMarche();
-        }catch(err){
-          if(statusEl)statusEl.textContent='❌ '+err.message;
-          toast('Erreur: '+err.message);
-        }
-      }).catch(function(err){
-        if(statusEl)statusEl.textContent='❌ '+err.message;
-        toast('Erreur lecture: '+err.message);
-      });
-    };
-  }
-
-  QA('.base-item[data-bid]').forEach(el=>{
-    el.onclick=()=>{
-      DB.setBase(el.dataset.bid);
+function _baseStorageKeys(){
+  return ['clients','vehicles','crm','projects','history','possession','settings','exclusions'];
+}
+function _purgeBaseData(baseId){
+  _baseStorageKeys().forEach(function(k){localStorage.removeItem('daf_pro_'+baseId+'_'+k);});
+}
+function resetAllCommerceBoxData(){
+  Object.keys(localStorage).forEach(function(k){
+    if(k.indexOf('daf_pro_')===0)localStorage.removeItem(k);
+  });
+  localStorage.removeItem('daf_pro_active');
+  localStorage.removeItem('daf_pro_lastsave');
+  DB.saveBases({base1:'Base principale'});
+  DB.setBase('base1');
+  buildIndex();
+  autoSave();
+}
+var _basesClickBound=false;
+function bindBasesEvents(){
+  if(_basesClickBound)return;
+  _basesClickBound=true;
+  var root=$('screen-more');
+  if(!root)return;
+  root.addEventListener('click',function(e){
+    if(!e.target.closest)return;
+    var baseItem=e.target.closest('.base-item[data-bid]');
+    if(baseItem){
+      DB.setBase(baseItem.dataset.bid);
       buildIndex();
-      toast(`Base "${DB.getBases()[el.dataset.bid]}" activée`);
-      renderMarche();
-    };
-  });
-
-  safeOn('btn-new-base','click',()=>{
-    openModal('Nouvelle base',`
-      <div class="form-group"><label class="form-label">Nom</label><input class="form-input" id="nb-name" placeholder="Ex: Secteur Est" maxlength="30"></div>
-    `,[
-      {label:'Annuler',cls:'btn-ghost'},
-      {label:'Créer',cls:'btn-primary',action:()=>{
-        const name=(($('nb-name')||{}).value||'').trim();
-        if(!name){toast('Nom requis');return;}
-        const bases=DB.getBases();
-        const id='base'+Date.now();
-        bases[id]=name;
-        DB.saveBases(bases);
-        DB.setBase(id);
-        buildIndex();
-        toast(`Base "${name}" créée`);
-        renderMarche();
-      }}
-    ]);
-  });
-  safeOn('btn-rename-base','click',()=>{
-    const bases=DB.getBases();const id=DB.getBase();
-    openModal('Renommer',`
-      <div class="form-group"><label class="form-label">Nouveau nom</label><input class="form-input" id="rn-name" value="${escH(bases[id]||'')}" maxlength="30"></div>
-    `,[
-      {label:'Annuler',cls:'btn-ghost'},
-      {label:'Renommer',cls:'btn-primary',action:()=>{
-        const name=(($('rn-name')||{}).value||'').trim();
-        if(!name){toast('Nom requis');return;}
-        bases[id]=name;DB.saveBases(bases);
-        toast('Renommée');renderMarche();
-      }}
-    ]);
-  });
-  safeOn('btn-dup-base','click',()=>{
-    const bases=DB.getBases();const id=DB.getBase();
-    const name=`${bases[id]||'Base'} (copie)`;
-    const newId='base'+Date.now();
-    bases[newId]=name;
-    DB.saveBases(bases);
-    // copy all keys
-    ['clients','vehicles','crm','projects','history','possession','settings'].forEach(k=>{
-      const val=localStorage.getItem(`daf_pro_${id}_${k}`);
-      if(val)localStorage.setItem(`daf_pro_${newId}_${k}`,val);
-    });
-    DB.setBase(newId);
-    buildIndex();
-    toast(`Base dupliquée : ${name}`);
-    renderMarche();
-  });
-  safeOn('btn-del-base','click',()=>{
-    const bases=DB.getBases();const id=DB.getBase();
-    if(Object.keys(bases).length<=1){toast('Impossible de supprimer la seule base');return;}
-    openModal('⚠️ Supprimer la base',`<p style="font-size:12px;color:var(--text2);">Supprimer définitivement <strong>${escH(bases[id])}</strong> et toutes ses données ?</p>`,[
-      {label:'Annuler',cls:'btn-ghost'},
-      {label:'Supprimer',cls:'btn-red',action:()=>{
-        ['clients','vehicles','crm','projects','history','possession','settings'].forEach(k=>{
-          localStorage.removeItem(`daf_pro_${id}_${k}`);
-        });
-        delete bases[id];
-        DB.saveBases(bases);
-        DB.setBase(Object.keys(bases)[0]);
-        buildIndex();
-        toast('Base supprimée');
-        renderMarche();
-      }}
-    ]);
+      toast('Base "'+(DB.getBases()[baseItem.dataset.bid]||'')+'" activée');
+      renderMore();
+      return;
+    }
+    var btn=e.target.closest('button[id]');
+    if(!btn)return;
+    if(btn.id==='btn-new-base'){
+      openModal('Nouvelle base','<div class="form-group"><label class="form-label">Nom</label><input class="form-input" id="nb-name" placeholder="Ex: Secteur Est" maxlength="30"></div>',[
+        {label:'Annuler',cls:'btn-ghost'},
+        {label:'Créer',cls:'btn-primary',action:function(){
+          var name=(($('nb-name')||{}).value||'').trim();
+          if(!name){toast('Nom requis');return;}
+          var bases=DB.getBases();
+          var id='base'+Date.now();
+          bases[id]=name;
+          DB.saveBases(bases);
+          DB.setBase(id);
+          buildIndex();
+          toast('Base "'+name+'" créée');
+          renderMore();
+        }}
+      ]);
+      return;
+    }
+    if(btn.id==='btn-rename-base'){
+      var bases=DB.getBases(), id=DB.getBase();
+      openModal('Renommer','<div class="form-group"><label class="form-label">Nouveau nom</label><input class="form-input" id="rn-name" value="'+escH(bases[id]||'')+'" maxlength="30"></div>',[
+        {label:'Annuler',cls:'btn-ghost'},
+        {label:'Renommer',cls:'btn-primary',action:function(){
+          var name=(($('rn-name')||{}).value||'').trim();
+          if(!name){toast('Nom requis');return;}
+          bases[id]=name;DB.saveBases(bases);
+          toast('Base renommée');renderMore();
+        }}
+      ]);
+      return;
+    }
+    if(btn.id==='btn-dup-base'){
+      var bases=DB.getBases(), id=DB.getBase();
+      var name=(bases[id]||'Base')+' (copie)';
+      var newId='base'+Date.now();
+      bases[newId]=name;
+      DB.saveBases(bases);
+      _baseStorageKeys().forEach(function(k){
+        var val=localStorage.getItem('daf_pro_'+id+'_'+k);
+        if(val)localStorage.setItem('daf_pro_'+newId+'_'+k,val);
+      });
+      DB.setBase(newId);
+      buildIndex();
+      toast('Base dupliquée : '+name);
+      renderMore();
+      return;
+    }
+    if(btn.id==='btn-del-base'){
+      var bases=DB.getBases(), id=DB.getBase();
+      if(Object.keys(bases).length<=1){toast('Créez une autre base ou utilisez « Tout effacer »');return;}
+      openModal('⚠️ Supprimer la base','<p style="font-size:12px;color:var(--text2);">Supprimer définitivement <strong>'+escH(bases[id])+'</strong> et toutes ses données ?</p>',[
+        {label:'Annuler',cls:'btn-ghost'},
+        {label:'Supprimer',cls:'btn-red',action:function(){
+          _purgeBaseData(id);
+          delete bases[id];
+          DB.saveBases(bases);
+          DB.setBase(Object.keys(bases)[0]);
+          buildIndex();
+          toast('Base supprimée');
+          renderMore();
+        }}
+      ]);
+      return;
+    }
+    if(btn.id==='btn-clear'){
+      openModal('⚠️ Vider la base active','<p style="font-size:12px;color:var(--text2);">Effacer toutes les données de <strong>'+escH(DB.getBases()[DB.getBase()]||'Base')+'</strong> ? Les autres bases ne sont pas touchées.</p>',[
+        {label:'Annuler',cls:'btn-ghost'},
+        {label:'Vider',cls:'btn-red',action:function(){
+          _purgeBaseData(DB.getBase());
+          buildIndex();
+          autoSave();
+          toast('Base active vidée');
+          renderMore();
+          if(currentScreen==='marche')renderMarche();
+        }}
+      ]);
+      return;
+    }
+    if(btn.id==='btn-reset-all-data'){
+      openModal('⚠️ Tout effacer','<p style="font-size:12px;color:var(--text2);">Supprimer <strong>toutes les bases</strong> et repartir à zéro sur cet appareil ?</p>',[
+        {label:'Annuler',cls:'btn-ghost'},
+        {label:'Tout effacer',cls:'btn-red',action:function(){
+          resetAllCommerceBoxData();
+          toast('Toutes les données ont été effacées');
+          renderMore();
+          if(currentScreen==='marche')renderMarche();
+        }}
+      ]);
+    }
   });
 }
 
@@ -3068,6 +3055,7 @@ function bindImportEvents(){
   var zc=$('zone-crm'),fc=$('file-crm'),zi=$('zone-immat'),fi=$('file-immat');
   if(zc&&fc){zc.onclick=function(){fc.click();};fc.onchange=function(e){var f=e.target.files[0];if(!f)return;parseExcel(f).then(function(data){showImportFilterModal(f,data,'crm');}).catch(function(){toast('Erreur import CRM');});};}
   if(zi&&fi){zi.onclick=function(){fi.click();};fi.onchange=function(e){var f=e.target.files[0];if(!f)return;parseExcel(f).then(function(data){showImportFilterModal(f,data,'immat');}).catch(function(){toast('Erreur import immatriculations');});};}
+  bindBasesEvents();
 }
 function restoreJSON(file){return new Promise(function(resolve){const reader=new FileReader();reader.onload=function(e){try{const data=JSON.parse(e.target.result);openModal('📥 Restaurer',`<p style="font-size:12px;color:var(--text2);">Restaurer la sauvegarde <strong>${escH(data.nom||data.base||'?')}</strong> ?<br><br>Les données actuelles de la base active seront remplacées.</p>`,[{label:'Annuler',cls:'btn-ghost'},{label:'Restaurer',cls:'btn-primary',action:function(){if(data.clients)DB.saveClients(data.clients);if(data.vehicles)DB.saveVehicles(data.vehicles);if(data.crm)DB.saveCRM(data.crm);if(data.projects)DB.saveProjects(data.projects);if(data.history)DB.saveHistory(data.history);if(data.possession)DB.savePossession(data.possession);if(data.settings)DB.saveSettings(data.settings);if(data.exclusions)DB.saveExclusions(data.exclusions);buildIndex();autoSave();toast('Restauration effectuée');renderScreen(currentScreen);resolve(true);}}]);}catch(err){toast('Fichier JSON invalide');resolve(false);}};reader.readAsText(file);});}
 function getBackupData(){const base=DB.getBase();return {version:7,app:'DAF_COMMERCE-Box',base:base,nom:DB.getBases()[base],clients:DB.getClients(),vehicles:DB.getVehicles(),crm:DB.getCRM(),projects:DB.getProjects(),history:DB.getHistory(),possession:DB.getPossession(),settings:DB.getSettings(),exclusions:DB.getExclusions(),exportDate:new Date().toISOString()};}
@@ -3092,9 +3080,9 @@ function renderMore(){
   html+=`<div class="card"><div class="card-title">💾 Sauvegarde iCloud</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Enregistrez le fichier JSON dans iCloud Drive pour sécuriser groupes, projets, contacts, réglages et données manuelles.</div></div>`;
   html+=`<div class="card"><div class="card-title">🔍 Qualité</div><button class="btn btn-secondary" id="btn-open-qualite" style="width:100%;">Ouvrir Qualité complète</button></div>`;
   html+=`<div class="card"><div class="card-title">📖 Mode d'emploi</div><button class="btn btn-secondary" id="btn-mode-emploi" style="width:100%;">Ouvrir le mode d'emploi complet</button></div>`;
-  $('more-content').innerHTML=html;bindImportEvents();if(typeof bindBaseEvents==='function')bindBaseEvents();
+  html+=`<div class="card"><div class="card-title">⚠️ Données locales</div><button class="btn btn-secondary" id="btn-clear" style="width:100%;margin-bottom:6px;">Vider la base active</button><button class="btn btn-red" id="btn-reset-all-data" style="width:100%;">Tout effacer — repartir à zéro</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Efface les données sur cet appareil uniquement. Exportez d'abord un JSON si besoin.</div></div>`;
+  $('more-content').innerHTML=html;bindImportEvents();bindBasesEvents();
   safeOn('btn-open-qualite','click',function(){try{renderQualite();}catch(e){toast('Erreur ouverture Qualité');console.error(e);}});safeOn('btn-mode-emploi','click',function(){try{renderModeEmploi();}catch(e){toast('Erreur mode d’emploi');console.error(e);}});safeOn('btn-export-json','click',exportBackupJSONDirect);safeOn('btn-restore-json','click',function(){var f=$('file-restore');if(f)f.click();});safeOn('file-restore','change',function(e){var f=e.target.files[0];if(f)restoreJSON(f);});
-  safeOn('btn-clear','click',()=>{openModal('⚠️ Vider la base','<p style="font-size:12px;color:var(--text2);">Effacer toutes les données de <strong>'+escH(DB.getBases()[DB.getBase()])+'</strong> ?</p>',[{label:'Annuler',cls:'btn-ghost'},{label:'Vider',cls:'btn-red',action:()=>{DB.saveClients([]);DB.saveVehicles([]);DB.saveCRM({});DB.saveProjects([]);DB.saveHistory({});DB.savePossession({});buildIndex();autoSave();toast('Base vidée');renderMore();}}]);});
 }
 
 
@@ -3737,6 +3725,7 @@ function checkXLSX(){return typeof XLSX!=='undefined';}
 
 function init(){
   buildIndex();
+  bindBasesEvents();
   bindEvents();
   ['marche','tours'].forEach(s=>renderGFBar(s));
   if(checkXLSX()){
@@ -8984,7 +8973,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
   var oldRenderMore=window.renderMore;
   if(typeof oldRenderMore==='function'){
-    window.renderMore=function(){var r=oldRenderMore.apply(this,arguments);setTimeout(injectAuditButton,0);return r;};
+    window.renderMore=function(){var r=oldRenderMore.apply(this,arguments);setTimeout(function(){injectAuditButton();bindBasesEvents();},0);return r;};
   }
   var oldRenderScreen=window.renderScreen;
   window.renderScreen=function(name){if(name==='audit'){renderAuditKpi();return;}return oldRenderScreen?oldRenderScreen.apply(this,arguments):undefined;};
