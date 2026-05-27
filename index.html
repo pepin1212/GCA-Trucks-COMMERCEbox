@@ -277,7 +277,8 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v7';
+const APP_BUILD='2026-05-27-bases-v9';
+const YEAR=(new Date()).getFullYear();
 const PDM_GOAL = 15; // objectif 15%
 const BRAND_COLORS = {DAF:'#e8a020',VOLVO:'#4488CC',MERCEDES:'#888',SCANIA:'#CC3333',MAN:'#4a90d9',RENAULT:'#DDAA00',IVECO:'#E07830','MERCEDES-BENZ':'#888'};
 
@@ -2721,7 +2722,7 @@ function createManualGroup(){openModal('Créer un groupe',`<div class="form-grou
 function showAddSiteToGroupModal(gid){var group=getGroupById(gid);if(!group||group.auto)return;var sites=DB.getClients()||[];var options=sites.slice(0,250).map(function(c){var sk=makeSiteKey(c);return '<option value="'+escH(sk)+'">'+escH((c.nom||'')+' / '+(c.ville||'')+' / TVA '+(c.tva||'')+' / SIRET '+(c.siret||''))+'</option>';}).join('');openModal('Ajouter au groupe',`<div class="form-group"><label class="form-label">Rechercher puis sélectionner</label><input class="form-input" id="grp-search" placeholder="Nom, TVA, SIRET, ville"><select class="form-input" id="grp-site-select" size="8" style="margin-top:8px;height:150px;">${options}</select></div>`,[{label:'Annuler',cls:'btn-ghost'},{label:'Ajouter au groupe',cls:'btn-primary',action:function(){var sel=$('grp-site-select');var sk=sel&&sel.value;if(!sk){toast('Sélectionne un site');return;}var groups=getManualGroups();var g=groups.find(function(x){return x.id===gid;});if(!g)return;if(g.siteKeys.indexOf(sk)<0)g.siteKeys.push(sk);saveManualGroups(groups);setGroupMeta(gid,sk,{principal:true,decisionnaire:true});openGroupSheet(gid);}}]);safeOn('grp-search','input',function(){var q=this.value.toLowerCase();var opts=(DB.getClients()||[]).filter(function(c){var txt=[c.nom,c.ville,c.tva,c.siret].join(' ').toLowerCase();return !q||txt.indexOf(q)>=0;}).slice(0,250).map(function(c){var sk=makeSiteKey(c);return '<option value="'+escH(sk)+'">'+escH((c.nom||'')+' / '+(c.ville||'')+' / TVA '+(c.tva||'')+' / SIRET '+(c.siret||''))+'</option>';}).join('');var select=$('grp-site-select');if(select)select.innerHTML=opts;});}
 function removeSiteFromGroup(gid,sk){var groups=getManualGroups();var g=groups.find(function(x){return x.id===gid;});if(!g)return;g.siteKeys=(g.siteKeys||[]).filter(function(k){return k!==sk;});saveManualGroups(groups);}
 function deleteManualGroup(gid){openModal('Supprimer le groupe','<p style="font-size:12px;color:var(--text2);">Supprimer ce groupe manuel ? Les fiches site perdront les badges GROUPE / Site principal / Site secondaire liés à ce groupe.</p>',[{label:'Annuler',cls:'btn-ghost'},{label:'Supprimer',cls:'btn-red',action:function(){var groups=getManualGroups().filter(function(g){return g.id!==gid;});saveManualGroups(groups);closeSheet();toast('Groupe supprimé');if(currentScreen==='tours')renderTours();}}]);}
-function renderGroupsQuality(){var groups=getAllGroups();return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="card-title" style="margin:0;">👥 Groupes</div><button class="btn btn-primary btn-sm" id="btn-create-group">+ Créer groupe</button></div>${groups.map(function(g){var sites=(g.siteKeys||[]).map(sk=>IDX.cBySite&&IDX.cBySite[sk]).filter(Boolean);return `<div class="diag-row" style="align-items:flex-start;"><div style="flex:1;"><div style="font-size:12px;font-weight:800;color:var(--text);">${escH(g.name)} ${g.auto?'<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">AUTO</span>':''}</div>${sites.map(function(c){var sk=makeSiteKey(c);return '<div style="font-size:10px;color:var(--text3);margin-top:3px;">• '+escH(c.ville||'')+' / '+escH(c.nom||'')+' / TVA '+escH(c.tva||'')+' / SIRET '+escH(c.siret||'—')+' / '+(groupSiteIsPrincipal(g.id,sk)?'Principal':'Secondaire')+' / Décisionnaire '+(groupSiteIsDecisionnaire(g.id,sk)?'OUI':'NON')+'</div>';}).join('')}</div><button class="btn btn-secondary btn-sm open-group" data-gid="${escH(g.id)}">Ouvrir</button></div>`;}).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun groupe détecté.</div>'}</div>`;}
+function renderGroupsQuality(){var groups=getAllGroups();return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="card-title" style="margin:0;">👥 Groupes</div><button class="btn btn-primary btn-sm" id="btn-create-group">+ Créer groupe</button></div>${groups.map(function(g){var sites=(g.siteKeys||[]).map(sk=>IDX.cBySite&&IDX.cBySite[sk]).filter(Boolean);var siteLines=sites.slice(0,8).map(function(c){var sk=makeSiteKey(c);return '<div style="font-size:10px;color:var(--text3);margin-top:3px;">• '+escH(c.ville||'')+' / '+escH(c.nom||'')+' / TVA '+escH(c.tva||'')+' / SIRET '+escH(c.siret||'—')+' / '+(groupSiteIsPrincipal(g.id,sk)?'Principal':'Secondaire')+' / Décisionnaire '+(groupSiteIsDecisionnaire(g.id,sk)?'OUI':'NON')+'</div>';}).join('');if(sites.length>8)siteLines+='<div style="font-size:9px;color:var(--text3);margin-top:3px;">… '+(sites.length-8)+' autres sites</div>';return `<div class="diag-row" style="align-items:flex-start;"><div style="flex:1;"><div style="font-size:12px;font-weight:800;color:var(--text);">${escH(g.name)} ${g.auto?'<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">AUTO</span>':''}</div>${siteLines}</div><button class="btn btn-secondary btn-sm open-group" data-gid="${escH(g.id)}">Ouvrir</button></div>`;}).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun groupe détecté.</div>'}</div>`;}
 var __oldBindEvents=bindEvents;bindEvents=function(){__oldBindEvents();safeOn('btn-mask-sites-sec','click',function(){GF.masquerSitesSecondaires=!(GF.masquerSitesSecondaires!==false);renderTours();});};
 
 
@@ -3112,6 +3113,7 @@ function saveImportDiagnostic(type,data,extra){
   }catch(e){}
 }
 function renderImportDiagnostics(){
+  try{
   var st=getAppSettings(), diag=(st.importDiagnostics||{});
   function block(type,title){
     var d=diag[type];
@@ -3138,6 +3140,7 @@ function renderImportDiagnostics(){
     return '<div style="margin-top:8px;"><div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:4px;">'+title+' <span style="font-size:9px;color:var(--text3);font-weight:600;">('+escH(String(d.rowCount||0))+' lignes · '+date+')</span></div>'+extra+rows+'</div>';
   }
   return '<div class="card quality-section"><div class="card-title">🧭 Diagnostic colonnes détectées à l’import</div><div style="font-size:10px;color:var(--text3);margin-bottom:6px;line-height:1.4;">Ce contrôle vérifie que l’application a reconnu les bonnes colonnes dans vos fichiers Excel. Les lignes rouges doivent être corrigées avant de faire confiance aux KPI.</div>'+block('crm','Fichier CRM')+block('immat','Fichier immatriculations')+'</div>';
+  }catch(e){console.error('renderImportDiagnostics',e);return '<div class="card quality-section"><div class="card-title">🧭 Diagnostic import</div><p style="font-size:11px;color:var(--text2);">Diagnostic temporairement indisponible.</p></div>';}
 }
 
 const ETAT_PROSPECTION_OPTIONS=['À prospecter','Prospecté','Ne pas prospecter'];
@@ -3147,7 +3150,15 @@ function getSiteEtatProspection(sk,c){var st=getAppSettings();return normalizeEt
 function setSiteEtatProspection(sk,val){var st=getAppSettings();if(!st.siteEtatProspection)st.siteEtatProspection={};st.siteEtatProspection[sk]=normalizeEtatProspection(val);saveAppSettings(st);}
 
 function _distinct(arr){var s={};arr.forEach(function(v){v=String(v||'').trim();if(v)s[v]=true;});return Object.keys(s).sort();}
-function _qItems(items, mapper){return (items||[]).map(function(x){return '<div class="q-item">'+mapper(x)+'</div>';}).join('')||'<div class="q-item">Aucun élément</div>';}
+function _qItems(items, mapper, max){
+  max=max||50;
+  items=items||[];
+  if(!items.length)return '<div class="q-item">Aucun élément</div>';
+  var slice=items.slice(0,max);
+  var html=slice.map(function(x){return '<div class="q-item">'+mapper(x)+'</div>';}).join('');
+  if(items.length>max)html+='<div class="q-item" style="color:var(--text3);font-size:10px;">… '+(items.length-max)+' autres non listés (iPhone)</div>';
+  return html;
+}
 function _qualityBlock(title, items, mapper, level){var id='ql_'+Math.random().toString(36).slice(2);var cls=level==='err'?'d-err':level==='warn'?'d-warn':'d-ok';return '<div class="diag-row"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'">'+items.length+'</span></div><div class="q-list" id="'+id+'">'+_qItems(items,mapper)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';}
 function _clientLine(c){return escH((c.nom||'Nom ?')+' / '+(c.ville||'Ville ?')+' / TVA '+(c.tva||'—')+' / SIRET '+(c.siret||'—'));}
 function _vehicleLine(v){return escH((v.client||v.tva||'Client ?')+' / '+(v.plaque||'Plaque ?')+' / '+(v.marque||'Marque ?')+' / '+(v.date||'Date ?')+' / '+(v.type||'Type ?'));}
@@ -3421,7 +3432,7 @@ function _qualityVehicleItem(v){
 function _qualityBlockAction(title, items, mapper, level){
   var id='ql_'+Math.random().toString(36).slice(2);
   var cls=level==='err'?'d-err':level==='warn'?'d-warn':'d-ok';
-  return '<div class="diag-row"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'">'+items.length+'</span></div><div class="q-list" id="'+id+'">'+((items||[]).map(function(x){return '<div class="q-item">'+mapper(x)+'</div>';}).join('')||'<div class="q-item">Aucun élément</div>')+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';
+  return '<div class="diag-row"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'">'+items.length+'</span></div><div class="q-list" id="'+id+'">'+_qItems(items,mapper,50)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';
 }
 function _splitBlock(title, yesTitle, yesItems, noTitle, noItems, mapper){
   return '<div class="card quality-section"><div class="card-title">'+title+'</div>'+_qualityBlockAction(yesTitle,yesItems,mapper,'ok')+_qualityBlockAction(noTitle,noItems,mapper,noItems.length?'warn':'ok')+'</div>';
@@ -3433,20 +3444,47 @@ function _bindQualityInteractions(){
   safeOn('btn-create-group','click',createManualGroup);
 }
 
-renderQualite = function(){
+function _renderQualiteBody(){
   var clients=DB.getClients()||[], vehicles=DB.getVehicles()||[];
   var groups=getAllGroups();
   var knownTva={}; clients.forEach(function(c){if(c.tva)knownTva[c.tva]=true;});
   var profils=_distinct(clients.map(function(c){return c.profil;}));
   var groupements=_distinct(clients.map(function(c){return c.groupement;}));
   var etats=_distinct(clients.map(function(c){return getSiteEtatProspection(makeSiteKey(c),c);}));
-  var dupMap={}, dup=[]; vehicles.forEach(function(v){var k=(v.tva||'')+'|'+(v.plaque||''); if(v.tva&&v.plaque){if(dupMap[k])dup.push(v); else dupMap[k]=true;}});
+  var dupMap={}, dup=[];
+  var vehNoTva=[],vehNoClient=[],vehNoDate=[],vehNoMarque=[],vehNoType=[],vehNoPlaque=[];
+  vehicles.forEach(function(v){
+    var k=(v.tva||'')+'|'+(v.plaque||'');
+    if(v.tva&&v.plaque){if(dupMap[k])dup.push(v);else dupMap[k]=true;}
+    if(!v.tva)vehNoTva.push(v);
+    else if(!knownTva[v.tva])vehNoClient.push(v);
+    if(!v.date)vehNoDate.push(v);
+    if(!v.marque)vehNoMarque.push(v);
+    if(!v.type||isTypeVerifier(v))vehNoType.push(v);
+    if(!v.plaque)vehNoPlaque.push(v);
+  });
+  var sansVendeur=[],sansPays=[],sansDept=[],sansTva=[],sansSiret=[],sansProfil=[],sansAdresse=[];
+  clients.forEach(function(c){
+    if(!c.vendeur)sansVendeur.push(c);
+    if(!c.pays)sansPays.push(c);
+    if(!c.dept)sansDept.push(c);
+    if(!c.tva)sansTva.push(c);
+    if(!c.siret)sansSiret.push(c);
+    if(!c.profil)sansProfil.push(c);
+    if(!c.adresse)sansAdresse.push(c);
+  });
   var avecGroupement=clients.filter(function(c){return !!c.groupement;});
   var sansGroupement=clients.filter(function(c){return !c.groupement;});
   var avecEtat=clients.filter(function(c){return !!getSiteEtatProspection(makeSiteKey(c),c);});
   var sansEtat=clients.filter(function(c){return !getSiteEtatProspection(makeSiteKey(c),c);});
+  var inactifsPreview=[];
+  for(var _qi=0;_qi<clients.length&&inactifsPreview.length<50;_qi++){
+    var _qc=clients[_qi];
+    if(isInactiveClientMarche(_qc.tva,_qc._siteKey||makeSiteKey(_qc)))inactifsPreview.push(_qc);
+  }
   var html='';
   html+='<div class="screen-header"><div class="screen-title">🔍 Qualité</div><div class="screen-sub">Contrôle visuel des données, groupes, imports et anomalies</div></div>';
+  html+='<div style="margin:0 12px 8px;"><button type="button" class="btn btn-ghost btn-sm" onclick="renderMore()" style="width:100%;">← Retour Plus</button></div>';
   html+=renderGroupsQuality();
   html+=renderImportDiagnostics();
   html+='<div class="card quality-section"><div class="card-title">📌 Résumé rapide</div>'+
@@ -3455,32 +3493,32 @@ renderQualite = function(){
     '<div class="diag-row"><span class="diag-lbl">Groupes détectés/manuels</span><span class="diag-val d-ok">'+groups.length+'</span></div>'+
     '<div class="diag-row"><span class="diag-lbl">Profils commerciaux distincts</span><span class="diag-val d-ok">'+profils.length+'</span></div></div>';
   html+='<div class="card quality-section"><div class="card-title">👤 Qualité clients / sites</div>';
-  html+=_qualityBlockAction('Sites sans vendeur',clients.filter(function(c){return !c.vendeur;}),_qualitySiteItem,'warn');
-  html+=_qualityBlockAction('Sites sans pays',clients.filter(function(c){return !c.pays;}),_qualitySiteItem,'warn');
-  html+=_qualityBlockAction('Sites sans département',clients.filter(function(c){return !c.dept;}),_qualitySiteItem,'warn');
-  html+=_qualityBlockAction('Sites sans TVA',clients.filter(function(c){return !c.tva;}),_qualitySiteItem,'err');
-  html+=_qualityBlockAction('Sites sans SIRET',clients.filter(function(c){return !c.siret;}),_qualitySiteItem,'warn');
-  html+=_qualityBlockAction('Sites sans profil commercial',clients.filter(function(c){return !c.profil;}),_qualitySiteItem,'warn');
-  html+=_qualityBlockAction('Sites sans adresse',clients.filter(function(c){return !c.adresse;}),_qualitySiteItem,'warn');
+  html+=_qualityBlockAction('Sites sans vendeur',sansVendeur,_qualitySiteItem,'warn');
+  html+=_qualityBlockAction('Sites sans pays',sansPays,_qualitySiteItem,'warn');
+  html+=_qualityBlockAction('Sites sans département',sansDept,_qualitySiteItem,'warn');
+  html+=_qualityBlockAction('Sites sans TVA',sansTva,_qualitySiteItem,'err');
+  html+=_qualityBlockAction('Sites sans SIRET',sansSiret,_qualitySiteItem,'warn');
+  html+=_qualityBlockAction('Sites sans profil commercial',sansProfil,_qualitySiteItem,'warn');
+  html+=_qualityBlockAction('Sites sans adresse',sansAdresse,_qualitySiteItem,'warn');
   html+='</div>';
   html+=_splitBlock('🏷 Groupement', 'Sites avec groupement', avecGroupement, 'Sites sans groupement', sansGroupement, _qualitySiteItem);
   html+=_splitBlock('📞 État prospection', 'Sites avec état prospection', avecEtat, 'Sites sans état prospection', sansEtat, _qualitySiteItem);
   html+='<div class="card quality-section"><div class="card-title">📚 Valeurs détectées</div>';
-  html+='<div class="diag-row"><span class="diag-lbl">Profils commerciaux</span><span class="diag-val d-ok">'+escH(profils.join(' · ')||'—')+'</span></div>';
-  html+='<div class="diag-row"><span class="diag-lbl">Groupements</span><span class="diag-val d-ok">'+escH(groupements.join(' · ')||'—')+'</span></div>';
-  html+='<div class="diag-row"><span class="diag-lbl">États prospection</span><span class="diag-val d-ok">'+escH(etats.join(' · ')||'—')+'</span></div></div>';
+  html+='<div class="diag-row"><span class="diag-lbl">Profils commerciaux</span><span class="diag-val d-ok">'+escH(profils.slice(0,20).join(' · ')||'—')+(profils.length>20?' …':'')+'</span></div>';
+  html+='<div class="diag-row"><span class="diag-lbl">Groupements</span><span class="diag-val d-ok">'+escH(groupements.slice(0,20).join(' · ')||'—')+(groupements.length>20?' …':'')+'</span></div>';
+  html+='<div class="diag-row"><span class="diag-lbl">États prospection</span><span class="diag-val d-ok">'+escH(etats.slice(0,20).join(' · ')||'—')+(etats.length>20?' …':'')+'</span></div></div>';
   html+='<div class="card quality-section"><div class="card-title">🚛 Qualité véhicules</div>';
-  html+=_qualityBlockAction('Véhicules sans TVA',vehicles.filter(function(v){return !v.tva;}),_qualityVehicleItem,'err');
-  html+=_qualityBlockAction('Véhicules sans fiche client rattachée',vehicles.filter(function(v){return v.tva&&!knownTva[v.tva];}),_qualityVehicleItem,'err');
-  html+=_qualityBlockAction('Véhicules sans date',vehicles.filter(function(v){return !v.date;}),_qualityVehicleItem,'warn');
-  html+=_qualityBlockAction('Véhicules sans marque',vehicles.filter(function(v){return !v.marque;}),_qualityVehicleItem,'warn');
-  html+=_qualityBlockAction('Véhicules sans type / type à vérifier',vehicles.filter(function(v){return !v.type||isTypeVerifier(v);}),_qualityVehicleItem,'warn');
-  html+=_qualityBlockAction('Véhicules sans plaque',vehicles.filter(function(v){return !v.plaque;}),_qualityVehicleItem,'warn');
+  html+=_qualityBlockAction('Véhicules sans TVA',vehNoTva,_qualityVehicleItem,'err');
+  html+=_qualityBlockAction('Véhicules sans fiche client rattachée',vehNoClient,_qualityVehicleItem,'err');
+  html+=_qualityBlockAction('Véhicules sans date',vehNoDate,_qualityVehicleItem,'warn');
+  html+=_qualityBlockAction('Véhicules sans marque',vehNoMarque,_qualityVehicleItem,'warn');
+  html+=_qualityBlockAction('Véhicules sans type / type à vérifier',vehNoType,_qualityVehicleItem,'warn');
+  html+=_qualityBlockAction('Véhicules sans plaque',vehNoPlaque,_qualityVehicleItem,'warn');
   html+=_qualityBlockAction('Doublons suspects TVA + plaque',dup,_qualityVehicleItem,'warn');
   html+='</div>';
   html+='<div class="card quality-section"><div class="card-title">🚩 Exclusions / activité / flottes</div>';
   html+=_qualityBlockAction('Clients exclus',clients.filter(isClientExcluded),_qualitySiteItem,'warn');
-  html+=_qualityBlockAction('Clients inactifs',clients.filter(function(c){return isInactiveClientMarche(c.tva,c._siteKey||makeSiteKey(c));}),_qualitySiteItem,'warn');
+  html+=_qualityBlockAction('Clients inactifs (aperçu)',inactifsPreview,_qualitySiteItem,'warn');
   html+=_qualityBlockAction('Clients flotte',clients.filter(isFlotteBadge),_qualitySiteItem,'ok');
   html+=_qualityBlockAction('Flotte nationale',clients.filter(isFlotteNationale),_qualitySiteItem,'ok');
   html+=_qualityBlockAction('Flotte régionale',clients.filter(isFlotteRegionale),_qualitySiteItem,'ok');
@@ -3488,6 +3526,20 @@ renderQualite = function(){
   html+='</div>';
   $('more-content').innerHTML=html;
   _bindQualityInteractions();
+};
+
+renderQualite = function(){
+  var mc=$('more-content');
+  if(!mc){toast('Onglet Plus introuvable');return;}
+  mc.innerHTML='<div class="card" style="padding:18px;text-align:center;font-size:12px;color:var(--text3);">Chargement Qualité…</div>';
+  setTimeout(function(){
+    try{_renderQualiteBody();}
+    catch(e){
+      console.error('renderQualite',e);
+      mc.innerHTML='<div class="card"><div class="card-title">⚠️ Qualité</div><p style="font-size:11px;color:var(--text2);line-height:1.5;">Erreur : '+escH(e.message||'inconnue')+'</p><button type="button" class="btn btn-secondary" style="width:100%;margin-top:8px;" onclick="renderMore()">Retour Plus</button></div>';
+      toast('Erreur ouverture Qualité');
+    }
+  },50);
 };
 
 renderModeEmploi = function(){
