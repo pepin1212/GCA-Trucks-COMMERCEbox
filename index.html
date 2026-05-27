@@ -277,7 +277,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v4';
+const APP_BUILD='2026-05-27-bases-v5';
 const PDM_GOAL = 15; // objectif 15%
 const BRAND_COLORS = {DAF:'#e8a020',VOLVO:'#4488CC',MERCEDES:'#888',SCANIA:'#CC3333',MAN:'#4a90d9',RENAULT:'#DDAA00',IVECO:'#E07830','MERCEDES-BENZ':'#888'};
 
@@ -1325,7 +1325,10 @@ function renderMarche(){
   var bnh=$('base-name-hdr');if(bnh)bnh.textContent=baseName;
   updateSaveStatus();
 
-  if(!clients.length){$('marche-content').innerHTML=renderXlsxStatus(xlsxOk);return;}
+  if(!clients.length){
+    $('marche-content').innerHTML=renderXlsxStatus(xlsxOk)+'<div class="card"><div class="card-title">📊 Aucun KPI — base vide</div><div style="font-size:11px;color:var(--text2);line-height:1.55;">C\'est normal après <strong>Tout effacer</strong> ou <strong>?reset=1</strong>.<br><br>1. Onglet <strong>⚙️ Plus</strong><br>2. Import <strong>BASE CRM.xlsx</strong><br>3. Import <strong>IMMATRICULATIONS.xlsx</strong><br><br>Les KPI Marché s\'affichent dès qu\'il y a des clients.</div></div>';
+    return;
+  }
 
   var filtered=clients.filter(matchesMarcheClient);
   var filtVeh=vehicles.filter(matchesMarcheVehicle);
@@ -1840,6 +1843,26 @@ function dafManualForceUpdate(){
   ]);
 }
 window.dafManualForceUpdate=dafManualForceUpdate;
+function renderMoreAdminFooter(){
+  var cont=$('more-content');
+  if(!cont)return;
+  var old=$('more-admin-footer');
+  if(old)old.remove();
+  var clients=(DB.getClients()||[]).length;
+  var veh=(DB.getVehicles()||[]).length;
+  var html='<div id="more-admin-footer">';
+  if(!clients){
+    html+='<div class="card"><div class="card-title">📊 KPI Marché vides ?</div><div style="font-size:11px;color:var(--text2);line-height:1.5;">Normal si la base vient d\'être effacée. Importez d\'abord <strong>BASE CRM.xlsx</strong> puis <strong>IMMATRICULATIONS.xlsx</strong> ci-dessus — les KPI réapparaissent après import.</div></div>';
+  }else if(!veh){
+    html+='<div class="card"><div class="card-title">📊 KPI incomplets</div><div style="font-size:11px;color:var(--text2);line-height:1.5;">'+clients+' clients importés mais aucun véhicule. Importez <strong>IMMATRICULATIONS.xlsx</strong> pour alimenter les KPI.</div></div>';
+  }
+  html+='<div class="card"><div class="card-title">🔄 Mise à jour app</div><button type="button" class="btn btn-primary" id="btn-force-update" onclick="typeof dafManualForceUpdate===\'function\'&&dafManualForceUpdate()" style="width:100%;margin-bottom:6px;">Forcer la mise à jour</button><div style="font-size:10px;color:var(--text3);line-height:1.4;">Build attendu : <strong>'+APP_BUILD+'</strong></div></div>';
+  html+='<div class="card"><div class="card-title">⚠️ Données locales</div><button type="button" class="btn btn-secondary" id="btn-clear" onclick="typeof dafBaseAction===\'function\'&&dafBaseAction(\'clear\',event)" style="width:100%;margin-bottom:6px;">Vider la base active</button><button type="button" class="btn btn-red" id="btn-reset-all-data" onclick="typeof dafBaseAction===\'function\'&&dafBaseAction(\'reset-all\',event)" style="width:100%;">Tout effacer — repartir à zéro</button></div>';
+  html+='<div style="font-size:9px;color:var(--text3);text-align:center;padding:6px 0 14px;">Build '+APP_BUILD+' · '+clients+' clients · '+veh+' véhicules</div>';
+  html+='</div>';
+  cont.insertAdjacentHTML('beforeend',html);
+}
+window.renderMoreAdminFooter=renderMoreAdminFooter;
 
 function renderDiag(cs,vs,ccols,vcols){
   const diag=$('import-diag');if(!diag)return;
@@ -3150,9 +3173,6 @@ function renderMore(){
   html+=`<div class="card"><div class="card-title">💾 Sauvegarde iCloud</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Enregistrez le fichier JSON dans iCloud Drive pour sécuriser groupes, projets, contacts, réglages et données manuelles.</div></div>`;
   html+=`<div class="card"><div class="card-title">🔍 Qualité</div><button class="btn btn-secondary" id="btn-open-qualite" style="width:100%;">Ouvrir Qualité complète</button></div>`;
   html+=`<div class="card"><div class="card-title">📖 Mode d'emploi</div><button class="btn btn-secondary" id="btn-mode-emploi" style="width:100%;">Ouvrir le mode d'emploi complet</button></div>`;
-  html+=`<div class="card"><div class="card-title">🔄 Mise à jour app</div><button type="button" class="btn btn-primary" id="btn-force-update" onclick="typeof dafManualForceUpdate==='function'&&dafManualForceUpdate()" style="width:100%;margin-bottom:6px;">Forcer la mise à jour</button><div style="font-size:10px;color:var(--text3);line-height:1.4;">Si le Build en bas de page n'est pas <strong>${APP_BUILD}</strong>, appuyez ici. Sinon ajoutez <strong>?v=${APP_BUILD}</strong> à l'URL dans Safari.</div></div>`;
-  html+=`<div class="card"><div class="card-title">⚠️ Données locales</div><button type="button" class="btn btn-secondary" id="btn-clear" onclick="typeof dafBaseAction==='function'&&dafBaseAction('clear',event)" style="width:100%;margin-bottom:6px;">Vider la base active</button><button type="button" class="btn btn-red" id="btn-reset-all-data" onclick="typeof dafBaseAction==='function'&&dafBaseAction('reset-all',event)" style="width:100%;">Tout effacer — repartir à zéro</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Efface les données sur cet appareil uniquement. Exportez d'abord un JSON si besoin.<br>Urgence : ajoutez <strong>?reset=1</strong> à l'URL pour tout effacer au chargement.</div></div>`;
-  html+=`<div style="font-size:9px;color:var(--text3);text-align:center;padding:6px 0 10px;">Build ${APP_BUILD}</div>`;
   $('more-content').innerHTML=html;bindImportEvents();bindBasesEvents();
   safeOn('btn-open-qualite','click',function(){try{renderQualite();}catch(e){toast('Erreur ouverture Qualité');console.error(e);}});safeOn('btn-mode-emploi','click',function(){try{renderModeEmploi();}catch(e){toast('Erreur mode d’emploi');console.error(e);}});safeOn('btn-export-json','click',exportBackupJSONDirect);safeOn('btn-restore-json','click',function(){var f=$('file-restore');if(f)f.click();});safeOn('file-restore','change',function(e){var f=e.target.files[0];if(f)restoreJSON(f);});
 }
@@ -3493,7 +3513,7 @@ renderModeEmploi = function(){
 
   // Override renderMore to update label XLSX and add modules if not present
   var _oldMore = window.renderMore;
-  window.renderMore=function(){ if(typeof _oldMore==='function')_oldMore(); var cont=$('more-content'); if(!cont)return; var btn=$('btn-export-project-report'); if(btn)btn.textContent='Exporter reporting projets XLSX'; var cards=cont.innerHTML; if(cards.indexOf('Affaires chaudes / Livraisons')<0){cont.insertAdjacentHTML('beforeend','<div class="card"><div class="card-title">🔥 Affaires chaudes / Livraisons</div><button class="btn btn-secondary" id="btn-open-affaires-plus" style="width:100%;margin-bottom:6px;">Ouvrir Affaires chaudes</button><button class="btn btn-secondary" id="btn-open-livraisons-plus" style="width:100%;">Ouvrir Suivi livraisons</button></div>');safeOn('btn-open-affaires-plus','click',function(){showScreen('affaires');});safeOn('btn-open-livraisons-plus','click',function(){showScreen('livraisons');});} };
+  window.renderMore=function(){ if(typeof _oldMore==='function')_oldMore(); var cont=$('more-content'); if(!cont)return; var btn=$('btn-export-project-report'); if(btn)btn.textContent='Exporter reporting projets XLSX'; var cards=cont.innerHTML; if(cards.indexOf('Affaires chaudes / Livraisons')<0){cont.insertAdjacentHTML('beforeend','<div class="card"><div class="card-title">🔥 Affaires chaudes / Livraisons</div><button class="btn btn-secondary" id="btn-open-affaires-plus" style="width:100%;margin-bottom:6px;">Ouvrir Affaires chaudes</button><button class="btn btn-secondary" id="btn-open-livraisons-plus" style="width:100%;">Ouvrir Suivi livraisons</button></div>');safeOn('btn-open-affaires-plus','click',function(){showScreen('affaires');});safeOn('btn-open-livraisons-plus','click',function(){showScreen('livraisons');});} if(typeof renderMoreAdminFooter==='function')renderMoreAdminFooter(); };
 
   var _oldRenderScreen = window.renderScreen;
   window.renderScreen=function(name){ if(name==='affaires'){renderAffaires();return;} if(name==='livraisons'){renderLivraisons();return;} if(typeof _oldRenderScreen==='function')return _oldRenderScreen(name); };
@@ -9047,7 +9067,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
   var oldRenderMore=window.renderMore;
   if(typeof oldRenderMore==='function'){
-    window.renderMore=function(){var r=oldRenderMore.apply(this,arguments);setTimeout(function(){injectAuditButton();bindBasesEvents();},0);return r;};
+    window.renderMore=function(){var r=oldRenderMore.apply(this,arguments);setTimeout(function(){injectAuditButton();bindBasesEvents();if(typeof renderMoreAdminFooter==='function')renderMoreAdminFooter();},0);return r;};
   }
   var oldRenderScreen=window.renderScreen;
   window.renderScreen=function(name){if(name==='audit'){renderAuditKpi();return;}return oldRenderScreen?oldRenderScreen.apply(this,arguments):undefined;};
