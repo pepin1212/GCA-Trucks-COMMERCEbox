@@ -277,7 +277,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v6';
+const APP_BUILD='2026-05-27-bases-v7';
 const PDM_GOAL = 15; // objectif 15%
 const BRAND_COLORS = {DAF:'#e8a020',VOLVO:'#4488CC',MERCEDES:'#888',SCANIA:'#CC3333',MAN:'#4a90d9',RENAULT:'#DDAA00',IVECO:'#E07830','MERCEDES-BENZ':'#888'};
 
@@ -318,23 +318,165 @@ function normSiret(s){
   return str;
 }
 
-// ===== STORAGE (IndexedDB with localStorage fallback) =====
+// ===== STORAGE (IndexedDB véhicules + localStorage reste) =====
 const DB = (() => {
+  const IDB_NAME = 'daf_commercebox_db';
+  const IDB_VER = 1;
+  const VEH_CHUNK = 1200;
+  let _idb = null;
+  let _memVehicles = null;
+  let _memVehiclesBase = null;
   const LS = {
     get(k){try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}},
     set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true;}catch(e){return false;}},
-    del(k){localStorage.removeItem(k);}
+    del(k){try{localStorage.removeItem(k);}catch(e){}}
   };
+  function idbOpen(){
+    return new Promise(function(resolve){
+      if(typeof indexedDB==='undefined'){resolve(null);return;}
+      try{
+        var req=indexedDB.open(IDB_NAME,IDB_VER);
+        req.onupgradeneeded=function(e){var db=e.target.result;if(!db.objectStoreNames.contains('store'))db.createObjectStore('store');};
+        req.onsuccess=function(){_idb=req.result;resolve(_idb);};
+        req.onerror=function(){resolve(null);};
+      }catch(e){resolve(null);}
+    });
+  }
+  function idbGet(key){
+    return new Promise(function(resolve){
+      if(!_idb){resolve(null);return;}
+      try{
+        var tx=_idb.transaction('store','readonly');
+        var rq=tx.objectStore('store').get(key);
+        rq.onsuccess=function(){resolve(rq.result);};
+        rq.onerror=function(){resolve(null);};
+      }catch(e){resolve(null);}
+    });
+  }
+  function idbSet(key,val){
+    return new Promise(function(resolve){
+      if(!_idb){resolve(false);return;}
+      try{
+        var tx=_idb.transaction('store','readwrite');
+        tx.objectStore('store').put(val,key);
+        tx.oncomplete=function(){resolve(true);};
+        tx.onerror=function(){resolve(false);};
+      }catch(e){resolve(false);}
+    });
+  }
+  function idbDel(key){
+    return new Promise(function(resolve){
+      if(!_idb){resolve();return;}
+      try{
+        var tx=_idb.transaction('store','readwrite');
+        tx.objectStore('store').delete(key);
+        tx.oncomplete=function(){resolve();};
+        tx.onerror=function(){resolve();};
+      }catch(e){resolve();}
+    });
+  }
+  function _vehIdbKey(base){return 'vehicles_'+base;}
+  function _purgeVehicleChunks(baseId){
+    var meta=LS.get('daf_pro_'+baseId+'_vehicles_meta');
+    if(meta&&meta.chunks){for(var i=0;i<meta.chunks;i++)LS.del('daf_pro_'+baseId+'_vehicles_'+i);}
+    LS.del('daf_pro_'+baseId+'_vehicles_meta');
+    LS.del('daf_pro_'+baseId+'_vehicles');
+  }
+  function _loadVehiclesLegacy(baseId){
+    var single=LS.get('daf_pro_'+baseId+'_vehicles');
+    if(Array.isArray(single)&&single.length)return single;
+    var meta=LS.get('daf_pro_'+baseId+'_vehicles_meta');
+    if(!meta||!meta.chunks)return [];
+    var out=[];
+    for(var i=0;i<meta.chunks;i++){
+      var chunk=LS.get('daf_pro_'+baseId+'_vehicles_'+i);
+      if(!Array.isArray(chunk))break;
+      out=out.concat(chunk);
+    }
+    return out;
+  }
+  function _saveVehiclesChunked(baseId,d){
+    _purgeVehicleChunks(baseId);
+    if(!d||!d.length){
+      LS.set('daf_pro_'+baseId+'_vehicles_meta',{count:0,chunks:0});
+      return true;
+    }
+    var n=Math.ceil(d.length/VEH_CHUNK), i;
+    for(i=0;i<n;i++){
+      if(!LS.set('daf_pro_'+baseId+'_vehicles_'+i,d.slice(i*VEH_CHUNK,(i+1)*VEH_CHUNK)))return false;
+    }
+    return LS.set('daf_pro_'+baseId+'_vehicles_meta',{count:d.length,chunks:n});
+  }
+  function _setMemVehicles(base,d){
+    _memVehicles=Array.isArray(d)?d:[];
+    _memVehiclesBase=base;
+  }
   return {
+    initStorage(cb){
+      var self=this, base=self.getBase();
+      idbOpen().then(function(){
+        return idbGet(_vehIdbKey(base));
+      }).then(function(idbVeh){
+        if(Array.isArray(idbVeh))_setMemVehicles(base,idbVeh);
+        else _setMemVehicles(base,_loadVehiclesLegacy(base));
+        if(typeof cb==='function')cb();
+      }).catch(function(){
+        _setMemVehicles(base,_loadVehiclesLegacy(base));
+        if(typeof cb==='function')cb();
+      });
+    },
     getBase(){return localStorage.getItem('daf_pro_active')||'base1';},
-    setBase(b){localStorage.setItem('daf_pro_active',b); autoSave();},
+    setBase(b){localStorage.setItem('daf_pro_active',b);_memVehicles=null;_memVehiclesBase=null;autoSave();},
     getBases(){return LS.get('daf_pro_bases')||{base1:'Base principale'};},
     saveBases(o){LS.set('daf_pro_bases',o);},
     key(k){return `daf_pro_${this.getBase()}_${k}`;},
     get(k){return LS.get(this.key(k));},
     set(k,v){const ok=LS.set(this.key(k),v); if(ok)updateSaveStatus(); return ok;},
     getClients(){return this.get('clients')||[];},
-    getVehicles(){return this.get('vehicles')||[];},
+    getVehicles(){
+      var base=this.getBase();
+      if(_memVehicles!==null&&_memVehiclesBase===base)return _memVehicles;
+      var legacy=this.get('vehicles');
+      if(Array.isArray(legacy)){_setMemVehicles(base,legacy);return legacy;}
+      var loaded=_loadVehiclesLegacy(base);
+      _setMemVehicles(base,loaded);
+      return loaded;
+    },
+    saveVehicles(d){
+      var self=this, base=self.getBase(), arr=Array.isArray(d)?d:[];
+      _setMemVehicles(base,arr);
+      _purgeVehicleChunks(base);
+      LS.del(self.key('vehicles'));
+      return new Promise(function(resolve){
+        function done(ok){if(ok)updateSaveStatus();resolve(!!ok);}
+        if(_idb){
+          idbSet(_vehIdbKey(base),arr).then(function(idbOk){
+            if(idbOk)done(true);
+            else done(_saveVehiclesChunked(base,arr));
+          });
+        }else{
+          done(_saveVehiclesChunked(base,arr)||LS.set(self.key('vehicles'),arr));
+        }
+      });
+    },
+    copyVehiclesToBase(fromId,toId){
+      var veh=_loadVehiclesLegacy(fromId);
+      if(_memVehicles!==null&&_memVehiclesBase===fromId)veh=_memVehicles;
+      return idbGet(_vehIdbKey(fromId)).then(function(idbV){
+        var data=Array.isArray(idbV)&&idbV.length?idbV:veh;
+        _purgeVehicleChunks(toId);
+        LS.del('daf_pro_'+toId+'_vehicles');
+        if(_idb&&data.length)return idbSet(_vehIdbKey(toId),data);
+        if(data.length)return _saveVehiclesChunked(toId,data)?true:LS.set('daf_pro_'+toId+'_vehicles',data);
+        return idbDel(_vehIdbKey(toId));
+      });
+    },
+    purgeVehiclesForBase(baseId){
+      _purgeVehicleChunks(baseId);
+      LS.del('daf_pro_'+baseId+'_vehicles');
+      if(_memVehiclesBase===baseId){_memVehicles=[];_memVehiclesBase=baseId;}
+      return idbDel(_vehIdbKey(baseId));
+    },
     getCRM(){return this.get('crm')||{};},
     getProjects(){return this.get('projects')||[];},
     getHistory(){return this.get('history')||{};},
@@ -342,8 +484,7 @@ const DB = (() => {
     getSettings(){return this.get('settings')||{};},
     getExclusions(){return this.get('exclusions')||{};},
     saveExclusions(d){this.set('exclusions',d);},
-    saveClients(d){this.set('clients',d);},
-    saveVehicles(d){this.set('vehicles',d);},
+    saveClients(d){return this.set('clients',d);},
     saveCRM(d){this.set('crm',d);},
     saveProjects(d){this.set('projects',d);},
     saveHistory(d){this.set('history',d);},
@@ -514,7 +655,7 @@ function mapClientRow(row, headers) {
   var f=function(keys,def){if(def===undefined)def='';var i=findCol(headers,keys);return i>=0?String(row[i]||'').trim():def;};
   const tva=f(['N° TVA','TVA','CLIENT/N° TVA','NTVA','NUM TVA']);
   const siren=f(['SIREN']);
-  const siret=normSiret(f(['SIRET']));
+  const siret=normSiret(f(['SIRET','N° SIRET','N SIRET','NUM SIRET','NUMERO SIRET','SIRET ETABLISSEMENT','SIRET ENTREPRISE','SIRET CLIENT','CODE SIRET']));
   const ville=f(['VILLE','COMMUNE','CITY']);
   const key = siret?`${tva}|${siret}`:siren&&ville?`${tva}|${siren}|${ville}`:ville?`${tva}|${ville}`:tva;
   var profilDirect=f(['PROFIL_COMMERCIAL','PROFIL COMMERCIAL','PROFIL COMMERCIAL CLIENT','PROFIL COMMERCIAL ACTUEL','PROFIL CLIENT','PROFIL_CLIENT','TYPE CLIENT','TYPE_CLIENT','SEGMENT','SEGMENT CLIENT','CATEGORIE','CATÉGORIE','CATEGORIE CLIENT','CATÉGORIE CLIENT','CLASSEMENT','FAMILLE CLIENT','FLOTTE','TYPE FLOTTE','STATUT FLOTTE','PROFIL']);
@@ -561,7 +702,7 @@ function mapVehicleRow(row, headers) {
     carrosserie:f(['CARROSSERIE','BODY']),
     modele:f(['MODÈLE','MODELE','MODEL']),
     siren:f(['SIREN']),
-    siret:normSiret(f(['SIRET'])),
+    siret:normSiret(f(['SIRET','N° SIRET','N SIRET','NUM SIRET','NUMERO SIRET','SIRET ETABLISSEMENT','SIRET ENTREPRISE','SIRET CLIENT','CODE SIRET'])),
     ville:f(['VILLE','COMMUNE']),
     pays:f(['PAYS']),
     dept:f(['DEPARTEMENT','DÉPARTEMENT','DEPT']),
@@ -573,7 +714,7 @@ function mapVehicleRow(row, headers) {
 // ===== EXCEL PARSE =====
 function _neededAliasesForImport(){
   return [
-    'N° TVA','TVA','CLIENT/N° TVA','NTVA','NUM TVA','SIREN','SIRET','VILLE','COMMUNE','CITY','CANTON','SECTEUR','ZONE','ACCESSIBLE','ACCESS','PROFIL_COMMERCIAL','PROFIL COMMERCIAL','PROFIL','PRIORITE_FORCEE','PRIORITE FORCEE','PRIORITE','EXCLU_MANU','EXCLU_MANUEL','EXCLU','VENDEUR','COMMERCIAL','NOM VENDEUR','NOM DU VENDEUR','PAYS','COUNTRY','DEPARTEMENT','DÉPARTEMENT','DEPT','CODE DEPARTEMENT','CODE DÉPARTEMENT','RUE','ADRESSE','ADRESSE CLIENT','ADRESSE SITE','ADRESSE ETABLISSEMENT','NOM','CLIENT','RAISON SOCIALE','RAISON_SOCIALE','ENTREPRISE','NAME','GROUPEMENT','ETAT PROSPECTION','ÉTAT PROSPECTION',
+    'N° TVA','TVA','CLIENT/N° TVA','NTVA','NUM TVA','SIREN','SIRET','N° SIRET','N SIRET','NUM SIRET','NUMERO SIRET','SIRET ETABLISSEMENT','SIRET ENTREPRISE','SIRET CLIENT','CODE SIRET','VILLE','COMMUNE','CITY','CANTON','SECTEUR','ZONE','ACCESSIBLE','ACCESS','PROFIL_COMMERCIAL','PROFIL COMMERCIAL','PROFIL','PRIORITE_FORCEE','PRIORITE FORCEE','PRIORITE','EXCLU_MANU','EXCLU_MANUEL','EXCLU','VENDEUR','COMMERCIAL','NOM VENDEUR','NOM DU VENDEUR','PAYS','COUNTRY','DEPARTEMENT','DÉPARTEMENT','DEPT','CODE DEPARTEMENT','CODE DÉPARTEMENT','RUE','ADRESSE','ADRESSE CLIENT','ADRESSE SITE','ADRESSE ETABLISSEMENT','NOM','CLIENT','RAISON SOCIALE','RAISON_SOCIALE','ENTREPRISE','NAME','GROUPEMENT','ETAT PROSPECTION','ÉTAT PROSPECTION',
     'DATE D\'IMMATRICULATION','DATE IMMATRICULATION','DATE','DATE_IMMAT','PLAQUE D\'IMMATRICULATION','PLAQUE IMMATRICULATION','PLAQUE','TYPE CHASSIS','TYPE CHÂSSIS','TYPE VEHICULE','TYPE VÉHICULE','TYPE','MARQUE','BRAND','MAKE','CARROSSERIE','BODY','MODÈLE','MODELE','MODEL','NUMÉRO DE CHÂSSIS','NUMERO DE CHASSIS','NUM CHASSIS'
   ];
 }
@@ -651,9 +792,10 @@ function importVehicles(data, possession){
   (DB.getClients()||[]).forEach(function(c){
     if(c.tva&&normSiret(c.siret)&&!siretByTva[c.tva])siretByTva[c.tva]=normSiret(c.siret);
   });
+  var enrichedFromCrm=0;
   const raw=rows.map(function(r){
     var v=mapVehicleRow(r,headers);
-    if(!normSiret(v.siret)&&v.tva&&siretByTva[v.tva])v.siret=siretByTva[v.tva];
+    if(!normSiret(v.siret)&&v.tva&&siretByTva[v.tva]){v.siret=siretByTva[v.tva];enrichedFromCrm++;}
     return v;
   });
   const sansSiret=raw.filter(function(v){return !normSiret(v.siret);}).length;
@@ -676,7 +818,7 @@ function importVehicles(data, possession){
   const sansPlaque=unique.filter(v=>!v.plaque).length;
   const sansType=unique.filter(v=>!v.type).length;
   const sansMarque=unique.filter(v=>!v.marque).length;
-  return{vehicles:unique,cols:headers.filter(Boolean),stats:{total:rows.length,reconnus:unique.length,sansSiret,sansTva,sansDate,sansPlaque,sansType,sansMarque,dups:dups.length}};
+  return{vehicles:unique,cols:headers.filter(Boolean),stats:{total:rows.length,reconnus:unique.length,sansSiret,enrichedFromCrm,sansTva,sansDate,sansPlaque,sansType,sansMarque,dups:dups.length}};
 }
 
 // ===== INDEX BUILDING =====
@@ -1655,7 +1797,10 @@ function _baseStorageKeys(){
   return ['clients','vehicles','crm','projects','history','possession','settings','exclusions'];
 }
 function _purgeBaseData(baseId){
-  _baseStorageKeys().forEach(function(k){localStorage.removeItem('daf_pro_'+baseId+'_'+k);});
+  _baseStorageKeys().forEach(function(k){
+    if(k!=='vehicles')localStorage.removeItem('daf_pro_'+baseId+'_'+k);
+  });
+  DB.purgeVehiclesForBase(baseId);
 }
 function resetAllCommerceBoxData(){
   Object.keys(localStorage).forEach(function(k){
@@ -1665,6 +1810,7 @@ function resetAllCommerceBoxData(){
   localStorage.removeItem('daf_pro_lastsave');
   DB.saveBases({base1:'Base principale'});
   DB.setBase('base1');
+  DB.purgeVehiclesForBase('base1');
   buildIndex();
   autoSave();
 }
@@ -1709,13 +1855,16 @@ function dafBaseAction(action,ev){
     bases[newId]=name;
     DB.saveBases(bases);
     _baseStorageKeys().forEach(function(k){
+      if(k==='vehicles')return;
       var val=localStorage.getItem('daf_pro_'+id+'_'+k);
       if(val)localStorage.setItem('daf_pro_'+newId+'_'+k,val);
     });
-    DB.setBase(newId);
-    buildIndex();
-    toast('Base dupliquée : '+name);
-    renderMore();
+    DB.copyVehiclesToBase(id,newId).then(function(){
+      DB.setBase(newId);
+      buildIndex();
+      toast('Base dupliquée : '+name);
+      renderMore();
+    });
     return;
   }
   if(action==='del'){
@@ -2307,15 +2456,17 @@ function restoreJSON(file){
           {label:'Annuler',cls:'btn-ghost'},
           {label:'Restaurer',cls:'btn-primary',action:()=>{
             if(data.clients)DB.saveClients(data.clients);
-            if(data.vehicles)DB.saveVehicles(data.vehicles);
             if(data.crm)DB.saveCRM(data.crm);
             if(data.projects)DB.saveProjects(data.projects);
             if(data.history)DB.saveHistory(data.history);
             if(data.possession)DB.savePossession(data.possession);
-            buildIndex();autoSave();
-            toast('Restauration effectuée !');
-            renderMarche();renderMore();
-            resolve(true);
+            var p=data.vehicles?DB.saveVehicles(data.vehicles):Promise.resolve(true);
+            p.then(function(){
+              buildIndex();autoSave();
+              toast('Restauration effectuée !');
+              renderMarche();renderMore();
+              resolve(true);
+            });
           }}
         ]);
       }catch(err){toast('Fichier JSON invalide');resolve(false);}
@@ -2918,7 +3069,7 @@ const IMPORT_DIAG_RULES = {
   crm: [
     {key:'tva', label:'TVA', critical:true, aliases:['N° TVA','TVA','CLIENT/N° TVA','NTVA','NUM TVA']},
     {key:'nom', label:'Nom client', critical:true, aliases:['NOM','CLIENT','RAISON SOCIALE','RAISON_SOCIALE','ENTREPRISE','NAME']},
-    {key:'siret', label:'SIRET', critical:false, aliases:['SIRET']},
+    {key:'siret', label:'SIRET', critical:false, aliases:['SIRET','N° SIRET','N SIRET','NUM SIRET','NUMERO SIRET','SIRET ETABLISSEMENT','SIRET ENTREPRISE','SIRET CLIENT','CODE SIRET']},
     {key:'ville', label:'Ville', critical:false, aliases:['VILLE','COMMUNE','CITY']},
     {key:'canton', label:'Canton / secteur', critical:false, aliases:['CANTON','SECTEUR','ZONE']},
     {key:'accessible', label:'Accessible', critical:false, aliases:['ACCESSIBLE','ACCESS']},
@@ -2941,7 +3092,7 @@ const IMPORT_DIAG_RULES = {
     {key:'marque', label:'Marque', critical:true, aliases:['MARQUE','BRAND','MAKE']},
     {key:'carrosserie', label:'Carrosserie', critical:false, aliases:['CARROSSERIE','BODY']},
     {key:'modele', label:'Modèle', critical:false, aliases:['MODÈLE','MODELE','MODEL']},
-    {key:'siret', label:'SIRET', critical:true, aliases:['SIRET']},
+    {key:'siret', label:'SIRET', critical:true, aliases:['SIRET','N° SIRET','N SIRET','NUM SIRET','NUMERO SIRET','SIRET ETABLISSEMENT','SIRET ENTREPRISE','SIRET CLIENT','CODE SIRET']},
     {key:'ville', label:'Ville', critical:false, aliases:['VILLE','COMMUNE']},
     {key:'pays', label:'Pays', critical:false, aliases:['PAYS']},
     {key:'dept', label:'Département', critical:false, aliases:['DEPARTEMENT','DÉPARTEMENT','DEPT']},
@@ -2977,8 +3128,11 @@ function renderImportDiagnostics(){
       var dbVeh=(DB.getVehicles()||[]).length;
       extra='<div style="font-size:10px;color:var(--text2);margin:6px 0;line-height:1.45;">Lignes lues : <strong>'+escH(String(d.rowCount||0))+'</strong> · Véhicules enregistrés : <strong>'+dbVeh+'</strong>';
       if(typeof d.importedCount==='number')extra+=' · Retenus à l\'import : <strong>'+d.importedCount+'</strong>';
+      if(d.saveFailed)extra+='<br><span style="color:var(--red);">❌ Sauvegarde échouée — limite mémoire Safari. Les véhicules lus n\'ont pas été enregistrés (build v7+ utilise IndexedDB).</span>';
+      else if(typeof d.savedCount==='number'&&d.savedCount>0&&d.savedCount!==d.importedCount)extra+=' · Enregistrés : <strong>'+d.savedCount+'</strong>';
       if(typeof d.rejectedNoSiret==='number'&&d.rejectedNoSiret>0)extra+='<br><span style="color:var(--orange);">⚠️ '+d.rejectedNoSiret+' ligne(s) ignorée(s) : SIRET vide ou illisible. Sans SIRET valide, aucun véhicule n\'est importé.</span>';
-      else if((d.rowCount||0)>0&&dbVeh===0)extra+='<br><span style="color:var(--orange);">⚠️ Colonnes OK mais 0 véhicule en base : vérifiez que la colonne SIRET contient bien 14 chiffres sur chaque ligne, ou relancez l\'import sans filtre année/vendeur.</span>';
+      else if(typeof d.importedCount==='number'&&d.importedCount>0&&dbVeh===0&&!d.saveFailed)extra+='<br><span style="color:var(--orange);">⚠️ '+d.importedCount+' véhicule(s) retenu(s) mais 0 en base — relancez l\'import après mise à jour v7 (IndexedDB).</span>';
+      else if(typeof d.enrichedFromCrm==='number'&&d.enrichedFromCrm>0&&!findCol((d.headers||[]),['SIRET','N° SIRET','NUM SIRET']))extra+='<br><span style="color:var(--blue);">ℹ️ Colonne SIRET absente du fichier — '+d.enrichedFromCrm+' véhicule(s) complété(s) via TVA depuis le CRM.</span>';
       extra+='</div>';
     }
     return '<div style="margin-top:8px;"><div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:4px;">'+title+' <span style="font-size:9px;color:var(--text3);font-weight:600;">('+escH(String(d.rowCount||0))+' lignes · '+date+')</span></div>'+extra+rows+'</div>';
@@ -3141,31 +3295,43 @@ function showImportFilterModal(file,data,type){
   }
   var html='<div style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.45;">Fichier lu en mode compact : seules les colonnes utiles sont conservées. '+(heavy?'<br><strong style="color:var(--orange);">⚠️ Fichier lourd : appliquez un filtre année/vendeur/pays/département avant import.</strong>':'')+'</div>'+yearsHtml+_multiCheckboxHtml('Vendeur',vendeurs,'vendeur')+_multiCheckboxHtml('Pays',pays,'pays')+_multiCheckboxHtml('Département',depts,'dept')+'<div id="import-preview" style="font-size:12px;color:var(--daf);font-weight:800;margin-top:8px;"></div>';
   function finishImport(fdata,msg){
-    var okSave=true;
+    function afterSave(okSave,res){
+      if(!okSave){
+        toast('⚠️ Sauvegarde impossible — '+((res&&res.vehicles)?res.vehicles.length+' véhicules lus mais non enregistrés. ':'')+'Mémoire iPhone saturée ou fichier trop volumineux.');
+        return;
+      }
+      buildIndex();
+      autoSave();
+      var nCli=DB.getClients().length,nVeh=DB.getVehicles().length;
+      toast('Import terminé — '+nCli+' clients · '+nVeh+' véhicules');
+      renderScreen(currentScreen);
+      if(currentScreen!=='marche'){showScreen('marche');}
+      else{renderMarche();}
+      setTimeout(function(){toast(msg);},300);
+    }
     if(type==='crm'){
       saveImportDiagnostic('crm',fdata);
       var res=importCRM(fdata);res.clients=_mergeManualClientFields(res.clients,DB.getClients());
-      okSave=DB.saveClients(res.clients);
+      var okSave=DB.saveClients(res.clients);
       $('crm-status')&&($('crm-status').textContent=res.clients.length+' clients importés');
+      afterSave(okSave,res);
     }else{
       var res=importVehicles(fdata,DB.getPossession());
-      saveImportDiagnostic('immat',fdata,{importedCount:res.vehicles.length,rejectedNoSiret:res.stats&&res.stats.sansSiret});
-      okSave=DB.saveVehicles(res.vehicles);
-      $('immat-status')&&($('immat-status').textContent=res.vehicles.length+' véhicules importés');
-      if((res.stats&&res.stats.total>0)&&!res.vehicles.length){
-        setTimeout(function(){
-          openModal('⚠️ 0 véhicule importé','<p style="font-size:12px;color:var(--text2);line-height:1.55;">Le fichier a <strong>'+res.stats.total+' lignes</strong> mais aucun véhicule retenu.<br><br>Vérifiez la colonne <strong>SIRET</strong> (14 chiffres, identique au CRM). L\'app complète le SIRET depuis le CRM quand la TVA correspond.</p>',[{label:'Compris',cls:'btn-primary'}]);
-        },400);
-      }
+      DB.saveVehicles(res.vehicles).then(function(okSave){
+        saveImportDiagnostic('immat',fdata,{importedCount:res.vehicles.length,rejectedNoSiret:res.stats&&res.stats.sansSiret,enrichedFromCrm:res.stats&&res.stats.enrichedFromCrm,savedCount:okSave?DB.getVehicles().length:0,saveFailed:!okSave});
+        $('immat-status')&&($('immat-status').textContent=DB.getVehicles().length+' véhicules importés');
+        if((res.stats&&res.stats.total>0)&&!res.vehicles.length){
+          setTimeout(function(){
+            openModal('⚠️ 0 véhicule importé','<p style="font-size:12px;color:var(--text2);line-height:1.55;">Le fichier a <strong>'+res.stats.total+' lignes</strong> mais aucun véhicule retenu.<br><br>Vérifiez la colonne <strong>SIRET</strong> (14 chiffres, identique au CRM). L\'app complète le SIRET depuis le CRM quand la TVA correspond.</p>',[{label:'Compris',cls:'btn-primary'}]);
+          },400);
+        }else if(res.vehicles.length&&!okSave){
+          setTimeout(function(){
+            openModal('⚠️ Véhicules non enregistrés','<p style="font-size:12px;color:var(--text2);line-height:1.55;"><strong>'+res.vehicles.length+' véhicules</strong> lus mais la sauvegarde a échoué (limite mémoire Safari).<br><br>Réessayez après « Tout effacer », ou importez par tranches (filtre année / vendeur).</p>',[{label:'Compris',cls:'btn-primary'}]);
+          },400);
+        }
+        afterSave(okSave,res);
+      });
     }
-    if(!okSave){toast('⚠️ Sauvegarde impossible — mémoire iPhone saturée. Exportez un JSON puis réduisez les fichiers.');return;}
-    buildIndex();
-    autoSave();
-    toast('Import terminé — '+DB.getClients().length+' clients · '+DB.getVehicles().length+' véhicules');
-    renderScreen(currentScreen);
-    if(currentScreen!=='marche'){showScreen('marche');}
-    else{renderMarche();}
-    setTimeout(function(){toast(msg);},300);
   }
   openModal('Filtrer import '+(type==='crm'?'CRM':'Immatriculations'),html,[
     {label:'Annuler',cls:'btn-ghost'},
@@ -3181,7 +3347,7 @@ function bindImportEvents(){
   if(zi&&fi){zi.onclick=function(){fi.click();};fi.onchange=function(e){var f=e.target.files[0];if(!f)return;parseExcel(f).then(function(data){showImportFilterModal(f,data,'immat');}).catch(function(){toast('Erreur import immatriculations');});};}
   bindBasesEvents();
 }
-function restoreJSON(file){return new Promise(function(resolve){const reader=new FileReader();reader.onload=function(e){try{const data=JSON.parse(e.target.result);openModal('📥 Restaurer',`<p style="font-size:12px;color:var(--text2);">Restaurer la sauvegarde <strong>${escH(data.nom||data.base||'?')}</strong> ?<br><br>Les données actuelles de la base active seront remplacées.</p>`,[{label:'Annuler',cls:'btn-ghost'},{label:'Restaurer',cls:'btn-primary',action:function(){if(data.clients)DB.saveClients(data.clients);if(data.vehicles)DB.saveVehicles(data.vehicles);if(data.crm)DB.saveCRM(data.crm);if(data.projects)DB.saveProjects(data.projects);if(data.history)DB.saveHistory(data.history);if(data.possession)DB.savePossession(data.possession);if(data.settings)DB.saveSettings(data.settings);if(data.exclusions)DB.saveExclusions(data.exclusions);buildIndex();autoSave();toast('Restauration effectuée');renderScreen(currentScreen);resolve(true);}}]);}catch(err){toast('Fichier JSON invalide');resolve(false);}};reader.readAsText(file);});}
+function restoreJSON(file){return new Promise(function(resolve){const reader=new FileReader();reader.onload=function(e){try{const data=JSON.parse(e.target.result);openModal('📥 Restaurer',`<p style="font-size:12px;color:var(--text2);">Restaurer la sauvegarde <strong>${escH(data.nom||data.base||'?')}</strong> ?<br><br>Les données actuelles de la base active seront remplacées.</p>`,[{label:'Annuler',cls:'btn-ghost'},{label:'Restaurer',cls:'btn-primary',action:function(){if(data.clients)DB.saveClients(data.clients);if(data.crm)DB.saveCRM(data.crm);if(data.projects)DB.saveProjects(data.projects);if(data.history)DB.saveHistory(data.history);if(data.possession)DB.savePossession(data.possession);if(data.settings)DB.saveSettings(data.settings);if(data.exclusions)DB.saveExclusions(data.exclusions);var p=data.vehicles?DB.saveVehicles(data.vehicles):Promise.resolve(true);p.then(function(){buildIndex();autoSave();toast('Restauration effectuée');renderScreen(currentScreen);resolve(true);});}}]);}catch(err){toast('Fichier JSON invalide');resolve(false);}};reader.readAsText(file);});}
 function getBackupData(){const base=DB.getBase();return {version:7,app:'DAF_COMMERCE-Box',base:base,nom:DB.getBases()[base],clients:DB.getClients(),vehicles:DB.getVehicles(),crm:DB.getCRM(),projects:DB.getProjects(),history:DB.getHistory(),possession:DB.getPossession(),settings:DB.getSettings(),exclusions:DB.getExclusions(),exportDate:new Date().toISOString()};}
 function exportBackupJSONDirect(){
   try{
@@ -3867,12 +4033,14 @@ function init(){
 
 document.addEventListener('DOMContentLoaded',function(){
   if(dafForceAppUpdateIfNeeded())return;
-  try{init();}
-  catch(e){
-    var b=document.body||document.documentElement;
-    if(b)b.innerHTML='<div style="font-family:monospace;padding:20px;color:red;background:#fff;font-size:14px;"><strong>Erreur au démarrage:</strong><br>'+e.message+'<br><br><small>'+e.stack+'</small></div>';
-    console.error('DAF_COMMERCE-Box init error:',e);
-  }
+  DB.initStorage(function(){
+    try{init();}
+    catch(e){
+      var b=document.body||document.documentElement;
+      if(b)b.innerHTML='<div style="font-family:monospace;padding:20px;color:red;background:#fff;font-size:14px;"><strong>Erreur au démarrage:</strong><br>'+e.message+'<br><br><small>'+e.stack+'</small></div>';
+      console.error('DAF_COMMERCE-Box init error:',e);
+    }
+  });
 });
 </script>
 
@@ -3975,7 +4143,12 @@ document.addEventListener('DOMContentLoaded',function(){
           if(st)st.textContent=Math.max(0,data.length-1)+' lignes CSV lues';
           if(typeof showImportFilterModal==='function')showImportFilterModal(file,data,'immat');
           else {
-            var res=importVehicles(data,DB.getPossession());DB.saveVehicles(res.vehicles);buildIndex();autoSave();renderScreen(currentScreen);_toastSafe(res.vehicles.length+' véhicules importés depuis CSV');
+            var res=importVehicles(data,DB.getPossession());
+            DB.saveVehicles(res.vehicles).then(function(ok){
+              if(!ok){_toastSafe('Sauvegarde véhicules impossible');return;}
+              buildIndex();autoSave();renderScreen(currentScreen);
+              _toastSafe(res.vehicles.length+' véhicules importés depuis CSV');
+            });
           }
         }).catch(function(err){console.error(err); if(st)st.textContent='Erreur lecture CSV'; _toastSafe('Erreur lecture CSV');});
       };
