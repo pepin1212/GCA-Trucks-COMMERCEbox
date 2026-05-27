@@ -197,6 +197,7 @@ input[type=file]{display:none}
     <div class="fpill" data-f="daf_with">Avec DAF</div>
     <div class="fpill" data-f="no_daf">Sans DAF</div>
     <div class="fpill" data-f="urgent">Urgents</div>
+    <div class="fpill fpill-alert" data-f="orphan_immat" title="Immatriculations sans fiche client CRM">⚠ Sans fiche</div>
     <div class="fpill" data-f="flotte">Flotte</div>
   </div>
   <div id="tours-mask-bar" style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:6px 12px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:40px;z-index:200;overflow:visible;">
@@ -277,8 +278,9 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v10';
+const APP_BUILD='2026-05-27-bases-v13';
 const YEAR=(new Date()).getFullYear();
+const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
 const BRAND_COLORS = {DAF:'#e8a020',VOLVO:'#4488CC',MERCEDES:'#888',SCANIA:'#CC3333',MAN:'#4a90d9',RENAULT:'#DDAA00',IVECO:'#E07830','MERCEDES-BENZ':'#888'};
 
@@ -1086,21 +1088,26 @@ function isVehicleRenewableCore(v){
   if(isPorteur(v))return y>=YEAR-6&&y<=YEAR-5;
   return false;
 }
+function _minPurchaseYearForActiveClient(){
+  return YEAR-INACTIVE_PURCHASE_YEARS+1;
+}
+function clientHasRecentPurchase(veh){
+  var minY=_minPurchaseYearForActiveClient();
+  return veh.some(function(v){var y=getYear(v.date);return y&&y>=minY;});
+}
+function isInactiveClientCore(veh){
+  if(!veh.length)return true;
+  return !clientHasRecentPurchase(veh);
+}
 function isInactiveClient(tva,sk){
   var veh=_getSiteVeh(tva,sk).filter(function(v){return v.possession!==false&&matchesToursVehicle(v);});
-  if(!veh.length)return true;
-  var hasRecent=veh.some(function(v){var y=getYear(v.date);return y&&y>=YEAR-4;});
-  var hasRenewable=veh.some(isVehicleRenewableCore);
-  return !hasRecent && !hasRenewable;
+  return isInactiveClientCore(veh);
 }
 
 // Règles MARCHÉ : toutes immat. importées (possession ignorée pour actif/inactif)
 function isInactiveClientMarche(tva,sk){
   var veh=_getSiteVeh(tva,sk).filter(matchesMarcheVehicleScope);
-  if(!veh.length)return true;
-  var hasRecent=veh.some(function(v){var y=getYear(v.date);return y&&y>=YEAR-4;});
-  var hasRenewable=veh.some(isVehicleRenewableCore);
-  return !hasRecent && !hasRenewable;
+  return isInactiveClientCore(veh);
 }
 function _marcheClientForVehicle(v){
   var sr=normSiret(v&&v.siret);
@@ -1133,13 +1140,9 @@ function matchesMarcheVehicle(v){
   if(GF.exclAccessibleOffMarche&&clientObj&&!isClientAccessible(clientObj))return false;
   return true;
 }
-// isInactiveClientTours : version Tournées sans les exclusions Marché
+// isInactiveClientTours : version Tournées (véhicules possédés uniquement)
 function isInactiveClientTours(tva,sk){
-  var veh=_getSiteVeh(tva,sk).filter(function(v){return v.possession!==false&&matchesToursVehicle(v);});
-  if(!veh.length)return true;
-  var hasRecent=veh.some(function(v){return getYear(v.date)>=YEAR-4;});
-  var hasRenewable=veh.some(isVehicleRenewableCore);
-  return !hasRecent && !hasRenewable;
+  return isInactiveClient(tva,sk);
 }
 // matchesToursVehicle : filtre véhicule pour Tournées — sans les exclusions Marché
 // Les exclusions Tournées se gèrent au niveau client via passesToursExclusions
@@ -2503,7 +2506,7 @@ function showAide(){
     +'<div class="card-title" style="margin-bottom:6px;">Definitions metier</div>'
     +'<div style="margin-bottom:8px;"><strong>DAF a renouveler</strong><br>Tracteurs DAF immatricules entre N-4 et N-6 / Porteurs DAF entre N-5 et N-7.</div>'
     +'<div style="margin-bottom:8px;"><strong>Hors DAF a renouveler</strong><br>Memes periodes pour vehicules non-DAF.</div>'
-    +'<div style="margin-bottom:8px;"><strong>Inactif</strong><br>Aucune immatriculation possedee dans les 4 dernieres annees ET aucun vehicule possede encore renouvelable.</div>'
+    +'<div style="margin-bottom:8px;"><strong>Inactif</strong><br>Aucun achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années calendaires, année courante incluse.</div>'
     +'<div style="margin-bottom:8px;"><strong>Score client</strong><br>DAF renouv: 12pts (max 48) + Hors DAF: 10pts (max 40) + Parc actif: 2pts (max 12) = max 100.</div>'
     +'<div style="margin-bottom:8px;"><strong>Flotte Nationale</strong><br>Profil commercial contenant FLOTTE + NATIONALE/NAT. Masquage piloté par bouton.</div>'
     +'<div class="card-title" style="margin-bottom:6px;margin-top:10px;">Filtres permanents</div>'
@@ -2537,7 +2540,7 @@ function showAide(){
     +'<div class="card-title" style="margin-bottom:6px;">Definitions metier</div>'
     +'<div style="margin-bottom:8px;"><strong>DAF a renouveler</strong><br>Tracteurs DAF immatricules entre N-4 et N-6 / Porteurs DAF entre N-5 et N-7.</div>'
     +'<div style="margin-bottom:8px;"><strong>Hors DAF a renouveler</strong><br>Memes periodes pour vehicules non-DAF.</div>'
-    +'<div style="margin-bottom:8px;"><strong>Inactif</strong><br>Aucune immatriculation possedee dans les 4 dernieres annees ET aucun vehicule possede encore renouvelable.</div>'
+    +'<div style="margin-bottom:8px;"><strong>Inactif</strong><br>Aucun achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années calendaires, année courante incluse.</div>'
     +'<div style="margin-bottom:8px;"><strong>Score client</strong><br>DAF renouv: 12pts (max 48) + Hors DAF: 10pts (max 40) + Parc actif: 2pts (max 12) = max 100.</div>'
     +'<div style="margin-bottom:8px;"><strong>Flotte Nationale</strong><br>Profil commercial contenant FLOTTE + NATIONALE/NAT. Masquage piloté par bouton.</div>'
     +'<div class="card-title" style="margin-bottom:6px;margin-top:10px;">Filtres permanents</div>'
@@ -2569,13 +2572,7 @@ function renderScreen(name){
     case 'marche':
     case 'home':
     case 'pdm': renderMarche(); break;
-    case 'tours':
-      if(DB.getClients().length>300){
-        var tl=$('tours-list');
-        if(tl)tl.innerHTML='<div class="card" style="padding:14px;text-align:center;font-size:11px;color:var(--text3);">Chargement des tournées…</div>';
-        setTimeout(function(){if(currentScreen==='tours')renderTours();},0);
-      }else renderTours();
-      break;
+    case 'tours': renderTours(); break;
     case 'projets': renderProjets(); break;
     case 'qualite': renderQualite(); break;
     case 'more': renderMore(); break;
@@ -2746,7 +2743,25 @@ function createManualGroup(){openModal('Créer un groupe',`<div class="form-grou
 function showAddSiteToGroupModal(gid){var group=getGroupById(gid);if(!group||group.auto)return;var sites=DB.getClients()||[];var options=sites.slice(0,250).map(function(c){var sk=makeSiteKey(c);return '<option value="'+escH(sk)+'">'+escH((c.nom||'')+' / '+(c.ville||'')+' / TVA '+(c.tva||'')+' / SIRET '+(c.siret||''))+'</option>';}).join('');openModal('Ajouter au groupe',`<div class="form-group"><label class="form-label">Rechercher puis sélectionner</label><input class="form-input" id="grp-search" placeholder="Nom, TVA, SIRET, ville"><select class="form-input" id="grp-site-select" size="8" style="margin-top:8px;height:150px;">${options}</select></div>`,[{label:'Annuler',cls:'btn-ghost'},{label:'Ajouter au groupe',cls:'btn-primary',action:function(){var sel=$('grp-site-select');var sk=sel&&sel.value;if(!sk){toast('Sélectionne un site');return;}var groups=getManualGroups();var g=groups.find(function(x){return x.id===gid;});if(!g)return;if(g.siteKeys.indexOf(sk)<0)g.siteKeys.push(sk);saveManualGroups(groups);setGroupMeta(gid,sk,{principal:true,decisionnaire:true});openGroupSheet(gid);}}]);safeOn('grp-search','input',function(){var q=this.value.toLowerCase();var opts=(DB.getClients()||[]).filter(function(c){var txt=[c.nom,c.ville,c.tva,c.siret].join(' ').toLowerCase();return !q||txt.indexOf(q)>=0;}).slice(0,250).map(function(c){var sk=makeSiteKey(c);return '<option value="'+escH(sk)+'">'+escH((c.nom||'')+' / '+(c.ville||'')+' / TVA '+(c.tva||'')+' / SIRET '+(c.siret||''))+'</option>';}).join('');var select=$('grp-site-select');if(select)select.innerHTML=opts;});}
 function removeSiteFromGroup(gid,sk){var groups=getManualGroups();var g=groups.find(function(x){return x.id===gid;});if(!g)return;g.siteKeys=(g.siteKeys||[]).filter(function(k){return k!==sk;});saveManualGroups(groups);}
 function deleteManualGroup(gid){openModal('Supprimer le groupe','<p style="font-size:12px;color:var(--text2);">Supprimer ce groupe manuel ? Les fiches site perdront les badges GROUPE / Site principal / Site secondaire liés à ce groupe.</p>',[{label:'Annuler',cls:'btn-ghost'},{label:'Supprimer',cls:'btn-red',action:function(){var groups=getManualGroups().filter(function(g){return g.id!==gid;});saveManualGroups(groups);closeSheet();toast('Groupe supprimé');if(currentScreen==='tours')renderTours();}}]);}
-function renderGroupsQuality(){var groups=getAllGroups();return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="card-title" style="margin:0;">👥 Groupes</div><button class="btn btn-primary btn-sm" id="btn-create-group">+ Créer groupe</button></div>${groups.map(function(g){var sites=(g.siteKeys||[]).map(sk=>IDX.cBySite&&IDX.cBySite[sk]).filter(Boolean);var siteLines=sites.slice(0,8).map(function(c){var sk=makeSiteKey(c);return '<div style="font-size:10px;color:var(--text3);margin-top:3px;">• '+escH(c.ville||'')+' / '+escH(c.nom||'')+' / TVA '+escH(c.tva||'')+' / SIRET '+escH(c.siret||'—')+' / '+(groupSiteIsPrincipal(g.id,sk)?'Principal':'Secondaire')+' / Décisionnaire '+(groupSiteIsDecisionnaire(g.id,sk)?'OUI':'NON')+'</div>';}).join('');if(sites.length>8)siteLines+='<div style="font-size:9px;color:var(--text3);margin-top:3px;">… '+(sites.length-8)+' autres sites</div>';return `<div class="diag-row" style="align-items:flex-start;"><div style="flex:1;"><div style="font-size:12px;font-weight:800;color:var(--text);">${escH(g.name)} ${g.auto?'<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">AUTO</span>':''}</div>${siteLines}</div><button class="btn btn-secondary btn-sm open-group" data-gid="${escH(g.id)}">Ouvrir</button></div>`;}).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun groupe détecté.</div>'}</div>`;}
+function renderGroupsQuality(){
+  var groups=getAllGroups();
+  var inner=groups.map(function(g){
+    var sites=(g.siteKeys||[]).map(function(sk){return IDX.cBySite&&IDX.cBySite[sk];}).filter(Boolean);
+    var siteLines=sites.slice(0,8).map(function(c){
+      var sk=makeSiteKey(c);
+      return '<div style="font-size:10px;color:var(--text3);margin-top:3px;">• '+escH(c.ville||'')+' / '+escH(c.nom||'')+' / TVA '+escH(c.tva||'')+' / SIRET '+escH(c.siret||'—')+' / '+(groupSiteIsPrincipal(g.id,sk)?'Principal':'Secondaire')+' / Décisionnaire '+(groupSiteIsDecisionnaire(g.id,sk)?'OUI':'NON')+'</div>';
+    }).join('');
+    if(sites.length>8)siteLines+='<div style="font-size:9px;color:var(--text3);margin-top:3px;">… '+(sites.length-8)+' autres sites</div>';
+    return '<div class="diag-row" style="align-items:flex-start;"><div style="flex:1;"><div style="font-size:12px;font-weight:800;color:var(--text);">'+escH(g.name)+' '+(g.auto?'<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">AUTO</span>':'')+'</div>'+siteLines+'</div><button class="btn btn-secondary btn-sm open-group" data-gid="'+escH(g.id)+'">Ouvrir</button></div>';
+  }).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun groupe détecté.</div>';
+  return '<div class="card quality-section" id="qualite-groupes-card">'
+    +'<div class="quality-collapse-hdr" data-qcollapse="qualite-groupes-body" style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;user-select:none;">'
+    +'<div class="card-title" style="margin:0;display:flex;align-items:center;gap:6px;"><span class="quality-collapse-chevron" style="font-size:11px;color:var(--text3);">▶</span> 👥 Groupes <span style="font-size:10px;color:var(--text3);font-weight:600;">('+groups.length+')</span></div>'
+    +'<button class="btn btn-primary btn-sm" id="btn-create-group" type="button">+ Créer groupe</button>'
+    +'</div>'
+    +'<div id="qualite-groupes-body" class="quality-collapse-body" style="display:none;margin-top:8px;">'+inner+'</div>'
+    +'</div>';
+}
 var __oldBindEvents=bindEvents;bindEvents=function(){__oldBindEvents();safeOn('btn-mask-sites-sec','click',function(){GF.masquerSitesSecondaires=!(GF.masquerSitesSecondaires!==false);renderTours();});};
 
 
@@ -2925,9 +2940,20 @@ function _groupBadgesHtml(group){
   if(_groupSites(group).some(isFlotteNationale))badges.push('<span class="badge b-flotte">FLOTTE NAT.</span>');
   return badges.join('');
 }
+function getSiteStatsCached(sk){
+  var key='sk:'+sk;
+  if(_statsCache[key])return _statsCache[key];
+  var s=getSiteStats(sk);_statsCache[key]=s;return s;
+}
+function getGroupStatsCached(group){
+  if(!group)return {parc:0,dafCount:0,dafRenew:0,horsRenew:0,allVehicles:[],score:0};
+  var key='grp:'+(group.id||((group.siteKeys||[]).join('|')));
+  if(_statsCache[key])return _statsCache[key];
+  var s=getGroupStats(group);_statsCache[key]=s;return s;
+}
 function _rowStatsForTours(c,sk,info){
-  if(info&&info.hasGroup&&info.principal)return getGroupStats(info.group);
-  return getSiteStats(sk);
+  if(info&&info.hasGroup&&info.principal)return getGroupStatsCached(info.group);
+  return getSiteStatsCached(sk);
 }
 function _rowFlagsForTours(c,info){
   var sites=(info&&info.hasGroup&&info.principal)?_groupSites(info.group):[c];
@@ -2994,8 +3020,72 @@ function _dedupVehiclesFromRows(rows){
   });
   return out;
 }
+function _toursKpiFromRows(shown){
+  var kParc=0,kDafRenew=0,kHorsRenew=0;
+  shown.forEach(function(c){kParc+=c.parc||0;kDafRenew+=c.dafRenew||0;kHorsRenew+=c.horsRenew||0;});
+  return {kParc:kParc,kDafRenew:kDafRenew,kHorsRenew:kHorsRenew};
+}
+function _renderOrphanVehiclesList(search){
+  var orphans=getOrphanVehicles();
+  var q=(search||'').toLowerCase().trim();
+  var filtered=orphans.filter(function(v){
+    if(!q)return true;
+    return [v.client,v.tva,v.plaque,v.marque,v.siret,v.ville,v.type,v.modele].join(' ').toLowerCase().includes(q);
+  });
+  var html='<div class="tours-orphan-banner"><div style="font-size:12px;font-weight:800;color:var(--red);margin-bottom:4px;">⚠ Véhicules sans fiche client rattachée</div><div style="font-size:10px;color:var(--text2);line-height:1.45;">Ces immatriculations ne sont rattachées à aucun site CRM (SIRET ou TVA reconnu). Elles n’entrent pas dans les KPI Marché/Tournées site. Corrigez le CRM ou le fichier immat.</div><div style="margin-top:6px;font-size:11px;font-weight:700;color:var(--text);">'+filtered.length+' véhicule'+(filtered.length>1?'s':'')+'</div></div>';
+  if(!filtered.length){
+    html+='<div class="empty-state"><div class="empty-icon">✓</div><div class="empty-title">Aucune immat. orpheline</div><div class="empty-sub">Toutes les immatriculations ont une fiche client reconnue.</div></div>';
+    return html;
+  }
+  html+='<div class="card" style="margin:0 12px 12px;">';
+  filtered.slice(0,150).forEach(function(v){
+    html+='<div class="tours-orphan-row">'+_qualityVehicleItem(v)+'</div>';
+  });
+  if(filtered.length>150)html+='<div style="font-size:10px;color:var(--text3);padding:8px 0;">Liste limitée à 150 · '+filtered.length+' au total · détail complet dans ⚙️ Qualité</div>';
+  html+='</div>';
+  return html;
+}
+function _bindOrphanListEvents(){
+  QA('#tours-list .q-open-site').forEach(function(b){b.onclick=function(){openSiteSheet(this.dataset.sk);};});
+}
+function _bindToursListEvents(){
+  QA('#tours-list .sec-hdr[data-ck],#tours-list .subsec-hdr[data-ck]').forEach(function(el){el.onclick=function(){const k=el.dataset.ck;toursExp[k]=!el.classList.contains('sec-open');renderTours();};});
+  QA('#tours-list .client-row[data-sk]').forEach(function(el){el.onclick=function(){openSiteSheet(el.dataset.sk);};});
+  var ob=$('tours-orphan-banner');
+  if(ob){ob.onclick=function(){toursF='orphan_immat';try{window.toursF='orphan_immat';}catch(e){}renderTours();};}
+}
+function _renderToursListHtml(shown,search,toursSort){
+  if(search){
+    if(!window._toursExpBeforeSearch)window._toursExpBeforeSearch=Object.assign({},toursExp);
+  }else if(window._toursExpBeforeSearch){
+    toursExp=window._toursExpBeforeSearch;
+    window._toursExpBeforeSearch=null;
+  }
+  const byCV={};
+  shown.forEach(function(c){const canton=c.canton||'Sans canton',ville=c.ville||'Sans ville';if(!byCV[canton])byCV[canton]={};if(!byCV[canton][ville])byCV[canton][ville]=[];byCV[canton][ville].push(c);});
+  var cantonKeys=Object.keys(byCV).sort();
+  let html='';
+  cantonKeys.forEach(function(canton){
+    const ck='c_'+canton,isOpen=toursExp[ck]===true,villes=byCV[canton];
+    let cTotal=0,cDaf=0,cDafR=0,cHorsR=0;Object.values(villes).forEach(cls=>cls.forEach(c=>{cTotal++;if(c.dafCount>0)cDaf++;cDafR+=c.dafRenew;cHorsR+=c.horsRenew;}));
+    html+=`<div class="sec-hdr ${isOpen?'sec-open':''}" data-ck="${escH(ck)}"><div><div class="sec-hdr-title">📍 ${escH(canton)}</div><div style="font-size:9px;color:var(--text3);margin-top:1px;">${cTotal} sites · DAF:${cDaf} · R.DAF:${cDafR} · R.Conc:${cHorsR}</div></div><div style="display:flex;align-items:center;gap:6px;"><span style="font-size:10px;color:var(--text3);">${cTotal}</span><span class="sec-chevron">▶</span></div></div>`;
+    if(isOpen){Object.keys(villes).sort().forEach(function(ville){const vk='v_'+canton+'_'+ville,isVOpen=toursExp[vk]===true,cls=villes[ville];html+=`<div class="subsec-hdr ${isVOpen?'sec-open':''}" data-ck="${escH(vk)}"><div><div style="font-size:11px;font-weight:600;color:var(--text2);">🏙 ${escH(ville)}</div></div><div style="display:flex;align-items:center;gap:5px;"><span style="font-size:10px;color:var(--text3);">${cls.length}</span><span class="sec-chevron" style="font-size:9px;">▶</span></div></div>`;if(isVOpen){var sortedCls=cls.slice();if(toursSort==='parc_desc')sortedCls.sort((a,b)=>b.parc-a.parc);else if(toursSort==='parc_asc')sortedCls.sort((a,b)=>a.parc-b.parc);else if(toursSort==='nom_asc')sortedCls.sort((a,b)=>(a.nom||'').localeCompare(b.nom||''));else if(toursSort==='renew_desc')sortedCls.sort((a,b)=>(b.dafRenew+b.horsRenew)-(a.dafRenew+a.horsRenew));else sortedCls.sort((a,b)=>b.score-a.score);sortedCls.forEach(c=>{html+=renderClientRow(c);});}});}
+  });
+  if(!html&&shown.length){
+    html='<div class="empty-state"><div class="empty-icon">🗺</div><div class="empty-title">Sites disponibles</div><div class="empty-sub">Cliquez un canton pour afficher les villes, puis une ville pour voir les fiches.</div></div>';
+  }else if(shown.length&&!cantonKeys.some(function(c){return toursExp['c_'+c]===true;})){
+    html+='<div class="card" style="margin:8px 12px;padding:10px;font-size:11px;color:var(--text3);text-align:center;">'+shown.length+' sites · cliquez un canton ▶ pour déplier</div>';
+  }
+  var orphanN=getOrphanVehicles().length;
+  if(orphanN>0){
+    html='<div class="tours-orphan-banner" role="button" tabindex="0" id="tours-orphan-banner" style="cursor:pointer;"><div style="font-size:11px;font-weight:800;color:var(--red);">⚠ '+orphanN+' immat. sans fiche client rattachée</div><div style="font-size:10px;color:var(--text2);margin-top:3px;">Cible prioritaire qualité données — cliquez pour afficher la liste</div></div>'+html;
+  }
+  return html;
+}
 function renderTours(){
   try{
+  window._toursRenderGen=(window._toursRenderGen||0)+1;
+  var gen=window._toursRenderGen;
   const data=buildToursData();
   const search=toursSearch.toLowerCase().trim();
   var f=toursF||'all';
@@ -3014,45 +3104,37 @@ function renderTours(){
     }
   });
   updateToursMaskButtons();
-  var vehKpi=_dedupVehiclesFromRows(shown).filter(function(v){return v.possession!==false&&matchesToursVehicle(v);});
-  const kClients=shown.length,kParc=vehKpi.length,kDafRenew=vehKpi.filter(isRenewDaf).length,kHorsRenew=vehKpi.filter(isRenewHors).length,kSansDaf=shown.filter(function(c){return c.dafCount===0;}).length,kUrgent=shown.filter(function(c){return c.isUrgent;}).length;
-  $('tours-counters').innerHTML=`<div class="kpi-card c-blue${f==='all'?' active':''}" data-cf="all"><div class="kpi-val">${kClients}</div><div class="kpi-lbl">Sites</div></div><div class="kpi-card"><div class="kpi-val">${kParc}</div><div class="kpi-lbl">Parc total</div></div><div class="kpi-card c-daf${(f==='daf_renew_kpi'||f==='daf_renew')?' active':''}" data-cf="daf_renew_kpi"><div class="kpi-val">${kDafRenew}</div><div class="kpi-lbl">DAF renouv.</div></div><div class="kpi-card c-blue${(f==='hors_renew_kpi'||f==='conc_renew')?' active':''}" data-cf="hors_renew_kpi"><div class="kpi-val">${kHorsRenew}</div><div class="kpi-lbl">Conc. renouv.</div></div><div class="kpi-card c-red${f==='no_daf'?' active':''}" data-cf="no_daf"><div class="kpi-val">${kSansDaf}</div><div class="kpi-lbl">Sans DAF</div></div><div class="kpi-card c-red${f==='urgent'?' active':''}" data-cf="urgent"><div class="kpi-val">${kUrgent}</div><div class="kpi-lbl">Urgents</div></div>`;
+  var kOrphan=getOrphanVehicles().length;
+  var kpi=_toursKpiFromRows(shown);
+  const kClients=shown.length,kParc=kpi.kParc,kDafRenew=kpi.kDafRenew,kHorsRenew=kpi.kHorsRenew,kSansDaf=shown.filter(function(c){return c.dafCount===0;}).length,kUrgent=shown.filter(function(c){return c.isUrgent;}).length;
+  $('tours-counters').innerHTML=`<div class="kpi-card c-blue${f==='all'?' active':''}" data-cf="all"><div class="kpi-val">${kClients}</div><div class="kpi-lbl">Sites</div></div><div class="kpi-card c-red${f==='orphan_immat'?' active':''}" data-cf="orphan_immat" style="${kOrphan>0?'outline:2px solid var(--red);outline-offset:1px;':''}"><div class="kpi-val">${kOrphan}</div><div class="kpi-lbl">Sans fiche</div></div><div class="kpi-card"><div class="kpi-val">${kParc}</div><div class="kpi-lbl">Parc total</div></div><div class="kpi-card c-daf${(f==='daf_renew_kpi'||f==='daf_renew')?' active':''}" data-cf="daf_renew_kpi"><div class="kpi-val">${kDafRenew}</div><div class="kpi-lbl">DAF renouv.</div></div><div class="kpi-card c-blue${(f==='hors_renew_kpi'||f==='conc_renew')?' active':''}" data-cf="hors_renew_kpi"><div class="kpi-val">${kHorsRenew}</div><div class="kpi-lbl">Conc. renouv.</div></div><div class="kpi-card c-red${f==='no_daf'?' active':''}" data-cf="no_daf"><div class="kpi-val">${kSansDaf}</div><div class="kpi-lbl">Sans DAF</div></div><div class="kpi-card c-red${f==='urgent'?' active':''}" data-cf="urgent"><div class="kpi-val">${kUrgent}</div><div class="kpi-lbl">Urgents</div></div>`;
   QA('#tours-counters [data-cf]').forEach(function(card){card.style.cursor='pointer';card.onclick=function(){var nf=card.dataset.cf;toursF=(nf==='all'||toursF===nf)?'all':nf;try{window.toursF=toursF;}catch(e){}renderTours();};});
   QA('#tours-fpills .fpill').forEach(function(p){p.classList.toggle('active',p.dataset.f===f||(f==='all'&&p.dataset.f==='all'));});
+  if(f==='orphan_immat'){
+    var listElOr=$('tours-list');
+    if(listElOr){listElOr.innerHTML=_renderOrphanVehiclesList(search);_bindOrphanListEvents();}
+    return;
+  }
   const toursSortSel=$('tours-sort-sel'); const toursSort=toursSortSel?toursSortSel.value:'score';
   if(!shown.length){
     var sub=data.length>0?'Tous les sites sont masqués par les filtres actifs (Exclus, Inactifs, Projets, Sites sec., Accessible OFF…). Désactivez les masques concernés.':'Importez des données ou modifiez les filtres';
     $('tours-list').innerHTML=`<div class="empty-state"><div class="empty-icon">🗺</div><div class="empty-title">Aucun site</div><div class="empty-sub">${sub}</div></div>`;
     return;
   }
-  if(search){
-    if(!window._toursExpBeforeSearch)window._toursExpBeforeSearch=Object.assign({},toursExp);
-  }else if(window._toursExpBeforeSearch){
-    toursExp=window._toursExpBeforeSearch;
-    window._toursExpBeforeSearch=null;
-  }
-  const byCV={};
-  shown.forEach(function(c){const canton=c.canton||'Sans canton',ville=c.ville||'Sans ville';if(!byCV[canton])byCV[canton]={};if(!byCV[canton][ville])byCV[canton][ville]=[];byCV[canton][ville].push(c);});
-  var cantonKeys=Object.keys(byCV).sort();
-  if(!search){
-    var anyOpen=cantonKeys.some(function(c){return toursExp['c_'+c]===true;});
-    if(!anyOpen&&cantonKeys.length){
-      var firstC=cantonKeys[0];
-      toursExp['c_'+firstC]=true;
-      var firstVilles=Object.keys(byCV[firstC]).sort();
-      if(firstVilles.length)toursExp['v_'+firstC+'_'+firstVilles[0]]=true;
+  var listEl=$('tours-list');
+  if(listEl)listEl.innerHTML='<div class="card" style="padding:12px;text-align:center;font-size:11px;color:var(--text3);">Construction de la liste…</div>';
+  setTimeout(function(){
+    if(gen!==window._toursRenderGen||currentScreen!=='tours')return;
+    try{
+      var html=_renderToursListHtml(shown,search,toursSort);
+      if(gen!==window._toursRenderGen||currentScreen!=='tours')return;
+      if(listEl)listEl.innerHTML=html;
+      _bindToursListEvents();
+    }catch(err2){
+      console.error('renderTours list',err2);
+      if(listEl)listEl.innerHTML='<div class="card" style="padding:12px;font-size:11px;color:var(--orange);">Erreur liste Tournées — '+escH(err2.message||String(err2))+'</div>';
     }
-  }
-  let html='';
-  cantonKeys.forEach(function(canton){
-    const ck='c_'+canton,isOpen=toursExp[ck]===true,villes=byCV[canton];
-    let cTotal=0,cDaf=0,cDafR=0,cHorsR=0;Object.values(villes).forEach(cls=>cls.forEach(c=>{cTotal++;if(c.dafCount>0)cDaf++;cDafR+=c.dafRenew;cHorsR+=c.horsRenew;}));
-    html+=`<div class="sec-hdr ${isOpen?'sec-open':''}" data-ck="${escH(ck)}"><div><div class="sec-hdr-title">📍 ${escH(canton)}</div><div style="font-size:9px;color:var(--text3);margin-top:1px;">${cTotal} sites affichés · DAF:${cDaf} · R.DAF:${cDafR} · R.Conc:${cHorsR}</div></div><div style="display:flex;align-items:center;gap:6px;"><span style="font-size:10px;color:var(--text3);">${cTotal}</span><span class="sec-chevron">▶</span></div></div>`;
-    if(isOpen){Object.keys(villes).sort().forEach(function(ville){const vk='v_'+canton+'_'+ville,isVOpen=toursExp[vk]===true,cls=villes[ville];html+=`<div class="subsec-hdr ${isVOpen?'sec-open':''}" data-ck="${escH(vk)}"><div><div style="font-size:11px;font-weight:600;color:var(--text2);">🏙 ${escH(ville)}</div></div><div style="display:flex;align-items:center;gap:5px;"><span style="font-size:10px;color:var(--text3);">${cls.length}</span><span class="sec-chevron" style="font-size:9px;">▶</span></div></div>`;if(isVOpen){var sortedCls=cls.slice();if(toursSort==='parc_desc')sortedCls.sort((a,b)=>b.parc-a.parc);else if(toursSort==='parc_asc')sortedCls.sort((a,b)=>a.parc-b.parc);else if(toursSort==='nom_asc')sortedCls.sort((a,b)=>(a.nom||'').localeCompare(b.nom||''));else if(toursSort==='renew_desc')sortedCls.sort((a,b)=>(b.dafRenew+b.horsRenew)-(a.dafRenew+a.horsRenew));else sortedCls.sort((a,b)=>b.score-a.score);sortedCls.forEach(c=>{html+=renderClientRow(c);});}});}
-  });
-  $('tours-list').innerHTML=html;
-  QA('#tours-list .sec-hdr[data-ck],#tours-list .subsec-hdr[data-ck]').forEach(function(el){el.onclick=function(){const k=el.dataset.ck;toursExp[k]=!el.classList.contains('sec-open');renderTours();};});
-  QA('#tours-list .client-row[data-sk]').forEach(function(el){el.onclick=function(){openSiteSheet(el.dataset.sk);};});
+  },0);
   }catch(err){
     console.error('renderTours',err);
     var tl=$('tours-list');
@@ -3112,9 +3194,14 @@ function openGroupSheet(gid){
 
 
 // ===== PHASE 5 FINAL — QUALITÉ / IMPORT FILTRÉ / SAUVEGARDE / MODE D'EMPLOI =====
-(function(){try{var css=document.createElement('style');css.textContent=`
-  .quality-section .diag-row{align-items:flex-start}.q-list{display:none;margin-top:6px;padding:6px;background:var(--bg3);border-radius:8px;max-height:220px;overflow:auto}.q-list.open{display:block}.q-item{font-size:10px;color:var(--text2);padding:3px 0;border-bottom:1px solid var(--border)}.v-info{overflow-wrap:anywhere;word-break:break-word}.v-detail{line-height:1.35;white-space:normal}.v-client-name{font-size:10px;color:var(--text2);font-weight:700;margin-bottom:1px;white-space:normal;overflow-wrap:anywhere}
-`;document.head.appendChild(css);}catch(e){}})();
+(function(){try{var css=document.createElement('style');  css.textContent=`
+      .quality-section .diag-row{align-items:flex-start}.q-list{display:none;margin-top:6px;padding:6px;background:var(--bg3);border-radius:8px;max-height:220px;overflow:auto}.q-list.open{display:block}.q-item{font-size:10px;color:var(--text2);padding:3px 0;border-bottom:1px solid var(--border)}.v-info{overflow-wrap:anywhere;word-break:break-word}.v-detail{line-height:1.35;white-space:normal}.v-client-name{font-size:10px;color:var(--text2);font-weight:700;margin-bottom:1px;white-space:normal;overflow-wrap:anywhere}
+      .quality-collapse-hdr.quality-collapse-open .quality-collapse-chevron{display:inline-block;transform:rotate(90deg)}
+      .fpill-alert{border:1px solid var(--red)!important;color:var(--red)!important;font-weight:700}
+      .fpill-alert.active{background:var(--red)!important;color:#fff!important;border-color:var(--red)!important}
+      .tours-orphan-banner{margin:6px 12px;padding:10px 12px;border:2px solid var(--red);border-radius:var(--radius);background:rgba(204,51,51,.08)}
+      .tours-orphan-row{padding:8px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--text2)}
+    `;document.head.appendChild(css);}catch(e){}})();
 
 
 // ===== DIAGNOSTIC COLONNES IMPORT =====
@@ -3297,7 +3384,7 @@ function renderModeEmploi(){
   <p><strong>Site principal</strong> : seul site du groupe qui porte les KPI consolidés dans TOURNÉES. Les sites secondaires restent consultables mais ne doublonnent pas les KPI.</p>
   <p><strong>Masquer sites secondaires</strong> : bouton visuel. ON = secondaires cachés ; OFF = secondaires visibles. Les KPI restent portés par les sites principaux.</p>
   <p><strong>Exclu</strong> : EXCLU_MANU=OUI ou ACCESSIBLE=0. Le bouton Masquer exclus les retire de TOURNÉES.</p>
-  <p><strong>Inactif</strong> : site sans véhicule possédé récent et sans véhicule renouvelable. Le bouton Masquer inactifs les retire de TOURNÉES.</p>
+  <p><strong>Inactif</strong> : site sans achat (immatriculation) sur les ${INACTIVE_PURCHASE_YEARS} dernières années calendaires, année courante incluse. Le bouton Masquer inactifs les retire de TOURNÉES.</p>
   <p><strong>Renouvellement</strong> : tracteur 4 à 6 ans inclus ; porteur 5 à 7 ans inclus ; même règle DAF et concurrence.</p>
   <p><strong>Possédé OUI/NON</strong> : NON conserve l'historique mais ne compte plus dans les renouvellements, scores et activité commerciale.</p>
   <hr style="border-color:var(--border);margin:10px 0;">
@@ -3472,6 +3559,17 @@ function _siteKeyFromVehicle(v){
 }
 function _openSiteFromClient(c){ if(!c)return; var sk=makeSiteKey(c); if(sk)openSiteSheet(sk); }
 function _openSiteFromVehicle(v){ var sk=_siteKeyFromVehicle(v); if(sk)openSiteSheet(sk); else toast('Aucune fiche site rattachée'); }
+function vehicleHasClientFile(v){
+  if(!v)return false;
+  var sr=normSiret(v.siret);
+  if(sr&&IDX.cBySiret&&IDX.cBySiret[sr])return true;
+  var tva=String(v.tva||'').trim();
+  if(tva&&IDX.cByTva&&IDX.cByTva[tva])return true;
+  return false;
+}
+function getOrphanVehicles(){
+  return (DB.getVehicles()||[]).filter(function(v){return !vehicleHasClientFile(v);});
+}
 
 function _qualitySiteItem(c){
   var sk=makeSiteKey(c);
@@ -3491,6 +3589,16 @@ function _splitBlock(title, yesTitle, yesItems, noTitle, noItems, mapper){
 }
 function _bindQualityInteractions(){
   QA('.q-toggle').forEach(function(b){b.onclick=function(){var el=$(this.dataset.qid);if(el)el.classList.toggle('open');this.textContent=(el&&el.classList.contains('open'))?'Masquer':'Voir';};});
+  QA('.quality-collapse-hdr[data-qcollapse]').forEach(function(hdr){
+    hdr.onclick=function(e){
+      if(e.target.closest('#btn-create-group'))return;
+      var body=$(hdr.dataset.qcollapse);
+      if(!body)return;
+      var open=body.style.display!=='none';
+      body.style.display=open?'none':'block';
+      hdr.classList.toggle('quality-collapse-open',!open);
+    };
+  });
   QA('.q-open-site').forEach(function(b){b.onclick=function(){openSiteSheet(this.dataset.sk);};});
   QA('.open-group').forEach(function(el){el.onclick=function(){openGroupSheet(this.dataset.gid);};});
   safeOn('btn-create-group','click',createManualGroup);
@@ -3599,7 +3707,7 @@ renderModeEmploi = function(){
   html+='<h3>Mode d’emploi complet — DAF_COMMERCE-Box</h3><div class="box warn"><p><strong>Objectif :</strong> cette application sert à piloter un secteur poids lourds : marché, tournées, projets, groupes, sites, qualité de données et sauvegardes. Les fiches affichées dans TOURNÉES sont des <strong>fiches Site</strong>. Les groupes servent à consolider plusieurs sites sous une même logique commerciale.</p></div>';
   html+='<h3>1. Définitions de base</h3><ul><li><strong>Site :</strong> fiche terrain d’un client, dépôt, agence ou établissement. C’est la ligne affichée dans TOURNÉES.</li><li><strong>Groupe :</strong> regroupement de plusieurs sites. Il peut être automatique quand plusieurs sites ont la même TVA, ou manuel quand tu relies plusieurs sociétés qui appartiennent au même ensemble commercial.</li><li><strong>Site principal :</strong> site visible en priorité dans TOURNÉES. Il porte les KPI consolidés du groupe.</li><li><strong>Site secondaire :</strong> site rattaché au groupe, consultable, mais informatif pour les KPI afin d’éviter les doublons.</li><li><strong>KPI :</strong> indicateur chiffré. Exemple : parc total, DAF à renouveler, concurrence à renouveler.</li><li><strong>Badge :</strong> étiquette visuelle indiquant une caractéristique : DAF, Flotte, Urgent, Exclu, Inactif, Groupe, Site principal.</li></ul>';
   html+='<h3>2. Page MARCHÉ</h3><div class="box"><p><strong>Rôle :</strong> analyser le marché global à partir des immatriculations.</p><ul><li><strong>Parc total :</strong> nombre de véhicules retenus dans le périmètre marché.</li><li><strong>DAF :</strong> véhicules dont la marque est reconnue DAF.</li><li><strong>DAF à renouveler :</strong> DAF possédés et dans la fenêtre de renouvellement.</li><li><strong>Hors DAF à renouveler :</strong> véhicules concurrents possédés et renouvelables.</li><li><strong>Hors Flotte NAT. :</strong> activé = les profils Flotte Nationale sont retirés de l’analyse.</li><li><strong>Graphique Marque × Année :</strong> permet de voir les immatriculations par marque et par année. En cliquant une cellule, tu obtiens la liste des véhicules et tu peux ouvrir la fiche client/site rattachée.</li></ul></div>';
-  html+='<h3>3. Page TOURNÉES</h3><div class="box"><p><strong>Rôle :</strong> préparer l’action terrain. La page affiche les fiches Site, classées par Canton puis Ville.</p><ul><li><strong>Tout fermé par défaut :</strong> seuls les cantons apparaissent.</li><li><strong>Clic canton :</strong> affiche les villes.</li><li><strong>Clic ville :</strong> affiche les sites.</li><li><strong>Tout ouvrir :</strong> déplie cantons, villes et sites.</li><li><strong>Tout fermer :</strong> replie toute la liste.</li><li><strong>Tous :</strong> revient à la cible générale sans modifier les exclusions ON/OFF.</li><li><strong>Avec DAF :</strong> affiche les sites possédant au moins un DAF actif.</li><li><strong>Sans DAF :</strong> affiche les sites sans DAF actif.</li><li><strong>Urgents :</strong> affiche les sites avec badge URGENT.</li><li><strong>Flotte :</strong> affiche uniquement les profils contenant Flotte.</li><li><strong>Masquer exclus :</strong> retire EXCLU_MANU=OUI et ACCESSIBLE=0.</li><li><strong>Masquer inactifs :</strong> retire les clients sans activité commerciale exploitable.</li><li><strong>Masquer clients avec projet :</strong> retire les sites avec projet ou sans projet renseigné pour l’année.</li><li><strong>Masquer sites secondaires :</strong> ON par défaut. Cache les sites secondaires. Les KPI restent portés par le site principal.</li></ul></div>';
+  html+='<h3>3. Page TOURNÉES</h3><div class="box"><p><strong>Rôle :</strong> préparer l’action terrain. La page affiche les fiches Site, classées par Canton puis Ville.</p><ul><li><strong>Tout fermé par défaut :</strong> seuls les cantons apparaissent.</li><li><strong>Clic canton :</strong> affiche les villes.</li><li><strong>Clic ville :</strong> affiche les sites.</li><li><strong>Tout ouvrir :</strong> déplie cantons, villes et sites.</li><li><strong>Tout fermer :</strong> replie toute la liste.</li><li><strong>Tous :</strong> revient à la cible générale sans modifier les exclusions ON/OFF.</li><li><strong>Avec DAF :</strong> affiche les sites possédant au moins un DAF actif.</li><li><strong>Sans DAF :</strong> affiche les sites sans DAF actif.</li><li><strong>Urgents :</strong> affiche les sites avec badge URGENT.</li><li><strong>Flotte :</strong> affiche uniquement les profils contenant Flotte.</li><li><strong>Masquer exclus :</strong> retire EXCLU_MANU=OUI et ACCESSIBLE=0.</li><li><strong>Masquer inactifs :</strong> retire les clients sans achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années.</li><li><strong>Masquer clients avec projet :</strong> retire les sites avec projet ou sans projet renseigné pour l’année.</li><li><strong>Masquer sites secondaires :</strong> ON par défaut. Cache les sites secondaires. Les KPI restent portés par le site principal.</li></ul></div>';
   html+='<h3>4. Règles de renouvellement</h3><ul><li><strong>Tracteur :</strong> renouvelable de 4 à 6 ans inclus.</li><li><strong>Porteur :</strong> renouvelable de 5 à 7 ans inclus.</li><li><strong>DAF et concurrence :</strong> même règle.</li><li><strong>Véhicule trop vieux :</strong> sort de la cible renouvellement.</li><li><strong>Véhicule NON possédé :</strong> reste historique mais ne compte plus dans renouvellement, score ou activité.</li></ul>';
   html+='<h3>5. Fiche Site</h3><div class="box"><p><strong>Rôle :</strong> fiche terrain rapide.</p><ul><li>Affiche nom, ville, adresse, TVA, SIRET, profil commercial, pays, département, vendeur, groupement, état prospection.</li><li><strong>Boutons rapides :</strong> Copier adresse, Copier SIRET, Waze, Voir groupe.</li><li><strong>Contacts :</strong> nom, prénom, téléphone, mail, poste. Informatif uniquement.</li><li><strong>État prospection :</strong> liste déroulante : À prospecter, Prospecté, Ne pas prospecter. Cette valeur est sauvegardée et résistante à l’import.</li><li><strong>Parc véhicules :</strong> replié par défaut pour garder la fiche rapide.</li><li><strong>Projet détecté / Pas de projet :</strong> alimente la page PROJETS et le masquage dans TOURNÉES.</li></ul></div>';
   html+='<h3>6. Fiche Groupe</h3><ul><li><strong>Créer groupe :</strong> depuis QUALITÉ, bouton + Créer groupe.</li><li><strong>Ajouter site :</strong> recherche par nom, ville, TVA ou SIRET, puis Ajouter au groupe.</li><li><strong>Site principal :</strong> un seul site principal possible. Il porte les KPI consolidés du groupe.</li><li><strong>Site secondaire :</strong> consultable, mais ne double pas les KPI.</li><li><strong>Décisionnaire :</strong> informatif uniquement. N’influence aucun KPI, score ou filtre.</li><li><strong>Supprimer groupe :</strong> retire les badges GROUPE / Site principal / Site secondaire des fiches concernées.</li></ul>';
@@ -3716,10 +3824,10 @@ renderModeEmploi = function(){
     html+='<div style="padding:12px;"><h3 style="margin-bottom:8px;">Mode d’emploi complet — DAF_COMMERCE-Box</h3><div style="font-size:11px;color:var(--text3);line-height:1.55;margin-bottom:10px;">Ce guide explique chaque page, bouton, KPI, badge, règle métier et son impact dans l’application.</div>';
     sec('1. Définitions essentielles', '<p><strong>Site</strong> : fiche terrain d’un client, dépôt ou établissement. C’est la ligne affichée dans TOURNÉES.</p><p><strong>Groupe</strong> : regroupement de plusieurs sites. Il peut être automatique si plusieurs sites ont la même TVA, ou manuel si tu relies plusieurs sites qui appartiennent au même ensemble commercial.</p><p><strong>Site principal</strong> : site qui porte le potentiel consolidé du groupe. Un seul site principal par groupe.</p><p><strong>Site secondaire</strong> : site rattaché au groupe, visible si besoin, mais qui ne compte pas directement dans les KPI pour éviter les doublons.</p><p><strong>KPI</strong> : indicateur chiffré. Exemple : parc total, DAF à renouveler, concurrence à renouveler.</p><p><strong>Badge</strong> : étiquette visuelle qui signale une situation : DAF, Flotte, Urgent, Groupe, Site secondaire, etc.</p>');
     sec('2. Page MARCHÉ — rôle et KPI', '<p><strong>Rôle :</strong> analyser le marché global des immatriculations.</p><p><strong>Parc total :</strong> nombre de véhicules visibles selon les règles Marché.</p><p><strong>DAF :</strong> véhicules dont la marque est reconnue DAF.</p><p><strong>PDM DAF :</strong> DAF / parc total.</p><p><strong>DAF à renouveler :</strong> véhicules DAF renouvelables selon âge et type.</p><p><strong>Hors DAF à renouveler :</strong> véhicules concurrents renouvelables.</p><p><strong>Hors Flotte NAT. ON :</strong> exclut du marché les profils strictement Flotte Nationale. OFF : les conserve.</p><p><strong>Graphiques Marque × Année :</strong> affichent désormais toutes les marques détectées. NB IMMAT = volume par marque et année. % PDM = part de chaque marque dans le total annuel.</p><p><strong>Cellules cliquables NB IMMAT :</strong> ouvrent la liste des véhicules correspondants avec accès fiche.</p>');
-    sec('3. Page TOURNÉES — rôle et boutons', '<p><strong>Rôle :</strong> organiser le travail terrain. La page affiche des fiches Site, jamais des fiches Groupe.</p><p><strong>Avec DAF :</strong> affiche les sites possédant au moins un DAF actif.</p><p><strong>Sans DAF :</strong> affiche les sites sans DAF actif.</p><p><strong>Urgents :</strong> affiche les sites marqués urgents. Le badge urgent n’influence pas le score.</p><p><strong>Flotte :</strong> affiche uniquement les profils commerciaux contenant le mot Flotte.</p><p><strong>Hors Flotte NAT. :</strong> si ON, exclut les profils Flotte Nationale, même avec le filtre Flotte.</p><p><strong>Masquer exclus :</strong> retire EXCLU_MANU = OUI et ACCESSIBLE = 0.</p><p><strong>Masquer inactifs :</strong> retire les clients sans véhicule possédé récent ou renouvelable.</p><p><strong>Masquer clients avec projet :</strong> retire les sites ayant projet actif/futur ou statut Sans projet sur l’année.</p><p><strong>Masquer sites secondaires :</strong> visuel uniquement. ON masque les sites secondaires. Les KPI ne changent pas car les secondaires sont déjà consolidés dans le site principal.</p><p><strong>Ouvrir :</strong> déplie cantons, villes et clients. <strong>Fermer :</strong> replie tout. <strong>TOUS :</strong> revient à la cible générale sans désactiver les exclusions.</p>');
+    sec('3. Page TOURNÉES — rôle et boutons', '<p><strong>Rôle :</strong> organiser le travail terrain. La page affiche des fiches Site, jamais des fiches Groupe.</p><p><strong>Avec DAF :</strong> affiche les sites possédant au moins un DAF actif.</p><p><strong>Sans DAF :</strong> affiche les sites sans DAF actif.</p><p><strong>Urgents :</strong> affiche les sites marqués urgents. Le badge urgent n’influence pas le score.</p><p><strong>Flotte :</strong> affiche uniquement les profils commerciaux contenant le mot Flotte.</p><p><strong>Hors Flotte NAT. :</strong> si ON, exclut les profils Flotte Nationale, même avec le filtre Flotte.</p><p><strong>Masquer exclus :</strong> retire EXCLU_MANU = OUI et ACCESSIBLE = 0.</p><p><strong>Masquer inactifs :</strong> retire les clients sans achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années.</p><p><strong>Masquer clients avec projet :</strong> retire les sites ayant projet actif/futur ou statut Sans projet sur l’année.</p><p><strong>Masquer sites secondaires :</strong> visuel uniquement. ON masque les sites secondaires. Les KPI ne changent pas car les secondaires sont déjà consolidés dans le site principal.</p><p><strong>Ouvrir :</strong> déplie cantons, villes et clients. <strong>Fermer :</strong> replie tout. <strong>TOUS :</strong> revient à la cible générale sans désactiver les exclusions.</p>');
     sec('4. KPI TOURNÉES — formules et effet groupes', '<p><strong>Clients/Sites affichés :</strong> nombre de lignes Site visibles.</p><p><strong>Parc :</strong> somme des véhicules des sites seuls + véhicules consolidés dans les sites principaux de groupe.</p><p><strong>DAF à renouveler :</strong> somme des véhicules DAF renouvelables sur le périmètre actif.</p><p><strong>Concurrence à renouveler :</strong> somme des véhicules hors DAF renouvelables.</p><p><strong>Important :</strong> les sites secondaires ne comptent jamais directement dans les KPI. Leur parc remonte dans le site principal du groupe pour éviter tout doublon.</p>');
     sec('5. Règles renouvellement', '<p><strong>Tracteur :</strong> renouvelable de 4 à 5 ans inclus.</p><p><strong>Porteur :</strong> renouvelable de 5 à 6 ans inclus.</p><p><strong>Même poids :</strong> un DAF et un concurrent renouvelable ont la même importance.</p><p><strong>Véhicule trop vieux :</strong> au-delà de la fenêtre, il sort du renouvellement.</p><p><strong>Type à vérifier :</strong> châssis non reconnu comme tracteur/porteur — compté dans le parc Marché, fenêtre tracteur pour le renouvellement, liste détaillée dans ⚙️ Qualité.</p>');
-    sec('6. Badges — définition et critère', '<p><strong>DAF :</strong> au moins un DAF actif.</p><p><strong>DAF RENOUV. :</strong> au moins un DAF renouvelable.</p><p><strong>CONC. RENOUV. :</strong> au moins un véhicule concurrent renouvelable.</p><p><strong>URGENT :</strong> priorité manuelle/information terrain.</p><p><strong>FLOTTE RÉGIO. / COORD. / NAT. :</strong> selon profil commercial.</p><p><strong>EXCLU :</strong> EXCLU_MANU = OUI ou ACCESSIBLE = 0.</p><p><strong>INACTIF :</strong> aucun véhicule actif récent/renouvelable selon règles.</p><p><strong>GROUPE :</strong> site rattaché à un groupe.</p><p><strong>SITE PRINCIPAL / SECONDAIRE :</strong> statut dans le groupe. Influe uniquement sur l’affichage et la consolidation KPI.</p>');
+    sec('6. Badges — définition et critère', '<p><strong>DAF :</strong> au moins un DAF actif.</p><p><strong>DAF RENOUV. :</strong> au moins un DAF renouvelable.</p><p><strong>CONC. RENOUV. :</strong> au moins un véhicule concurrent renouvelable.</p><p><strong>URGENT :</strong> priorité manuelle/information terrain.</p><p><strong>FLOTTE RÉGIO. / COORD. / NAT. :</strong> selon profil commercial.</p><p><strong>EXCLU :</strong> EXCLU_MANU = OUI ou ACCESSIBLE = 0.</p><p><strong>INACTIF :</strong> aucun achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années.</p><p><strong>GROUPE :</strong> site rattaché à un groupe.</p><p><strong>SITE PRINCIPAL / SECONDAIRE :</strong> statut dans le groupe. Influe uniquement sur l’affichage et la consolidation KPI.</p>');
     sec('7. Fiche Site', '<p><strong>Contenu :</strong> nom, ville, adresse, TVA, SIRET, profil commercial, pays, département, vendeur, groupement, état prospection, contacts, projets, historique et véhicules.</p><p><strong>Boutons rapides :</strong> Copier adresse, Copier SIRET, Waze, Voir groupe.</p><p><strong>État Prospection :</strong> liste déroulante : À prospecter, Prospecté, Ne pas prospecter. Résistant à l’import.</p><p><strong>Contacts :</strong> nom, prénom, téléphone, mail, poste. Informatif uniquement.</p><p><strong>Parc véhicules :</strong> replié par défaut ; les véhicules NON possédés restent visibles mais ne comptent pas dans le potentiel terrain.</p><p><strong>Projet détecté / Pas de projet :</strong> alimente PROJETS et le bouton Masquer clients avec projet.</p>');
     sec('8. Fiche Groupe', '<p><strong>Rôle :</strong> fiche mère consolidée de plusieurs sites.</p><p><strong>Créer groupe :</strong> PLUS → Groupes → + Créer un groupe.</p><p><strong>Ajouter sites :</strong> bouton + Ajouter, recherche par nom/ville/TVA/SIRET, sélection possible de plusieurs sites.</p><p><strong>Site principal :</strong> un seul possible. Il porte le potentiel consolidé dans TOURNÉES.</p><p><strong>Site secondaire :</strong> reste consultable, peut être masqué, mais ne double pas les KPI.</p><p><strong>Décisionnaire :</strong> informatif uniquement, n’agit sur aucun KPI ni filtre.</p><p><strong>Supprimer groupe :</strong> retire les badges Groupe/Principal/Secondaire et les sites redeviennent indépendants.</p>');
     sec('9. Page PROJETS', '<p><strong>Rôle :</strong> suivre les affaires simples.</p><p><strong>Statuts :</strong> PROJET, FUTUR, GAGNÉ, PERDU, REPORTÉ, SANS PROJET.</p><p><strong>REPORTÉ :</strong> considéré comme potentiel futur.</p><p><strong>Champs projet :</strong> statut, nombre de véhicules, type, mois/année, commentaire.</p><p><strong>Export reporting projets :</strong> PLUS → Reporting projets → CSV.</p>');
@@ -5448,7 +5556,7 @@ document.addEventListener('DOMContentLoaded',function(){
       ['Flotte','Affiche uniquement les profils commerciaux contenant Flotte.','Cible clients flotte.','Comparer QUALITÉ > Flottes.'],
       ['Protocole','Affiche uniquement les sites ayant un Groupement renseigné. Badge PROTOCOLE.','Cible clients sous protocole/groupement.','Comparer QUALITÉ > Groupements.'],
       ['Masquer exclus','Masque EXCLU_MANU=OUI et ACCESSIBLE=0.','Nettoie la liste commerciale.','Comparer QUALITÉ > Clients exclus.'],
-      ['Masquer inactifs','Masque les sites sans véhicule possédé récent ou renouvelable.','Évite les clients morts.','Comparer QUALITÉ > Inactifs.'],
+      ['Masquer inactifs','Masque les sites sans achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années.','Évite les clients dormants.','Comparer QUALITÉ > Inactifs.'],
       ['Masquer clients avec projet','Masque les sites avec affaire/projet déjà renseigné ou sans projet annuel.','Évite de retravailler un client déjà qualifié.','Désactiver pour voir revenir les clients.'],
       ['Masquer sites secondaires','Masque visuellement les sites secondaires de groupes. Les KPI restent portés par le site principal.','Évite la pollution terrain sans perdre le potentiel groupe.','Ouvrir fiche Groupe pour voir principaux/secondaires.']
     ]));
@@ -7141,8 +7249,9 @@ document.addEventListener('DOMContentLoaded',function(){
   document.addEventListener('click',function(e){if(e.target && e.target.closest && e.target.closest('.mat-cell'))setTimeout(enhanceMatrixDetail,220);},true);
 
   function getToursFilter(){try{return window.toursF||toursF||'all';}catch(e){return 'all';}}
-  function setToursFilter(f){try{window.toursF=f;toursF=f;}catch(e){};try{renderTours();}catch(e){console.error(e);}}
-  window.renderTours=function(){try{return renderTours();}catch(e){console.error('CommerceBox renderTours error',e);}};
+  function setToursFilter(f){try{window.toursF=f;toursF=f;}catch(e){};try{if(typeof window.__renderToursCore==='function')window.__renderToursCore();else renderTours();}catch(e){console.error(e);}}
+  if(typeof renderTours==='function')window.__renderToursCore=renderTours;
+  window.renderTours=function(){try{return window.__renderToursCore?window.__renderToursCore():renderTours();}catch(e){console.error('CommerceBox renderTours error',e);}};
   function patchSiteSheet(sk){
     var c=null;try{c=IDX.cBySite[sk];}catch(e){} if(!c)return;
     var body=byId('sheet-body'); if(!body||byId('cb-accessible-card'))return;
