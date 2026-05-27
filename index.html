@@ -277,7 +277,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const YEAR = new Date().getFullYear();
+const APP_BUILD='2026-05-27-bases-v4';
 const PDM_GOAL = 15; // objectif 15%
 const BRAND_COLORS = {DAF:'#e8a020',VOLVO:'#4488CC',MERCEDES:'#888',SCANIA:'#CC3333',MAN:'#4a90d9',RENAULT:'#DDAA00',IVECO:'#E07830','MERCEDES-BENZ':'#888'};
 
@@ -1638,10 +1638,10 @@ function renderBasesCard(){
     +'<div class="card-title">&#128194; Gestion des bases</div>'
     +basesHtml
     +'<div style="display:flex;gap:6px;margin-top:9px;flex-wrap:wrap;">'
-    +'<button class="btn btn-secondary btn-sm" id="btn-new-base" style="flex:1;">+ Nouvelle</button>'
-    +'<button class="btn btn-ghost btn-sm" id="btn-rename-base" style="flex:1;">Renommer</button>'
-    +'<button class="btn btn-ghost btn-sm" id="btn-dup-base" style="flex:1;">Dupliquer</button>'
-    +'<button class="btn btn-red btn-sm" id="btn-del-base" style="flex:1;">Suppr.</button>'
+    +'<button type="button" class="btn btn-secondary btn-sm" id="btn-new-base" onclick="typeof dafBaseAction===\'function\'&&dafBaseAction(\'new\',event)" style="flex:1;">+ Nouvelle</button>'
+    +'<button type="button" class="btn btn-ghost btn-sm" id="btn-rename-base" onclick="typeof dafBaseAction===\'function\'&&dafBaseAction(\'rename\',event)" style="flex:1;">Renommer</button>'
+    +'<button type="button" class="btn btn-ghost btn-sm" id="btn-dup-base" onclick="typeof dafBaseAction===\'function\'&&dafBaseAction(\'dup\',event)" style="flex:1;">Dupliquer</button>'
+    +'<button type="button" class="btn btn-red btn-sm" id="btn-del-base" onclick="typeof dafBaseAction===\'function\'&&dafBaseAction(\'del\',event)" style="flex:1;">Suppr.</button>'
     +'</div></div>';
 }
 
@@ -1663,14 +1663,109 @@ function resetAllCommerceBoxData(){
   autoSave();
 }
 var _basesClickBound=false;
+function dafBaseAction(action,ev){
+  if(ev){ev.preventDefault();if(ev.stopPropagation)ev.stopPropagation();}
+  if(action==='new'){
+    openModal('Nouvelle base','<div class="form-group"><label class="form-label">Nom</label><input class="form-input" id="nb-name" placeholder="Ex: Secteur Est" maxlength="30"></div>',[
+      {label:'Annuler',cls:'btn-ghost'},
+      {label:'Créer',cls:'btn-primary',action:function(){
+        var name=(($('nb-name')||{}).value||'').trim();
+        if(!name){toast('Nom requis');return;}
+        var bases=DB.getBases();
+        var id='base'+Date.now();
+        bases[id]=name;
+        DB.saveBases(bases);
+        DB.setBase(id);
+        buildIndex();
+        toast('Base "'+name+'" créée');
+        renderMore();
+      }}
+    ]);
+    return;
+  }
+  if(action==='rename'){
+    var bases=DB.getBases(), id=DB.getBase();
+    openModal('Renommer','<div class="form-group"><label class="form-label">Nouveau nom</label><input class="form-input" id="rn-name" value="'+escH(bases[id]||'')+'" maxlength="30"></div>',[
+      {label:'Annuler',cls:'btn-ghost'},
+      {label:'Renommer',cls:'btn-primary',action:function(){
+        var name=(($('rn-name')||{}).value||'').trim();
+        if(!name){toast('Nom requis');return;}
+        bases[id]=name;DB.saveBases(bases);
+        toast('Base renommée');renderMore();
+      }}
+    ]);
+    return;
+  }
+  if(action==='dup'){
+    var bases=DB.getBases(), id=DB.getBase();
+    var name=(bases[id]||'Base')+' (copie)';
+    var newId='base'+Date.now();
+    bases[newId]=name;
+    DB.saveBases(bases);
+    _baseStorageKeys().forEach(function(k){
+      var val=localStorage.getItem('daf_pro_'+id+'_'+k);
+      if(val)localStorage.setItem('daf_pro_'+newId+'_'+k,val);
+    });
+    DB.setBase(newId);
+    buildIndex();
+    toast('Base dupliquée : '+name);
+    renderMore();
+    return;
+  }
+  if(action==='del'){
+    var bases=DB.getBases(), id=DB.getBase();
+    if(Object.keys(bases).length<=1){toast('Créez une autre base ou utilisez « Tout effacer »');return;}
+    openModal('⚠️ Supprimer la base','<p style="font-size:12px;color:var(--text2);">Supprimer définitivement <strong>'+escH(bases[id])+'</strong> et toutes ses données ?</p>',[
+      {label:'Annuler',cls:'btn-ghost'},
+      {label:'Supprimer',cls:'btn-red',action:function(){
+        _purgeBaseData(id);
+        delete bases[id];
+        DB.saveBases(bases);
+        DB.setBase(Object.keys(bases)[0]);
+        buildIndex();
+        toast('Base supprimée');
+        renderMore();
+      }}
+    ]);
+    return;
+  }
+  if(action==='clear'){
+    openModal('⚠️ Vider la base active','<p style="font-size:12px;color:var(--text2);">Effacer toutes les données de <strong>'+escH(DB.getBases()[DB.getBase()]||'Base')+'</strong> ? Les autres bases ne sont pas touchées.</p>',[
+      {label:'Annuler',cls:'btn-ghost'},
+      {label:'Vider',cls:'btn-red',action:function(){
+        _purgeBaseData(DB.getBase());
+        buildIndex();
+        autoSave();
+        toast('Base active vidée');
+        renderMore();
+        if(currentScreen==='marche')renderMarche();
+      }}
+    ]);
+    return;
+  }
+  if(action==='reset-all'){
+    openModal('⚠️ Tout effacer','<p style="font-size:12px;color:var(--text2);">Supprimer <strong>toutes les bases</strong> et repartir à zéro sur cet appareil ?</p>',[
+      {label:'Annuler',cls:'btn-ghost'},
+      {label:'Tout effacer',cls:'btn-red',action:function(){
+        resetAllCommerceBoxData();
+        toast('Toutes les données ont été effacées');
+        renderMore();
+        if(currentScreen==='marche')renderMarche();
+      }}
+    ]);
+  }
+}
+window.dafBaseAction=dafBaseAction;
 function bindBasesEvents(){
   if(_basesClickBound)return;
-  _basesClickBound=true;
   var root=$('screen-more');
   if(!root)return;
+  _basesClickBound=true;
   root.addEventListener('click',function(e){
-    if(!e.target.closest)return;
-    var baseItem=e.target.closest('.base-item[data-bid]');
+    var t=e.target;
+    if(t&&t.nodeType===3)t=t.parentElement;
+    if(!t||!t.closest)return;
+    var baseItem=t.closest('.base-item[data-bid]');
     if(baseItem){
       DB.setBase(baseItem.dataset.bid);
       buildIndex();
@@ -1678,99 +1773,73 @@ function bindBasesEvents(){
       renderMore();
       return;
     }
-    var btn=e.target.closest('button[id]');
+    var btn=t.closest('button[id]');
     if(!btn)return;
-    if(btn.id==='btn-new-base'){
-      openModal('Nouvelle base','<div class="form-group"><label class="form-label">Nom</label><input class="form-input" id="nb-name" placeholder="Ex: Secteur Est" maxlength="30"></div>',[
-        {label:'Annuler',cls:'btn-ghost'},
-        {label:'Créer',cls:'btn-primary',action:function(){
-          var name=(($('nb-name')||{}).value||'').trim();
-          if(!name){toast('Nom requis');return;}
-          var bases=DB.getBases();
-          var id='base'+Date.now();
-          bases[id]=name;
-          DB.saveBases(bases);
-          DB.setBase(id);
-          buildIndex();
-          toast('Base "'+name+'" créée');
-          renderMore();
-        }}
-      ]);
-      return;
-    }
-    if(btn.id==='btn-rename-base'){
-      var bases=DB.getBases(), id=DB.getBase();
-      openModal('Renommer','<div class="form-group"><label class="form-label">Nouveau nom</label><input class="form-input" id="rn-name" value="'+escH(bases[id]||'')+'" maxlength="30"></div>',[
-        {label:'Annuler',cls:'btn-ghost'},
-        {label:'Renommer',cls:'btn-primary',action:function(){
-          var name=(($('rn-name')||{}).value||'').trim();
-          if(!name){toast('Nom requis');return;}
-          bases[id]=name;DB.saveBases(bases);
-          toast('Base renommée');renderMore();
-        }}
-      ]);
-      return;
-    }
-    if(btn.id==='btn-dup-base'){
-      var bases=DB.getBases(), id=DB.getBase();
-      var name=(bases[id]||'Base')+' (copie)';
-      var newId='base'+Date.now();
-      bases[newId]=name;
-      DB.saveBases(bases);
-      _baseStorageKeys().forEach(function(k){
-        var val=localStorage.getItem('daf_pro_'+id+'_'+k);
-        if(val)localStorage.setItem('daf_pro_'+newId+'_'+k,val);
-      });
-      DB.setBase(newId);
-      buildIndex();
-      toast('Base dupliquée : '+name);
-      renderMore();
-      return;
-    }
-    if(btn.id==='btn-del-base'){
-      var bases=DB.getBases(), id=DB.getBase();
-      if(Object.keys(bases).length<=1){toast('Créez une autre base ou utilisez « Tout effacer »');return;}
-      openModal('⚠️ Supprimer la base','<p style="font-size:12px;color:var(--text2);">Supprimer définitivement <strong>'+escH(bases[id])+'</strong> et toutes ses données ?</p>',[
-        {label:'Annuler',cls:'btn-ghost'},
-        {label:'Supprimer',cls:'btn-red',action:function(){
-          _purgeBaseData(id);
-          delete bases[id];
-          DB.saveBases(bases);
-          DB.setBase(Object.keys(bases)[0]);
-          buildIndex();
-          toast('Base supprimée');
-          renderMore();
-        }}
-      ]);
-      return;
-    }
-    if(btn.id==='btn-clear'){
-      openModal('⚠️ Vider la base active','<p style="font-size:12px;color:var(--text2);">Effacer toutes les données de <strong>'+escH(DB.getBases()[DB.getBase()]||'Base')+'</strong> ? Les autres bases ne sont pas touchées.</p>',[
-        {label:'Annuler',cls:'btn-ghost'},
-        {label:'Vider',cls:'btn-red',action:function(){
-          _purgeBaseData(DB.getBase());
-          buildIndex();
-          autoSave();
-          toast('Base active vidée');
-          renderMore();
-          if(currentScreen==='marche')renderMarche();
-        }}
-      ]);
-      return;
-    }
-    if(btn.id==='btn-reset-all-data'){
-      openModal('⚠️ Tout effacer','<p style="font-size:12px;color:var(--text2);">Supprimer <strong>toutes les bases</strong> et repartir à zéro sur cet appareil ?</p>',[
-        {label:'Annuler',cls:'btn-ghost'},
-        {label:'Tout effacer',cls:'btn-red',action:function(){
-          resetAllCommerceBoxData();
-          toast('Toutes les données ont été effacées');
-          renderMore();
-          if(currentScreen==='marche')renderMarche();
-        }}
-      ]);
-    }
-  });
+    if(btn.id==='btn-new-base'){dafBaseAction('new',e);return;}
+    if(btn.id==='btn-rename-base'){dafBaseAction('rename',e);return;}
+    if(btn.id==='btn-dup-base'){dafBaseAction('dup',e);return;}
+    if(btn.id==='btn-del-base'){dafBaseAction('del',e);return;}
+    if(btn.id==='btn-clear'){dafBaseAction('clear',e);return;}
+    if(btn.id==='btn-reset-all-data'){dafBaseAction('reset-all',e);}
+  },true);
 }
+function dafEmergencyResetFromUrl(){
+  var q=location.search||'', h=location.hash||'';
+  if(q.indexOf('reset=1')<0&&h!=='#reset-all')return false;
+  try{resetAllCommerceBoxData();}catch(e){Object.keys(localStorage).forEach(function(k){if(k.indexOf('daf_pro_')===0)localStorage.removeItem(k);});}
+  try{history.replaceState({},'',location.pathname+location.search.replace(/[?&]reset=1/g,'').replace(/^\?&/,'?').replace(/\?$/,''));}catch(e2){}
+  try{toast('Données effacées — '+APP_BUILD);}catch(e3){}
+  return true;
+}
+function dafForceAppUpdate(cb){
+  var done=function(){
+    try{localStorage.setItem('daf_app_build',APP_BUILD);}catch(e){}
+    if(typeof cb==='function')cb();
+  };
+  var p=Promise.resolve();
+  if('serviceWorker' in navigator){
+    p=p.then(function(){return navigator.serviceWorker.getRegistrations();}).then(function(regs){
+      return Promise.all((regs||[]).map(function(r){return r.unregister();}));
+    });
+  }
+  if('caches' in window){
+    p=p.then(function(){return caches.keys();}).then(function(keys){
+      return Promise.all((keys||[]).map(function(k){return caches.delete(k);}));
+    });
+  }
+  p.then(done).catch(done);
+}
+function dafForceAppUpdateIfNeeded(){
+  try{
+    var urlV=(location.search.match(/[?&]v=([^&]+)/)||[])[1]||'';
+    var stored=localStorage.getItem('daf_app_build')||'';
+    if(urlV===APP_BUILD&&stored===APP_BUILD)return false;
+    if(sessionStorage.getItem('daf_reload_'+APP_BUILD)==='1'&&urlV===APP_BUILD){
+      localStorage.setItem('daf_app_build',APP_BUILD);
+      return false;
+    }
+    sessionStorage.setItem('daf_reload_'+APP_BUILD,'1');
+    dafForceAppUpdate(function(){
+      var q='?v='+encodeURIComponent(APP_BUILD);
+      if((location.search||'').indexOf('reset=1')>=0)q+='&reset=1';
+      location.replace(location.pathname+q+location.hash);
+    });
+    return true;
+  }catch(e){return false;}
+}
+function dafManualForceUpdate(){
+  openModal('Forcer la mise à jour','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Efface le cache PWA de cette application puis recharge la dernière version depuis GitHub.<br><br>Build actuel affiché : <strong>'+escH(APP_BUILD)+'</strong></p>',[
+    {label:'Annuler',cls:'btn-ghost'},
+    {label:'Mettre à jour maintenant',cls:'btn-primary',action:function(){
+      try{sessionStorage.removeItem('daf_reload_'+APP_BUILD);}catch(e){}
+      dafForceAppUpdate(function(){
+        var q='?v='+encodeURIComponent(APP_BUILD);
+        location.replace(location.pathname+q);
+      });
+    }}
+  ]);
+}
+window.dafManualForceUpdate=dafManualForceUpdate;
 
 function renderDiag(cs,vs,ccols,vcols){
   const diag=$('import-diag');if(!diag)return;
@@ -2359,8 +2428,9 @@ function bindEvents(){
   scheduleAutoBackup();
   // Enregistrement du service worker pour le mode hors-ligne (PWA).
   if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./service-worker.js').then(function(reg){
+    navigator.serviceWorker.register('./service-worker.js?v='+encodeURIComponent(APP_BUILD)).then(function(reg){
       console.log('[DAF-CommerceBox] Service Worker enregistré :', reg.scope);
+      reg.update();
     }).catch(function(err){
       console.warn('[DAF-CommerceBox] Service Worker échec :', err);
     });
@@ -3080,7 +3150,9 @@ function renderMore(){
   html+=`<div class="card"><div class="card-title">💾 Sauvegarde iCloud</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Enregistrez le fichier JSON dans iCloud Drive pour sécuriser groupes, projets, contacts, réglages et données manuelles.</div></div>`;
   html+=`<div class="card"><div class="card-title">🔍 Qualité</div><button class="btn btn-secondary" id="btn-open-qualite" style="width:100%;">Ouvrir Qualité complète</button></div>`;
   html+=`<div class="card"><div class="card-title">📖 Mode d'emploi</div><button class="btn btn-secondary" id="btn-mode-emploi" style="width:100%;">Ouvrir le mode d'emploi complet</button></div>`;
-  html+=`<div class="card"><div class="card-title">⚠️ Données locales</div><button class="btn btn-secondary" id="btn-clear" style="width:100%;margin-bottom:6px;">Vider la base active</button><button class="btn btn-red" id="btn-reset-all-data" style="width:100%;">Tout effacer — repartir à zéro</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Efface les données sur cet appareil uniquement. Exportez d'abord un JSON si besoin.</div></div>`;
+  html+=`<div class="card"><div class="card-title">🔄 Mise à jour app</div><button type="button" class="btn btn-primary" id="btn-force-update" onclick="typeof dafManualForceUpdate==='function'&&dafManualForceUpdate()" style="width:100%;margin-bottom:6px;">Forcer la mise à jour</button><div style="font-size:10px;color:var(--text3);line-height:1.4;">Si le Build en bas de page n'est pas <strong>${APP_BUILD}</strong>, appuyez ici. Sinon ajoutez <strong>?v=${APP_BUILD}</strong> à l'URL dans Safari.</div></div>`;
+  html+=`<div class="card"><div class="card-title">⚠️ Données locales</div><button type="button" class="btn btn-secondary" id="btn-clear" onclick="typeof dafBaseAction==='function'&&dafBaseAction('clear',event)" style="width:100%;margin-bottom:6px;">Vider la base active</button><button type="button" class="btn btn-red" id="btn-reset-all-data" onclick="typeof dafBaseAction==='function'&&dafBaseAction('reset-all',event)" style="width:100%;">Tout effacer — repartir à zéro</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Efface les données sur cet appareil uniquement. Exportez d'abord un JSON si besoin.<br>Urgence : ajoutez <strong>?reset=1</strong> à l'URL pour tout effacer au chargement.</div></div>`;
+  html+=`<div style="font-size:9px;color:var(--text3);text-align:center;padding:6px 0 10px;">Build ${APP_BUILD}</div>`;
   $('more-content').innerHTML=html;bindImportEvents();bindBasesEvents();
   safeOn('btn-open-qualite','click',function(){try{renderQualite();}catch(e){toast('Erreur ouverture Qualité');console.error(e);}});safeOn('btn-mode-emploi','click',function(){try{renderModeEmploi();}catch(e){toast('Erreur mode d’emploi');console.error(e);}});safeOn('btn-export-json','click',exportBackupJSONDirect);safeOn('btn-restore-json','click',function(){var f=$('file-restore');if(f)f.click();});safeOn('file-restore','change',function(e){var f=e.target.files[0];if(f)restoreJSON(f);});
 }
@@ -3724,6 +3796,7 @@ renderModeEmploi = function(){
 function checkXLSX(){return typeof XLSX!=='undefined';}
 
 function init(){
+  if(dafEmergencyResetFromUrl()){}
   buildIndex();
   bindBasesEvents();
   bindEvents();
@@ -3742,6 +3815,7 @@ function init(){
 }
 
 document.addEventListener('DOMContentLoaded',function(){
+  if(dafForceAppUpdateIfNeeded())return;
   try{init();}
   catch(e){
     var b=document.body||document.documentElement;
