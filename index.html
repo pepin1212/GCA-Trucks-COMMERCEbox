@@ -29,6 +29,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .card-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin-bottom:8px}
 .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:0 12px 9px}
 .kpi-grid-3{grid-template-columns:1fr 1fr 1fr}
+.marche-kpi-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 12px 9px}
+.marche-kpi-side-lbl{font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+.kpi-col-stack{grid-template-columns:1fr!important;margin:0!important}
 .kpi-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 9px;cursor:pointer;transition:all .15s}
 .kpi-card:active{transform:scale(.97)}
 .kpi-card.active{border-color:var(--daf);background:var(--daf-bg)}
@@ -279,7 +282,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v31';
+const APP_BUILD='2026-05-27-bases-v32';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -320,6 +323,45 @@ function normSiret(s){
   str=str.replace(/[\s\.\-]/g,'');
   if(/^\d+$/.test(str)&&str.length<14){str=str.padStart(14,'0');}
   return str;
+}
+function siretSiren(s){var n=normSiret(s);return n.length>=9?n.slice(0,9):'';}
+function normClientName(s){return norm(String(s||'').replace(/\s+/g,' '));}
+function resolveClientForVehicle(v){
+  if(!v||!IDX)return null;
+  var _vsiret=normSiret(v.siret);
+  if(_vsiret&&IDX.cBySiret&&IDX.cBySiret[_vsiret])return IDX.cBySiret[_vsiret];
+  if(v.tva){
+    var sitesTva=(IDX.sitesByTva&&IDX.sitesByTva[v.tva])||[];
+    if(sitesTva.length===1)return sitesTva[0];
+  }
+  var siren=siretSiren(_vsiret);
+  var cands=siren&&IDX.cBySiren?IDX.cBySiren[siren]:null;
+  if(cands&&cands.length){
+    if(cands.length===1)return cands[0];
+    if(v.tva){
+      var byTva=cands.filter(function(c){return String(c.tva||'')===String(v.tva||'');});
+      if(byTva.length===1)return byTva[0];
+      if(byTva.length>1)cands=byTva;
+    }
+    var vn=normClientName(v.client||v.nom||'');
+    if(vn){
+      var byName=cands.filter(function(c){var cn=normClientName(c.nom);return cn&&(cn===vn||cn.indexOf(vn)>=0||vn.indexOf(cn)>=0);});
+      if(byName.length===1)return byName[0];
+    }
+    if(v.ville){
+      var byVille=cands.filter(function(c){return norm(c.ville)===norm(v.ville);});
+      if(byVille.length===1)return byVille[0];
+    }
+  }
+  if(v.tva){
+    var vn2=normClientName(v.client||'');
+    if(vn2){
+      var tvaSites=(IDX.sitesByTva&&IDX.sitesByTva[v.tva])||[];
+      var byNameTva=tvaSites.filter(function(c){var cn=normClientName(c.nom);return cn&&(cn===vn2||cn.indexOf(vn2)>=0||vn2.indexOf(cn)>=0);});
+      if(byNameTva.length===1)return byNameTva[0];
+    }
+  }
+  return null;
 }
 
 // ===== STORAGE (IndexedDB véhicules + localStorage reste) =====
@@ -828,7 +870,7 @@ function importVehicles(data, possession){
 }
 
 // ===== INDEX BUILDING =====
-let IDX = {vByTva:{}, vBySite:{}, sitesByTva:{}, pByTva:{}, pBySite:{}, cByTva:{}, cByKey:{}, cBySite:{}};
+let IDX = {vByTva:{}, vBySite:{}, vBySiret:{}, sitesByTva:{}, pByTva:{}, pBySite:{}, cByTva:{}, cByKey:{}, cBySite:{}, cBySiret:{}, cBySiren:{}};
 
 // Memoization cache
 var _statsCache = {};
@@ -854,6 +896,7 @@ function buildIndex(){
 
   // === INDEX CLIENTS ===
   IDX.cBySiret={};
+  IDX.cBySiren={};
   IDX.cByTva={};
   IDX.cByKey={};
   IDX.sitesByTva={};
@@ -864,7 +907,12 @@ function buildIndex(){
     IDX.cByKey[c.key]=c;
     // cByTva : dernier site pour cette TVA (utilisé pour lookups ponctuels)
     IDX.cByTva[c.tva]=c;
-    if(c.siret)IDX.cBySiret[normSiret(c.siret)]=c;
+    if(c.siret){
+      var ns=normSiret(c.siret);
+      IDX.cBySiret[ns]=c;
+      var siren=siretSiren(ns);
+      if(siren){if(!IDX.cBySiren[siren])IDX.cBySiren[siren]=[];IDX.cBySiren[siren].push(c);}
+    }
     if(!IDX.sitesByTva[c.tva])IDX.sitesByTva[c.tva]=[];
     IDX.sitesByTva[c.tva].push(c);
     IDX.cBySite[sk]=c;
@@ -881,11 +929,7 @@ function buildIndex(){
     if(possession[vk]===false)v.possession=false;
     else delete v.possession;
     var _vsiret=normSiret(v.siret);
-    var clientS=_vsiret&&IDX.cBySiret?IDX.cBySiret[_vsiret]:null;
-    if(!clientS&&v.tva){
-      var sites=(IDX.sitesByTva&&IDX.sitesByTva[v.tva])||[];
-      if(sites.length===1)clientS=sites[0];
-    }
+    var clientS=resolveClientForVehicle(v);
     if(!clientS)return;
     if(!_vsiret)_vsiret=normSiret(clientS.siret);
     if(!_vsiret)return;
@@ -1107,10 +1151,7 @@ function isInactiveClientUnified(tva,sk){
 }
 function isInactiveClient(tva,sk){return isInactiveClientUnified(tva,sk);}
 function isInactiveClientMarche(tva,sk){return isInactiveClientUnified(tva,sk);}
-function _marcheClientForVehicle(v){
-  var sr=normSiret(v&&v.siret);
-  return sr&&IDX.cBySiret?IDX.cBySiret[sr]:null;
-}
+function _marcheClientForVehicle(v){return resolveClientForVehicle(v);}
 // Périmètre Marché partiel (type, vendeur, flotte NAT) — composé dans matchesMarcheClient / matchesMarcheVehicle
 function matchesMarcheClientScope(c){
   if(!c)return false;
@@ -1624,6 +1665,161 @@ function _computeMarcheGraphCtx(filtVeh, filtered, totalVeh){
   return {homeSVG:homeSVG,homeLeg:homeLeg,histBars:histBars,varHtml:varHtml,bvHtml:bvHtml,mPDM:mPDM,mCNT:mCNT,tracteurs:tracteurs,porteurs:porteurs,tpTot:tpTot,carroSorted:carroSorted,carroTotal:carroTotal,carroDafSorted:carroDafSorted,carroDafTotal:carroDafTotal,brandBars:brandBars,topDafRows:topDafRows,topHRows:topHRows,filtVeh:filtVeh};
 }
 
+function _vehiclesForClientRows(clients,vehFilter){
+  vehFilter=vehFilter||function(){return true;};
+  var seen={},out=[];
+  (clients||[]).forEach(function(c){
+    var sk=c._siteKey||makeSiteKey(c);
+    (IDX.vBySite[sk]||[]).filter(vehFilter).forEach(function(v){
+      var k=(v.tva||'')+'|'+(v.plaque||'')+'|'+(v.date||'');if(!seen[k]){seen[k]=true;out.push(v);}
+    });
+  });
+  return out;
+}
+function _kpiVehicleListRowsHtml(vehicles,limit){
+  limit=limit||120;
+  return vehicles.slice(0,limit).map(function(v){
+    var c=resolveClientForVehicle(v)||(IDX.cByTva&&IDX.cByTva[v.tva])||{nom:v.client||v.tva};
+    var sk=_siteKeyFromVehicle(v);
+    return '<tr style="border-bottom:1px solid var(--border);"><td style="padding:5px 6px;color:var(--text2);white-space:nowrap;">'+fmtDate(v.date)+'</td><td style="padding:5px 6px;white-space:normal;min-width:110px;"><strong>'+escH(c.nom||v.tva||'—')+'</strong><br><span style="font-size:9px;color:var(--text3);">'+escH(v.plaque||'—')+' · '+escH(v.marque||'—')+' · '+escH(v.type||'—')+'</span></td><td style="padding:5px 6px;text-align:right;">'+(sk?'<button class="btn btn-secondary btn-sm mat-open-site" data-sk="'+escH(sk)+'">Fiche</button>':'—')+'</td></tr>';
+  }).join('');
+}
+function _kpiVehicleListTableHtml(vehicles){return '<table style="width:100%;border-collapse:collapse;font-size:10px;">'+_kpiVehicleListRowsHtml(vehicles)+'</table>';}
+function _filterKpiVehiclesByCell(vehicles,brand,year){
+  if(brand==='all'&&year==='all')return vehicles.slice();
+  if(brand==='all'&&year!=='all')return vehicles.filter(function(v){return String(marketYearKey(v))===String(year);});
+  if(brand!=='all'&&year==='all')return vehicles.filter(function(v){return norm(marketBrand(v))===norm(brand);});
+  return vehicles.filter(function(v){return norm(marketBrand(v))===norm(brand)&&String(marketYearKey(v))===String(year);});
+}
+function buildKpiMarqueAnneeMatrixHtml(vehicles){
+  vehicles=vehicles||[];
+  var matYears=Array.from(new Set(vehicles.map(marketYearKey).filter(Boolean))).sort(marketYearSort);
+  if(matYears.length>14)matYears=matYears.slice(-14);
+  var matBrands=Object.entries(vehicles.reduce(function(acc,v){var m=marketBrand(v);acc[m]=(acc[m]||0)+1;return acc;},{})).sort(function(a,b){return b[1]-a[1];}).map(function(e){return e[0];});
+  if(matBrands.length>24)matBrands=matBrands.slice(0,24);
+  var matData={};matBrands.forEach(function(b){matData[b]={};matYears.forEach(function(y){matData[b][y]=0;});});
+  var totalByYear={};matYears.forEach(function(y){totalByYear[y]=0;});
+  vehicles.forEach(function(v){var y=marketYearKey(v);var b=marketBrand(v);totalByYear[y]=(totalByYear[y]||0)+1;if(matData[b])matData[b][y]=(matData[b][y]||0)+1;});
+  var matGrandTotal=matYears.reduce(function(a,y){return a+(totalByYear[y]||0);},0);
+  var html='<div style="font-size:10px;color:var(--text3);margin-bottom:6px;">Marque × Année — cliquez une cellule pour filtrer la liste</div><div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;min-width:100%;">';
+  html+='<tr><th style="padding:4px 6px;text-align:left;color:var(--text3);position:sticky;left:0;background:var(--bg2);">Marque</th>';
+  matYears.forEach(function(y){html+='<th style="padding:4px 6px;text-align:center;color:var(--text3);">'+y+'</th>';});
+  html+='<th style="padding:4px 6px;text-align:center;color:var(--text3);">Total</th></tr>';
+  matBrands.forEach(function(bb){
+    var tot3=matYears.reduce(function(a,y){return a+(matData[bb][y]||0);},0);
+    html+='<tr><td style="padding:4px 6px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:var(--bg2);color:var(--text2);">'+getBrandLogo(bb)+' '+escH(bb)+'</td>';
+    matYears.forEach(function(yr){
+      var n4=matData[bb][yr]||0;
+      html+='<td style="padding:4px 6px;text-align:center;color:'+(n4>0?'var(--text)':'var(--text3)')+';cursor:'+(n4>0?'pointer':'default')+';"'+(n4>0?' data-kpi-pivot-brand="'+escH(bb)+'" data-kpi-pivot-year="'+yr+'" class="kpi-pivot-cell"':'')+'>'+(n4||'—')+'</td>';
+    });
+    html+='<td style="padding:4px 6px;text-align:center;font-weight:700;color:var(--daf);cursor:pointer;" data-kpi-pivot-brand="'+escH(bb)+'" data-kpi-pivot-year="all" class="kpi-pivot-cell">'+tot3+'</td></tr>';
+  });
+  html+='<tr style="border-top:1px solid var(--border);"><td style="padding:4px 6px;font-weight:700;position:sticky;left:0;background:var(--bg2);color:var(--text3);">Total</td>';
+  matYears.forEach(function(y){html+='<td style="padding:4px 6px;text-align:center;font-weight:700;color:var(--text3);cursor:pointer;" data-kpi-pivot-brand="all" data-kpi-pivot-year="'+y+'" class="kpi-pivot-cell">'+(totalByYear[y]||0)+'</td>';});
+  html+='<td style="padding:4px 6px;text-align:center;font-weight:800;color:var(--daf);cursor:pointer;" data-kpi-pivot-brand="all" data-kpi-pivot-year="all" class="kpi-pivot-cell">'+matGrandTotal+'</td></tr></table></div>';
+  return html;
+}
+function buildKpiClientAnneeMatrixHtml(vehicles){
+  vehicles=vehicles||[];
+  var years=Array.from(new Set(vehicles.map(function(v){return getYear(v.date);}).filter(Boolean))).sort(function(a,b){return a-b;});
+  var map={};
+  vehicles.forEach(function(v){
+    var c=resolveClientForVehicle(v)||{nom:v.client||v.tva||'Client'};
+    var name=c.nom||v.client||v.tva||'Client', y=getYear(v.date); if(!y)return;
+    if(!map[name])map[name]={name:name,total:0,sk:c._siteKey||makeSiteKey(c)};
+    map[name][y]=(map[name][y]||0)+1; map[name].total++;
+  });
+  var rows=Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return (b.total||0)-(a.total||0)||a.name.localeCompare(b.name);});
+  var html='<div style="font-size:10px;color:var(--text3);margin-bottom:6px;">Client × Année — '+rows.length+' client(s)</div><div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;width:100%;"><tr><th style="padding:4px 8px;text-align:left;color:var(--text3);position:sticky;left:0;background:var(--bg2);">Client</th>';
+  years.forEach(function(y){html+='<th style="padding:4px 8px;text-align:center;color:var(--text3);">'+y+'</th>';});
+  html+='<th style="padding:4px 8px;text-align:center;color:var(--daf);">Total</th><th></th></tr>';
+  rows.forEach(function(r){
+    html+='<tr style="border-top:1px solid var(--border);"><td style="padding:4px 8px;font-weight:700;position:sticky;left:0;background:var(--bg2);min-width:140px;">'+escH(r.name)+'</td>';
+    years.forEach(function(y){html+='<td style="padding:4px 8px;text-align:center;">'+(r[y]||'—')+'</td>';});
+    html+='<td style="padding:4px 8px;text-align:center;font-weight:800;color:var(--daf);">'+(r.total||0)+'</td><td style="padding:4px 8px;text-align:right;">'+(r.sk?'<button class="btn btn-secondary btn-sm mat-open-site" data-sk="'+escH(r.sk)+'">Fiche</button>':'—')+'</td></tr>';
+  });
+  return html+'</table></div>';
+}
+function _bindKpiModalFiche(root){
+  var el=root||$('modal-body');if(!el)return;
+  QA('.mat-open-site',el).forEach(function(b){b.onclick=function(){closeModal();openSiteSheet(this.dataset.sk);};});
+}
+function _openKpiVehicleModal(title,matched,pivotKind){
+  if(!matched||!matched.length){toast('Aucune immatriculation');return;}
+  matched=matched.slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
+  var listHtml=_kpiVehicleListTableHtml(matched);
+  var pivotLabel=pivotKind==='client'?'Vue croisée Client × Année':'Vue croisée Marque × Année';
+  var body='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;"><div style="font-size:11px;color:var(--text3);flex:1;">Cliquez sur Fiche pour ouvrir le client/site rattaché.</div><button type="button" class="btn btn-secondary btn-sm" id="kpi-modal-pivot-btn">'+pivotLabel+'</button></div><div id="kpi-modal-view" style="max-height:55vh;overflow:auto;">'+listHtml+'</div>';
+  openModal(title+' ('+matched.length+')',body,[{label:'Fermer',cls:'btn-primary'}]);
+  var state={vehicles:matched,showList:true,listHtml:listHtml,pivotLabel:pivotLabel,pivotKind:pivotKind||'marque'};
+  _bindKpiModalFiche($('modal-body'));
+  function showListView(subset,subTitle){
+    var v=subset||state.vehicles;
+    var extra=subTitle?'<div style="font-size:10px;color:var(--orange);margin-bottom:6px;">'+escH(subTitle)+' · '+v.length+' immat. <button type="button" class="btn btn-ghost btn-sm" id="kpi-modal-back-pivot" style="font-size:9px;padding:2px 6px;margin-left:6px;">Retour vue croisée</button></div>':'';
+    $('kpi-modal-view').innerHTML=extra+_kpiVehicleListTableHtml(v);
+    _bindKpiModalFiche($('kpi-modal-view'));
+    var back=$('kpi-modal-back-pivot');if(back)back.onclick=function(){showPivotView();};
+  }
+  function bindPivotCells(container){
+    QA('.kpi-pivot-cell',container).forEach(function(cell){
+      cell.onclick=function(){
+        var brand=cell.dataset.kpiPivotBrand,year=cell.dataset.kpiPivotYear;
+        var sub=_filterKpiVehiclesByCell(state.vehicles,brand,year);
+        var subTitle=(brand==='all'&&year==='all')?'Toutes marques — Toutes années':(brand==='all'?'Toutes marques — '+year:(year==='all'?brand+' — Toutes années':brand+' — '+year));
+        showListView(sub,subTitle);
+        var btn=$('kpi-modal-pivot-btn');if(btn)btn.textContent='Liste détaillée';
+        state.showList=true;
+      };
+    });
+    _bindKpiModalFiche(container);
+  }
+  function showPivotView(){
+    $('kpi-modal-view').innerHTML=state.pivotKind==='client'?buildKpiClientAnneeMatrixHtml(state.vehicles):buildKpiMarqueAnneeMatrixHtml(state.vehicles);
+    bindPivotCells($('kpi-modal-view'));
+    state.showList=false;
+    var btn=$('kpi-modal-pivot-btn');if(btn)btn.textContent='Liste détaillée';
+  }
+  var pbtn=$('kpi-modal-pivot-btn');
+  if(pbtn)pbtn.onclick=function(){
+    if(state.showList)showPivotView();else{showListView();state.showList=true;pbtn.textContent=state.pivotLabel;}
+  };
+}
+function _openKpiSiteModal(title,clients,vehFilter,getVehFn){
+  if(!clients||!clients.length){toast('Aucun site');return;}
+  clients=clients.slice().sort(function(a,b){return String(a.nom||'').localeCompare(String(b.nom||''));});
+  vehFilter=vehFilter||matchesMarcheVehicle;
+  function vehFor(c){return getVehFn?getVehFn(c):((IDX.vBySite[c._siteKey||makeSiteKey(c)]||[]).filter(vehFilter));}
+  var rows=clients.slice(0,120).map(function(c){
+    var sk=c._siteKey||makeSiteKey(c);
+    var vehSite=vehFor(c);
+    var lastDate=vehSite.reduce(function(m,v){return(!m||String(v.date||'')>String(m))?v.date:m;},'');
+    return '<tr style="border-bottom:1px solid var(--border);"><td style="padding:5px 6px;color:var(--text2);white-space:nowrap;">'+fmtDate(lastDate)+'</td><td style="padding:5px 6px;white-space:normal;min-width:110px;"><strong>'+escH(c.nom||'—')+'</strong><br><span style="font-size:9px;color:var(--text3);">'+escH(c.ville||'—')+' · '+escH(c.profil||'—')+'</span></td><td style="padding:5px 6px;text-align:right;">'+(sk?'<button class="btn btn-secondary btn-sm mat-open-site" data-sk="'+escH(sk)+'">Fiche</button>':'—')+'</td></tr>';
+  }).join('');
+  var listHtml='<table style="width:100%;border-collapse:collapse;font-size:10px;">'+rows+'</table>';
+  var seen={},siteVeh=[];
+  clients.forEach(function(c){
+    vehFor(c).forEach(function(v){var k=(v.tva||'')+'|'+(v.plaque||'')+'|'+(v.date||'');if(!seen[k]){seen[k]=true;siteVeh.push(v);}});
+  });
+  var body='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;"><div style="font-size:11px;color:var(--text3);flex:1;">Cliquez sur Fiche pour ouvrir la fiche site.</div>'+(siteVeh.length?'<button type="button" class="btn btn-secondary btn-sm" id="kpi-modal-pivot-btn">Vue croisée Client × Année</button>':'')+'</div><div id="kpi-modal-view" style="max-height:55vh;overflow:auto;">'+listHtml+'</div>';
+  openModal(title+' ('+clients.length+')',body,[{label:'Fermer',cls:'btn-primary'}]);
+  _bindKpiModalFiche($('modal-body'));
+  var state={siteVeh:siteVeh,showList:true,listHtml:listHtml};
+  var pbtn=$('kpi-modal-pivot-btn');
+  if(pbtn)pbtn.onclick=function(){
+    if(state.showList){
+      $('kpi-modal-view').innerHTML=buildKpiClientAnneeMatrixHtml(state.siteVeh);
+      _bindKpiModalFiche($('kpi-modal-view'));
+      pbtn.textContent='Liste détaillée';
+      state.showList=false;
+    }else{
+      $('kpi-modal-view').innerHTML=state.listHtml;
+      _bindKpiModalFiche($('kpi-modal-view'));
+      pbtn.textContent='Vue croisée Client × Année';
+      state.showList=true;
+    }
+  };
+}
+
 function getMarcheKpiSites(kind,filtered){
   filtered=filtered||DB.getClients().filter(matchesMarcheClient);
   if(kind==='actifs')return filtered.filter(function(c){var sk=c._siteKey||makeSiteKey(c);return !isInactiveClientMarche(c.tva,sk);});
@@ -1642,29 +1838,8 @@ function getMarcheKpiVehiclesList(kind,filtVeh){
   if(kind==='daf_renew')return filtVeh.filter(isRenewDafMarche);
   return [];
 }
-function openMarcheVehicleSelectionModal(title,matched){
-  if(!matched||!matched.length){toast('Aucune immatriculation');return;}
-  matched=matched.slice().sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
-  var rows=matched.slice(0,120).map(function(v){
-    var c=(IDX.cByTva&&IDX.cByTva[v.tva])||{nom:v.client||v.tva};
-    var sk=_siteKeyFromVehicle(v);
-    return '<tr style="border-bottom:1px solid var(--border);"><td style="padding:5px 6px;color:var(--text2);white-space:nowrap;">'+fmtDate(v.date)+'</td><td style="padding:5px 6px;white-space:normal;min-width:110px;"><strong>'+escH(c.nom||v.tva||'—')+'</strong><br><span style="font-size:9px;color:var(--text3);">'+escH(v.plaque||'—')+' · '+escH(v.marque||'—')+' · '+escH(v.type||'—')+'</span></td><td style="padding:5px 6px;text-align:right;">'+(sk?'<button class="btn btn-secondary btn-sm mat-open-site" data-sk="'+escH(sk)+'">Fiche</button>':'—')+'</td></tr>';
-  }).join('');
-  openModal(title+' ('+matched.length+')','<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Cliquez sur Fiche pour ouvrir le client/site rattaché.</div><div style="max-height:55vh;overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:10px;">'+rows+'</table></div>',[{label:'Fermer',cls:'btn-primary'}]);
-  QA('#modal-body .mat-open-site').forEach(function(b){b.onclick=function(){closeModal();openSiteSheet(this.dataset.sk);};});
-}
-function openMarcheSiteSelectionModal(title,clients){
-  if(!clients||!clients.length){toast('Aucun site');return;}
-  clients=clients.slice().sort(function(a,b){return String(a.nom||'').localeCompare(String(b.nom||''));});
-  var rows=clients.slice(0,120).map(function(c){
-    var sk=c._siteKey||makeSiteKey(c);
-    var vehSite=(IDX.vBySite[sk]||[]).filter(matchesMarcheVehicle);
-    var lastDate=vehSite.reduce(function(m,v){return(!m||String(v.date||'')>String(m))?v.date:m;},'');
-    return '<tr style="border-bottom:1px solid var(--border);"><td style="padding:5px 6px;color:var(--text2);white-space:nowrap;">'+fmtDate(lastDate)+'</td><td style="padding:5px 6px;white-space:normal;min-width:110px;"><strong>'+escH(c.nom||'—')+'</strong><br><span style="font-size:9px;color:var(--text3);">'+escH(c.ville||'—')+' · '+escH(c.profil||'—')+'</span></td><td style="padding:5px 6px;text-align:right;">'+(sk?'<button class="btn btn-secondary btn-sm mat-open-site" data-sk="'+escH(sk)+'">Fiche</button>':'—')+'</td></tr>';
-  }).join('');
-  openModal(title+' ('+clients.length+')','<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Cliquez sur Fiche pour ouvrir la fiche site.</div><div style="max-height:55vh;overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:10px;">'+rows+'</table></div>',[{label:'Fermer',cls:'btn-primary'}]);
-  QA('#modal-body .mat-open-site').forEach(function(b){b.onclick=function(){closeModal();openSiteSheet(this.dataset.sk);};});
-}
+function openMarcheVehicleSelectionModal(title,matched){_openKpiVehicleModal(title,matched,'marque');}
+function openMarcheSiteSelectionModal(title,clients){_openKpiSiteModal(title,clients,matchesMarcheVehicle);}
 function _bindMarcheKpiClicks(filtered,filtVeh){
   var siteLabels={actifs:'Clients actifs',conquete:'Conquête (sans DAF)',fidelisation:'Fidélisation (DAF)',urgents:'Urgents',inactifs:'Clients inactifs'};
   var vehLabels={parc:'Parc total',hors_daf:'Immat. Hors DAF',hors_renew:'Hors DAF renouv.',daf:'Immat. DAF',daf_renew:'DAF à renouveler'};
@@ -1752,17 +1927,17 @@ function renderMarche(){
     +'<div style="font-size:9px;color:var(--text3);margin-top:3px;">'+dafVeh+' DAF / '+totalVeh+' immat. totales</div>'
     +'</div>';
   // KPIs — 2 colonnes : Sites | Immatriculations (cliquables → modal détail)
-  html+='<div class="marche-kpi-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 12px 9px;">'
-    +'<div><div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Sites</div>'
-    +'<div class="kpi-grid" style="margin:0;">'
+  html+='<div class="marche-kpi-cols">'
+    +'<div><div class="marche-kpi-side-lbl">Sites</div>'
+    +'<div class="kpi-grid kpi-col-stack">'
     +'<div class="kpi-card c-green" data-marche-kpi="actifs" title="Cliquer pour voir le détail"><div class="kpi-val">'+kClientsActifs+'</div><div class="kpi-lbl">Clients actifs</div></div>'
     +'<div class="kpi-card c-blue" data-marche-kpi="conquete" title="Cliquer pour voir le détail"><div class="kpi-val">'+clientsSansDaf+'</div><div class="kpi-lbl">Conquête (sans DAF)</div></div>'
     +'<div class="kpi-card c-daf" data-marche-kpi="fidelisation" title="Cliquer pour voir le détail"><div class="kpi-val">'+clientsAvecDaf+'</div><div class="kpi-lbl">Fidélisation (DAF)</div></div>'
     +'<div class="kpi-card c-red" data-marche-kpi="urgents" title="Cliquer pour voir le détail"><div class="kpi-val">'+urgents.length+'</div><div class="kpi-lbl">Urgents</div></div>'
     +'<div class="kpi-card" data-marche-kpi="inactifs" title="Cliquer pour voir le détail"><div class="kpi-val">'+kClientsInactifs+'</div><div class="kpi-lbl">Clients inactifs</div></div>'
     +'</div></div>'
-    +'<div><div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Immatriculations</div>'
-    +'<div class="kpi-grid" style="margin:0;">'
+    +'<div><div class="marche-kpi-side-lbl">Immatriculations</div>'
+    +'<div class="kpi-grid kpi-col-stack">'
     +'<div class="kpi-card" data-marche-kpi="parc" title="'+escH(parcMarcheTip)+'"><div class="kpi-val">'+totalVeh+'</div><div class="kpi-lbl">Parc total</div></div>'
     +'<div class="kpi-card c-blue" data-marche-kpi="hors_daf" title="Cliquer pour voir le détail"><div class="kpi-val">'+horsVeh+'</div><div class="kpi-lbl">Immat. Hors DAF</div></div>'
     +'<div class="kpi-card c-blue" data-marche-kpi="hors_renew" title="Cliquer pour voir le détail"><div class="kpi-val">'+horsRenewKpi+'</div><div class="kpi-lbl">Hors DAF renouv.</div></div>'
@@ -2206,31 +2381,31 @@ let toursF='all', toursSearch='', toursExp={};
 // ===== CLIENT SHEET =====
 
 const BRAND_LOGOS = {
-  'DAF': '<svg width="34" height="20" viewBox="0 0 34 20"><rect width="34" height="20" rx="2" fill="#00338D"/><text x="17" y="13" text-anchor="middle" font-size="11" font-weight="900" fill="white" font-family="Arial Black,Arial,sans-serif" letter-spacing="2">DAF</text><rect x="0" y="15.5" width="34" height="4" rx="1.5" fill="#D22630"/></svg>',
+  'DAF': '<svg width="36" height="20" viewBox="0 0 36 20" aria-label="DAF"><rect width="36" height="20" rx="2" fill="#00338D"/><text x="18" y="12.5" text-anchor="middle" font-size="10" font-weight="900" fill="#fff" font-family="Arial Black,Arial,sans-serif" letter-spacing="2.5">DAF</text><path d="M0 16 Q18 13 36 16 L36 20 L0 20 Z" fill="#D22630"/></svg>',
 
-  'VOLVO': '<svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="#003B7A" stroke="#003B7A" stroke-width="0.5"/><circle cx="11" cy="11" r="7.5" fill="none" stroke="white" stroke-width="1.2"/><circle cx="11" cy="11" r="4.5" fill="none" stroke="white" stroke-width="1"/><line x1="11" y1="1.5" x2="19.5" y2="4" stroke="white" stroke-width="1.5"/><line x1="19.5" y1="4" x2="19.5" y2="1.5" stroke="white" stroke-width="1.5"/><line x1="17" y1="1.5" x2="19.5" y2="1.5" stroke="white" stroke-width="1.5"/></svg>',
+  'VOLVO': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Volvo"><circle cx="11" cy="11" r="10.5" fill="#003B7A"/><circle cx="11" cy="11" r="8.5" fill="none" stroke="#fff" stroke-width="1.1"/><path d="M11 2.2 L11 11 M11 11 L17.8 14.8 M11 11 L4.2 14.8" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="11" cy="2.2" r="1" fill="#fff"/><circle cx="17.8" cy="14.8" r="1" fill="#fff"/><circle cx="4.2" cy="14.8" r="1" fill="#fff"/></svg>',
 
-  'MERCEDES': '<svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10.5" fill="white" stroke="#999" stroke-width="0.5"/><circle cx="11" cy="11" r="9" fill="none" stroke="#888" stroke-width="1"/><path d="M11 2.5 L11 11 M11 11 L18.3 15.2 M11 11 L3.7 15.2" stroke="#555" stroke-width="1.8" stroke-linecap="round"/><circle cx="11" cy="2.5" r="1.2" fill="#555"/><circle cx="18.3" cy="15.2" r="1.2" fill="#555"/><circle cx="3.7" cy="15.2" r="1.2" fill="#555"/></svg>',
+  'MERCEDES': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Mercedes"><circle cx="11" cy="11" r="10.5" fill="#111"/><circle cx="11" cy="11" r="9" fill="none" stroke="#bbb" stroke-width=".8"/><path d="M11 2.8 L11 11 M11 11 L17.6 15.1 M11 11 L4.4 15.1" stroke="#ddd" stroke-width="1.5" stroke-linecap="round"/><circle cx="11" cy="2.8" r="1" fill="#ddd"/><circle cx="17.6" cy="15.1" r="1" fill="#ddd"/><circle cx="4.4" cy="15.1" r="1" fill="#ddd"/></svg>',
 
-  'MERCEDES-BENZ': '<svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10.5" fill="white" stroke="#999" stroke-width="0.5"/><circle cx="11" cy="11" r="9" fill="none" stroke="#888" stroke-width="1"/><path d="M11 2.5 L11 11 M11 11 L18.3 15.2 M11 11 L3.7 15.2" stroke="#555" stroke-width="1.8" stroke-linecap="round"/><circle cx="11" cy="2.5" r="1.2" fill="#555"/><circle cx="18.3" cy="15.2" r="1.2" fill="#555"/><circle cx="3.7" cy="15.2" r="1.2" fill="#555"/></svg>',
+  'MERCEDES-BENZ': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Mercedes-Benz"><circle cx="11" cy="11" r="10.5" fill="#111"/><circle cx="11" cy="11" r="9" fill="none" stroke="#bbb" stroke-width=".8"/><path d="M11 2.8 L11 11 M11 11 L17.6 15.1 M11 11 L4.4 15.1" stroke="#ddd" stroke-width="1.5" stroke-linecap="round"/><circle cx="11" cy="2.8" r="1" fill="#ddd"/><circle cx="17.6" cy="15.1" r="1" fill="#ddd"/><circle cx="4.4" cy="15.1" r="1" fill="#ddd"/></svg>',
 
-  'SCANIA': '<svg width="22" height="24" viewBox="0 0 22 24"><rect width="22" height="24" rx="3" fill="#1C3D6E"/><path d="M11 4 L13 8.5 L18 8.5 L14 11.5 L15.5 16 L11 13 L6.5 16 L8 11.5 L4 8.5 L9 8.5 Z" fill="#C8A84B" stroke="#C8A84B" stroke-width="0.3" stroke-linejoin="round"/></svg>',
+  'SCANIA': '<svg width="22" height="24" viewBox="0 0 22 24" aria-label="Scania"><rect width="22" height="24" rx="3" fill="#041E42"/><path d="M11 3 L13.2 9.2 L19.8 9.2 L14.3 12.8 L16.5 19 L11 15.2 L5.5 19 L7.7 12.8 L2.2 9.2 L8.8 9.2 Z" fill="#C8A84B"/><path d="M11 6.5 L12 10 L15.5 10 L12.8 12 L13.8 15.5 L11 13.5 L8.2 15.5 L9.2 12 L6.5 10 L10 10 Z" fill="#041E42" opacity=".35"/></svg>',
 
-  'MAN': '<svg width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10.5" fill="#E2001A"/><path d="M3 17 Q3 6 11 6 Q19 6 19 17" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"/><text x="11" y="16" text-anchor="middle" font-size="5.5" font-weight="900" fill="white" font-family="Arial,sans-serif">MAN</text></svg>',
+  'MAN': '<svg width="24" height="22" viewBox="0 0 24 22" aria-label="MAN"><rect width="24" height="22" rx="2" fill="#E2001A"/><path d="M4 17 C4 8 12 5 20 8 C20 14 16 18 12 18 C8 18 4 17 4 17 Z" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/><text x="12" y="16.5" text-anchor="middle" font-size="5.5" font-weight="900" fill="#fff" font-family="Arial,sans-serif" letter-spacing=".5">MAN</text></svg>',
 
-  'RENAULT': '<svg width="22" height="22" viewBox="0 0 22 22"><polygon points="11,0.5 21.5,11 11,21.5 0.5,11" fill="#FFCC00" stroke="#FFCC00" stroke-width="0.3"/><polygon points="11,3.5 18.5,11 11,18.5 3.5,11" fill="none" stroke="#333" stroke-width="1.2"/><polygon points="11,6.5 15.5,11 11,15.5 6.5,11" fill="#333"/></svg>',
+  'RENAULT': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Renault"><polygon points="11,1 21,11 11,21 1,11" fill="#FFCC00"/><polygon points="11,4 18,11 11,18 4,11" fill="none" stroke="#1a1a1a" stroke-width="1.3"/><polygon points="11,7 15,11 11,15 7,11" fill="#1a1a1a"/></svg>',
 
-  'RENAULT TRUCKS': '<svg width="22" height="22" viewBox="0 0 22 22"><polygon points="11,0.5 21.5,11 11,21.5 0.5,11" fill="#FFCC00" stroke="#FFCC00" stroke-width="0.3"/><polygon points="11,3.5 18.5,11 11,18.5 3.5,11" fill="none" stroke="#333" stroke-width="1.2"/><polygon points="11,6.5 15.5,11 11,15.5 6.5,11" fill="#333"/></svg>',
+  'RENAULT TRUCKS': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Renault Trucks"><polygon points="11,1 21,11 11,21 1,11" fill="#FFCC00"/><polygon points="11,4 18,11 11,18 4,11" fill="none" stroke="#1a1a1a" stroke-width="1.3"/><polygon points="11,7 15,11 11,15 7,11" fill="#1a1a1a"/></svg>',
 
-  'IVECO': '<svg width="36" height="18" viewBox="0 0 36 18"><rect width="36" height="18" rx="2" fill="#1E1E1E"/><text x="18" y="12.5" text-anchor="middle" font-size="9" font-weight="700" fill="#D0D0D0" font-family="Arial,sans-serif" letter-spacing="2.5">IVECO</text></svg>',
+  'IVECO': '<svg width="38" height="18" viewBox="0 0 38 18" aria-label="Iveco"><rect width="38" height="18" rx="2" fill="#002855"/><rect x="1" y="1" width="36" height="16" rx="1.5" fill="none" stroke="#4a7ab8" stroke-width=".6"/><text x="19" y="12.5" text-anchor="middle" font-size="8.5" font-weight="800" fill="#fff" font-family="Arial,sans-serif" letter-spacing="3">IVECO</text></svg>',
 
-  'FORD': '<svg width="34" height="20" viewBox="0 0 34 20"><ellipse cx="17" cy="10" rx="16.5" ry="9.5" fill="#003178"/><ellipse cx="17" cy="10" rx="14.5" ry="8" fill="none" stroke="#4477BB" stroke-width="0.5"/><text x="17" y="13.5" text-anchor="middle" font-size="10.5" font-style="italic" font-weight="700" fill="white" font-family="Times New Roman,serif">Ford</text></svg>',
+  'FORD': '<svg width="34" height="20" viewBox="0 0 34 20" aria-label="Ford"><ellipse cx="17" cy="10" rx="16" ry="9" fill="#003478"/><ellipse cx="17" cy="10" rx="13.5" ry="7.5" fill="none" stroke="#5a8fd4" stroke-width=".7"/><text x="17" y="13.5" text-anchor="middle" font-size="10" font-style="italic" font-weight="700" fill="#fff" font-family="Georgia,Times New Roman,serif">Ford</text></svg>',
 
-  'ISUZU': '<svg width="30" height="18" viewBox="0 0 30 18"><rect width="30" height="18" rx="2" fill="#C8102E"/><text x="15" y="12.5" text-anchor="middle" font-size="8" font-weight="700" fill="white" font-family="Arial,sans-serif" letter-spacing="1">ISUZU</text></svg>',
+  'ISUZU': '<svg width="32" height="18" viewBox="0 0 32 18" aria-label="Isuzu"><rect width="32" height="18" rx="2" fill="#C8102E"/><text x="16" y="12.5" text-anchor="middle" font-size="8" font-weight="800" fill="#fff" font-family="Arial,sans-serif" letter-spacing="1.5">ISUZU</text></svg>',
 
-  'MITSUBISHI': '<svg width="22" height="22" viewBox="0 0 22 22"><polygon points="11,2 13,7 11,7" fill="#E60012"/><polygon points="11,7 13,7 11,12" fill="#E60012"/><polygon points="3,12 7,7 9,12" fill="#E60012"/><polygon points="7,7 9,7 9,12" fill="#E60012" opacity="0.7"/><polygon points="13,12 15,7 19,12" fill="#E60012"/><polygon points="13,7 15,7 15,12" fill="#E60012" opacity="0.7"/></svg>',
+  'MITSUBISHI': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Mitsubishi"><polygon points="11,2 13,7.5 11,7.5" fill="#E60012"/><polygon points="11,7.5 13,7.5 11,13" fill="#E60012"/><polygon points="2.5,13 7,7.5 9.5,13" fill="#E60012"/><polygon points="7,7.5 9.5,7.5 9.5,13" fill="#E60012" opacity=".75"/><polygon points="12.5,13 15,7.5 19.5,13" fill="#E60012"/><polygon points="12.5,7.5 15,7.5 15,13" fill="#E60012" opacity=".75"/></svg>',
 
-  'FIAT': '<svg width="30" height="18" viewBox="0 0 30 18"><rect width="30" height="18" rx="2" fill="#8B0000"/><text x="15" y="12.5" text-anchor="middle" font-size="10" font-weight="700" fill="white" font-family="Arial,sans-serif">FIAT</text></svg>',
+  'FIAT': '<svg width="32" height="18" viewBox="0 0 32 18" aria-label="Fiat"><rect width="32" height="18" rx="2" fill="#8B0000"/><rect x="1" y="1" width="30" height="16" rx="1.5" fill="none" stroke="#c44" stroke-width=".5"/><text x="16" y="12.5" text-anchor="middle" font-size="9.5" font-weight="800" fill="#fff" font-family="Arial,sans-serif" letter-spacing="1">FIAT</text></svg>',
 };
 
 function getBrandLogo(marque) {
@@ -3196,18 +3371,7 @@ function getToursKpiVehiclesList(kind,baseRows){
   if(kind==='daf_renew')return veh.filter(isRenewDaf);
   return [];
 }
-function openToursSiteSelectionModal(title,rows){
-  if(!rows||!rows.length){toast('Aucun site');return;}
-  rows=rows.slice().sort(function(a,b){return String(a.nom||'').localeCompare(String(b.nom||''));});
-  var htmlRows=rows.slice(0,120).map(function(c){
-    var sk=c._siteKey||makeSiteKey(c);
-    var vehSite=_toursVehiclesForSiteRow(c);
-    var lastDate=vehSite.reduce(function(m,v){return(!m||String(v.date||'')>String(m))?v.date:m;},'');
-    return '<tr style="border-bottom:1px solid var(--border);"><td style="padding:5px 6px;color:var(--text2);white-space:nowrap;">'+fmtDate(lastDate)+'</td><td style="padding:5px 6px;white-space:normal;min-width:110px;"><strong>'+escH(c.nom||'—')+'</strong><br><span style="font-size:9px;color:var(--text3);">'+escH(c.ville||'—')+' · '+escH(c.profil||'—')+'</span></td><td style="padding:5px 6px;text-align:right;">'+(sk?'<button class="btn btn-secondary btn-sm mat-open-site" data-sk="'+escH(sk)+'">Fiche</button>':'—')+'</td></tr>';
-  }).join('');
-  openModal(title+' ('+rows.length+')','<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Cliquez sur Fiche pour ouvrir la fiche site.</div><div style="max-height:55vh;overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:10px;">'+htmlRows+'</table></div>',[{label:'Fermer',cls:'btn-primary'}]);
-  QA('#modal-body .mat-open-site').forEach(function(b){b.onclick=function(){closeModal();openSiteSheet(this.dataset.sk);};});
-}
+function openToursSiteSelectionModal(title,rows){_openKpiSiteModal(title,rows,matchesToursVehicle,function(c){return _toursVehiclesForSiteRow(c);});}
 var TOURS_KPI_FILTER={actifs:'actifs',conquete:'conquete',fidelisation:'fidelisation',urgents:'urgent',inactifs:'inactifs',parc:'all',hors_daf:'hors_daf',hors_renew:'hors_renew_kpi',daf:'daf_with',daf_renew:'daf_renew_kpi'};
 var TOURS_KPI_TIP='Clic : filtrer la liste · Double-clic : voir le détail';
 function _toursKpiFilterKey(k){return TOURS_KPI_FILTER[k]||'all';}
@@ -3368,17 +3532,17 @@ function renderTours(){
   var kUrgent=baseRows.filter(_toursUrgentForKpi).length;
   var kParc=kpiBase.kParc,kDafVeh=getToursKpiVehiclesList('daf',baseRows).length,kHorsVeh=kParc-kDafVeh,kDafRenew=kpiBase.kDafRenew,kHorsRenew=kpiBase.kHorsRenew;
   var parcTip='Toutes immat. rattachées SIRET sur les sites visibles (aligné sur Marché si masques OFF). '+TOURS_KPI_TIP;
-  var kpiHtml='<div class="marche-kpi-cols" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 12px 9px;">'
-    +'<div><div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Sites</div>'
-    +'<div class="kpi-grid" style="margin:0;">'
+  var kpiHtml='<div class="marche-kpi-cols">'
+    +'<div><div class="marche-kpi-side-lbl">Sites</div>'
+    +'<div class="kpi-grid kpi-col-stack">'
     +_toursKpiCardHtml('actifs',kClientsActifs,'Clients actifs','c-green',f)
     +_toursKpiCardHtml('conquete',kConquete,'Conquête (sans DAF)','c-blue',f)
     +_toursKpiCardHtml('fidelisation',kFidelisation,'Fidélisation (DAF)','c-daf',f)
     +_toursKpiCardHtml('urgents',kUrgent,'Urgents','c-red',f)
     +_toursKpiCardHtml('inactifs',kClientsInactifs,'Clients inactifs','',f)
     +'</div></div>'
-    +'<div><div style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Immatriculations</div>'
-    +'<div class="kpi-grid" style="margin:0;">'
+    +'<div><div class="marche-kpi-side-lbl">Immatriculations</div>'
+    +'<div class="kpi-grid kpi-col-stack">'
     +_toursKpiCardHtml('parc',kParc,'Parc total','',f,parcTip)
     +_toursKpiCardHtml('hors_daf',kHorsVeh,'Immat. Hors DAF','c-blue',f)
     +_toursKpiCardHtml('hors_renew',kHorsRenew,'Hors DAF renouv.','c-blue',f)
@@ -3842,18 +4006,14 @@ function renderMore(){
 })();
 
 function _siteKeyFromVehicle(v){
-  var c=(IDX.cBySite && IDX.cBySite[makeSiteKey(v)]) || (IDX.cByTva && IDX.cByTva[v.tva]);
+  var c=resolveClientForVehicle(v);
   return c?makeSiteKey(c):'';
 }
 function _openSiteFromClient(c){ if(!c)return; var sk=makeSiteKey(c); if(sk)openSiteSheet(sk); }
 function _openSiteFromVehicle(v){ var sk=_siteKeyFromVehicle(v); if(sk)openSiteSheet(sk); else toast('Aucune fiche site rattachée'); }
 function vehicleHasClientFile(v){
   if(!v)return false;
-  var sr=normSiret(v.siret);
-  if(sr&&IDX.cBySiret&&IDX.cBySiret[sr])return true;
-  var tva=String(v.tva||'').trim();
-  if(tva&&IDX.cByTva&&IDX.cByTva[tva])return true;
-  return false;
+  return !!resolveClientForVehicle(v);
 }
 function getOrphanVehicles(){
   return (DB.getVehicles()||[]).filter(function(v){return !vehicleHasClientFile(v);});
