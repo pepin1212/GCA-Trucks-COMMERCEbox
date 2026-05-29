@@ -282,7 +282,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v32';
+const APP_BUILD='2026-05-27-bases-v37';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -951,8 +951,7 @@ function buildIndex(){
   projects.forEach(function(p){
     var tva=p.tva||'';
     if(tva){if(!IDX.pByTva[tva])IDX.pByTva[tva]=[];IDX.pByTva[tva].push(p);}
-    var sk=p.siteKey||'';
-    if(!sk&&tva){var pc=IDX.cByTva[tva];if(pc)sk=pc._siteKey||makeSiteKey(pc);}
+    var sk=resolveProjectSiteKey(p);
     if(sk){if(!IDX.pBySite[sk])IDX.pBySite[sk]=[];IDX.pBySite[sk].push(p);}
   });
   migrateLegacySiteData();
@@ -1291,6 +1290,14 @@ function deleteHistoryAt(cOrTva, idx, sk){
   DB.saveHistory(hist);
   return entry;
 }
+function projectBelongsToSite(p,tva,sk){
+  if(!p)return false;
+  var rsk=resolveProjectSiteKey(p);
+  if(sk&&rsk===sk)return true;
+  if(!p.siteKey&&_legacyTvaOk(tva))return true;
+  if(p.siteKey&&String(p.siteKey)===String(tva)&&sk&&String(sk).indexOf(String(tva)+'|')===0)return true;
+  return false;
+}
 function getProjectsForSite(c, sk){
   sk=sk||(c&&c._siteKey)||(c?makeSiteKey(c):'');
   var out=[], seen={};
@@ -1298,8 +1305,7 @@ function getProjectsForSite(c, sk){
   (IDX.pBySite[sk]||[]).forEach(add);
   var tva=c&&c.tva;
   (IDX.pByTva[tva]||[]).forEach(function(p){
-    if(p.siteKey){if(p.siteKey===sk)add(p);}
-    else if(_legacyTvaOk(tva))add(p);
+    if(projectBelongsToSite(p,tva,sk))add(p);
   });
   return out;
 }
@@ -1342,7 +1348,7 @@ function hasOpenProject(tva, sk){
   function isOpen(p){return open.indexOf(p.status)>=0;}
   if(sk){
     if((IDX.pBySite[sk]||[]).some(isOpen))return true;
-    return (IDX.pByTva[tva]||[]).some(function(p){return isOpen(p)&&(!p.siteKey||p.siteKey===sk);});
+    return (IDX.pByTva[tva]||[]).some(function(p){return isOpen(p)&&projectBelongsToSite(p,tva,sk);});
   }
   return (IDX.pByTva[tva]||[]).some(isOpen);
 }
@@ -1358,6 +1364,26 @@ function makeSiteKey(o){
   if(s)return t+'|'+s;
   // Pas de SIRET : on conserve une clé technique pour affichage, mais QUALITÉ le signalera.
   return t+'|SIRET_MANQUANT|'+norm((o&&o.ville)||'')+'|'+norm((o&&o.nom)||o.client||'');
+}
+function resolveProjectSiteKey(p){
+  if(!p)return '';
+  var sk=String(p.siteKey||'').trim();
+  var tva=String(p.tva||'').trim();
+  if(sk&&IDX.cBySite&&IDX.cBySite[sk])return sk;
+  if(sk&&sk.indexOf('|')>=0)return sk;
+  if(tva){
+    var sites=(IDX.sitesByTva&&IDX.sitesByTva[tva])||[];
+    if(sk){
+      var byTva=sites.find(function(c){return String(c.tva||'')===sk;});
+      if(byTva)return byTva._siteKey||makeSiteKey(byTva);
+    }
+    if(sites.length===1)return sites[0]._siteKey||makeSiteKey(sites[0]);
+    if(!sk){
+      var pc=IDX.cByTva&&IDX.cByTva[tva];
+      if(pc)return pc._siteKey||makeSiteKey(pc);
+    }
+  }
+  return sk;
 }
 function getSiteDecisionnaire(sk){
   var st=DB.getSettings()||{};
@@ -2487,7 +2513,7 @@ function wfProjetDetecte(tva,nom,sk){
       try{
         var hd=window.getHotDeals?window.getHotDeals():[];
         if(!hd.some(function(d){return d.projectId===id;})){
-          hd.push({id:'deal_'+Date.now(),projectId:id,tva:tva,client:nom,created:date||new Date().toISOString().slice(0,10),status:type,comment:commentaire,lines:[{id:'line_'+Date.now(),type:'Tracteur',model:'',qty:camions,wonQty:0,lostQty:0,concurrent:'',lossComment:'',orderDate:'',deliveryDate:'',productionNo:'',maintenance:'Non',paccar:'Non',marginPct:'',prime:0,result:'',vnvo:'VN'}]});
+          hd.push({id:'deal_'+Date.now(),projectId:id,tva:tva,siteKey:sk||'',client:nom,created:date||new Date().toISOString().slice(0,10),status:type,comment:commentaire,lines:[{id:'line_'+Date.now(),type:'Tracteur',model:'',qty:camions,wonQty:0,lostQty:0,concurrent:'',lossComment:'',orderDate:'',deliveryDate:'',productionNo:'',maintenance:'Non',paccar:'Non',marginPct:'',prime:0,result:'',vnvo:'VN'}]});
           if(window.saveHotDeals)window.saveHotDeals(hd);
         }
         // Log activity
@@ -3006,12 +3032,17 @@ function openEnterpriseSheet(tva){
   if(sites.some(isFlotteCoordonnee))badges.push('<span class="badge b-flotte">FLOTTE COORD.</span>');
   if(sites.some(isFlotteNationale))badges.push('<span class="badge b-flotte">FLOTTE NAT.</span>');
   if(sites.some(isClientUrgent))badges.push('<span class="badge b-urgent">URGENT</span>');
+  var vEntKey=companyVerificationKey(c);
+  var vEnt=vEntKey?getCompanyVerification(vEntKey):null;
   var sitesHtml=sites.map(function(s){
     var sk=makeSiteKey(s), ss=getSiteStats(sk), dec=getSiteDecisionnaire(sk);
+    var sv=vEnt?getSiteVerificationForDisplay(s,vEnt):{siret:null,addr:null};
+    var adresseSite=[s.adresse,s.ville,s.dept,s.pays].filter(Boolean).join(', ');
     return `<div class="base-item site-open" data-sk="${escH(sk)}" style="align-items:flex-start;">
       <div class="base-dot ${dec?'on':'off'}" style="margin-top:4px;"></div>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:12px;font-weight:700;color:var(--text);">${escH(s.ville||'Sans ville')} / ${escH(s.nom||'Nom client manquant')} / ${escH(s.siret||'SIRET manquant')}</div>
+        <div style="font-size:12px;font-weight:700;color:var(--text);">${escH(s.ville||'Sans ville')} / ${escH(s.nom||'Nom client manquant')} / ${escH(s.siret||'SIRET manquant')}${renderSiegeVerificationMicro(sv.siret,'SIRET conforme au siège registre vérifié','SIRET différent du siège registre vérifié')}</div>
+        ${adresseSite?`<div style="font-size:10px;color:var(--text3);margin-top:1px;">📍 ${escH(adresseSite)}${renderSiegeVerificationMicro(sv.addr,'Adresse conforme au siège registre vérifié','Adresse différente du siège registre vérifié')}</div>`:''}
         <div style="font-size:10px;color:var(--text3);margin-top:2px;">Décisionnaire ${dec?'OUI':'NON'} · ${ss.parc} véhicules · DAF ${ss.dafCount} · Renouv. ${ss.dafRenew+ss.horsRenew}</div>
       </div>
       <span style="font-size:11px;color:var(--text3);">›</span>
@@ -3020,6 +3051,8 @@ function openEnterpriseSheet(tva){
   var projHtml=projects.filter(function(p){return p.status==='EN_COURS'||p.status==='FUTUR'||p.status==='PROJET'||p.status==='REPORTÉ'||p.status==='REPORTE';}).map(function(p){
     return `<div class="proj-card"><span class="proj-status s-${(p.status||'futur').toLowerCase()}">${escH(p.status||'PROJET')}</span><div style="font-size:12px;font-weight:700;">${escH(p.camions||p.nb||'0')} véhicule(s) · ${escH(p.type||'Type ?')}</div><div style="font-size:10px;color:var(--text3);">${escH(p.date||p.mois||'Date ?')} · ${escH(p.comment||p.commentaire||'')}</div></div>`;
   }).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun projet actif/futur consolidé.</div>';
+  var verifyClient=sites.find(function(s){return normSiret(s.siret);})||c;
+  var skForVerify=verifyClient._siteKey||makeSiteKey(verifyClient);
   const html=`<div style="padding:12px;">
     <div style="font-size:11px;color:var(--text3);margin-bottom:4px;">FICHE ENTREPRISE</div>
     <div style="font-size:17px;font-weight:800;margin-bottom:2px;">${escH(getEnterpriseName(tva))}</div>
@@ -3034,11 +3067,13 @@ function openEnterpriseSheet(tva){
       <div class="kpi-card c-orange"><div class="kpi-val">${stats.score}</div><div class="kpi-lbl">Score</div></div>
     </div>
     <div style="margin-bottom:10px;"><button class="btn btn-secondary btn-sm" id="btn-copy-tva">📋 Copier TVA</button></div>
+    ${renderCompanyVerificationBox(verifyClient,skForVerify)}
     <div class="card" style="margin:0 0 9px;padding:0;overflow:hidden;"><div class="card-title" style="padding:10px 12px 6px;margin:0;">🏢 Sites</div>${sitesHtml}</div>
     <div class="card" style="margin:0 0 9px;"><div class="card-title">📋 Pipeline entreprise</div>${projHtml}</div>
   </div>`;
   openSheet(getEnterpriseName(tva),html);
   safeOn('btn-copy-tva','click',function(){if(navigator.clipboard)navigator.clipboard.writeText(tva).then(function(){toast('TVA copiée');});});
+  bindCompanyVerificationSheet(skForVerify,verifyClient,function(){openEnterpriseSheet(tva);});
   QA('#sheet-body .site-open[data-sk]').forEach(function(el){el.onclick=function(){openSiteSheet(el.dataset.sk);};});
 }
 function openClientSheet(siteKeyOrTva){
@@ -3131,17 +3166,21 @@ function openSiteSheet(sk){
     histHtml+='<div class="hist-row"><div class="hist-date">'+fmtDate(_h.date)+' — '+escH(_h.type||'')+'</div><div class="hist-text">'+escH(_h.text||'')+'</div>'+_delBtn+'</div>';
   }
   if(!histHtml)histHtml='<div style="padding:10px;color:var(--text3);font-size:11px;">Aucun historique</div>';
+  var vKey=companyVerificationKey(c);
+  var vVerif=vKey?getCompanyVerification(vKey):null;
+  var svVerif=vVerif?getSiteVerificationForDisplay(c,vVerif):{siret:null,addr:null};
   const html=`<div style="padding:0 13px 13px;">
     <div style="margin-bottom:9px;">
       <div style="font-size:18px;font-weight:800;margin-bottom:3px;">${escH(c.nom||'Site')}</div>
       <div style="font-size:11px;color:var(--text3);">${escH(c.ville||'—')} · ${escH(c.canton||'—')}</div>
-      <div style="font-size:10px;color:var(--text3);margin-top:2px;">TVA: ${escH(c.tva||'—')} · SIRET: ${escH(c.siret||'—')}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px;">TVA: ${escH(c.tva||'—')} · SIRET: ${escH(c.siret||'—')}${renderSiegeVerificationMicro(svVerif.siret,'SIRET conforme au siège registre vérifié','SIRET différent du siège registre vérifié')}</div>
       <div style="font-size:10px;color:var(--text3);">Profil: ${escH(c.profil||'—')} · Pays: ${escH(c.pays||'—')} · Dept: ${escH(c.dept||'—')} · Vendeur: ${escH(c.vendeur||'—')}</div>
       <div style="font-size:10px;color:var(--text3);">Groupement: ${escH(c.groupement||'—')} · État prospection: <strong>${escH(getSiteEtatProspection(sk,c)||'—')}</strong></div>
-      ${adresseStr?`<div style="font-size:10px;color:var(--text3);margin-top:1px;">📍 ${escH(adresseStr)}</div>`:''}
+      ${adresseStr?`<div style="font-size:10px;color:var(--text3);margin-top:1px;">📍 ${escH(adresseStr)}${renderSiegeVerificationMicro(svVerif.addr,'Adresse conforme au siège registre vérifié','Adresse différente du siège registre vérifié')}</div>`:''}
       <div class="c-badges" style="margin-top:5px;">${badges.join('')}</div>
     </div>
     ${renderQuickActions(c,group)}
+    ${renderCompanyVerificationBox(c,sk)}
     ${renderSiteGroupInfoBox(info)}
     <div style="background:var(--bg3);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
       <div style="display:flex;align-items:center;gap:6px;"><span style="font-size:11px;color:var(--text2);">Exclu</span><label class="toggle" style="width:36px;height:20px;"><input type="checkbox" id="tog-exclu-client"${isExcluded?' checked':''}><span class="tgl-sl"></span></label></div>
@@ -3172,6 +3211,7 @@ function openSiteSheet(sk){
   safeOn('btn-copy-site-addr','click',function(){if(navigator.clipboard)navigator.clipboard.writeText(adresseStr).then(function(){toast('Adresse copiée');});});
   safeOn('btn-copy-site-siret','click',function(){if(navigator.clipboard)navigator.clipboard.writeText(c.siret||'').then(function(){toast('SIRET copié');});});safeOn('btn-add-site-address','click',function(){openExtraAddressModal(sk);});QA('#sheet-body .extra-address-del').forEach(function(b){b.onclick=function(){deleteExtraAddress(sk,parseInt(this.dataset.i));};});QA('#sheet-body .extra-address-copy').forEach(function(b){b.onclick=function(){var a=getExtraAddresses(sk)[parseInt(this.dataset.i)];if(a&&navigator.clipboard)navigator.clipboard.writeText(a.address||'').then(function(){toast('Adresse copiée');});};});
   safeOn('btn-open-group','click',function(){if(group)openGroupSheet(group.id);});
+  bindCompanyVerificationSheet(sk,c);
   safeOn('tog-exclu-client','change',function(){saveExclusionRec(c,{excluded:this.checked,manual:true});buildIndex();if(currentScreen==='tours')renderTours();toast(this.checked?'Client exclu':'Client réintégré');});
   safeOn('tog-urgent-client','change',function(){saveExclusionRec(c,{urgent:this.checked,manualUrgent:true});buildIndex();if(currentScreen==='tours')renderTours();toast(this.checked?'Client urgent':'Urgence retirée');});
   safeOn('site-etat-prosp','change',function(){setSiteEtatProspection(sk,this.value);toast('État prospection enregistré');});
@@ -3194,6 +3234,22 @@ function openSiteSheet(sk){
       .sheet-close{width:36px!important;height:36px!important;min-width:36px!important;font-size:18px!important;background:var(--bg4)!important;color:var(--text)!important;border:1px solid var(--border2)!important;z-index:40!important;}
       .group-box{border-color:var(--daf-border)!important;background:var(--daf-bg)!important;}
       .badge.b-groupe{background:rgba(255,230,0,.22);color:#ffe600;border:1px solid rgba(255,230,0,.7)}
+      .cb-verify-encart{border:1px solid var(--daf-border);background:var(--daf-bg);border-radius:var(--radius);padding:10px 12px;margin:0 0 10px;}
+      .cb-verify-encart.is-verified{border-color:rgba(58,184,122,.55);background:rgba(58,184,122,.07);}
+      .cb-verify-hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+      .cb-verify-title{font-size:11px;font-weight:800;color:var(--daf);letter-spacing:.3px;display:flex;align-items:center;gap:6px;}
+      .cb-verify-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--green,#3ab87a);color:#fff;}
+      .cb-verify-btn-badge{display:inline-flex;align-items:center;justify-content:center;margin-right:2px;color:#fff;}
+      #btn-company-verify{font-weight:800;letter-spacing:.5px;display:inline-flex;align-items:center;gap:4px;padding:6px 10px;}
+      .cb-verify-row{font-size:10px;color:var(--text2);line-height:1.55;padding:2px 0;}
+      .cb-verify-row strong{color:var(--text);}
+      .cb-verify-meta{font-size:9px;color:var(--text3);margin-top:6px;line-height:1.45;}
+      .cb-verify-empty{font-size:10px;color:var(--text3);line-height:1.45;}
+      .cb-verify-loading{font-size:11px;color:var(--text3);padding:8px 0;}
+      .cb-verify-warn{color:var(--orange);font-weight:700;}
+      .cb-verify-ok{color:var(--green);font-weight:700;}
+      .cb-verify-micro{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--green,#3ab87a);color:#fff;margin-left:4px;vertical-align:-2px;flex-shrink:0;box-shadow:0 0 0 1px rgba(58,184,122,.35);}
+      .cb-verify-micro-fail{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--red,#c33);color:#fff;margin-left:4px;vertical-align:-2px;flex-shrink:0;box-shadow:0 0 0 1px rgba(204,51,51,.35);}
     `;
     document.head.appendChild(css);
   }catch(e){}
@@ -3207,6 +3263,10 @@ function _groupPrincipalKey(gid){
   for(var i=0;i<keys.length;i++){
     var m=meta[gid+'|'+keys[i]]||{};
     if(m.principal===true)return keys[i];
+  }
+  if(group.auto){
+    var siegeSk=getVerifiedSiegeSiteKeyForGroup(group);
+    if(siegeSk&&keys.indexOf(siegeSk)>=0)return siegeSk;
   }
   return keys[0];
 }
@@ -3233,7 +3293,12 @@ function getSitePrincipalInfo(sk){
 function _groupSites(group){return _siteKeyList(group).map(function(sk){return IDX.cBySite[sk];}).filter(Boolean);}
 function _groupProjects(group){
   var out=[]; var seen={};
-  _groupSites(group).forEach(function(c){(IDX.pByTva[c.tva]||[]).forEach(function(p){var id=p.id||JSON.stringify(p);if(!seen[id]){seen[id]=true;out.push(p);}});});
+  function add(p){var id=p.id||JSON.stringify(p);if(seen[id])return;seen[id]=true;out.push(p);}
+  _groupSites(group).forEach(function(c){
+    var sk=c._siteKey||makeSiteKey(c);
+    (IDX.pBySite[sk]||[]).forEach(add);
+    (IDX.pByTva[c.tva]||[]).forEach(function(p){if(projectBelongsToSite(p,c.tva,sk))add(p);});
+  });
   return out;
 }
 function _groupAny(group,fn){return _groupSites(group).some(fn);}
@@ -3272,7 +3337,7 @@ function _rowFlagsForTours(c,info){
     isFlotteCoordonnee:sites.some(isFlotteCoordonnee),
     isFlotte:sites.some(isFlotteBadge),
     isUrgent:sites.some(isClientUrgent),
-    hasProjet:(info&&info.hasGroup&&info.principal)?_groupProjects(info.group).some(function(p){return p.status==='EN_COURS'||p.status==='FUTUR'||p.status==='PROJET';}):hasOpenProject(c.tva,c._siteKey||makeSiteKey(c)),
+    hasProjet:(info&&info.hasGroup&&info.principal)?_groupProjects(info.group).some(function(p){return ['EN_COURS','FUTUR','PROJET','REPORTÉ','REPORTE'].indexOf(p.status)>=0;}):hasOpenProject(c.tva,c._siteKey||makeSiteKey(c)),
     pasProjet:sites.some(function(x){var xsk=x._siteKey||makeSiteKey(x);return hasPasProjet(x,xsk);}),
     isExclu:isClientExcluded(c),
     isInactif:isToursRowInactif(c,info),
@@ -3287,7 +3352,7 @@ function _toursUrgentForKpi(c){
   return isClientUrgent(c);
 }
 function _toursDataCacheKeyFn(){
-  return [DB.getBase(),DB.getClients().length,DB.getVehicles().length,GF.vendeur||'',GF.pays||'',GF.dept||'',(GF.profils||[]).join('|'),(GF.cbToursProfils||[]).join('|'),(GF.vendeursTours||[]).join('|')].join(':');
+  return [DB.getBase(),DB.getClients().length,DB.getVehicles().length,(DB.getProjects()||[]).length,GF.vendeur||'',GF.pays||'',GF.dept||'',(GF.profils||[]).join('|'),(GF.cbToursProfils||[]).join('|'),(GF.vendeursTours||[]).join('|')].join(':');
 }
 function buildToursData(){
   if(GF.masquerSitesSecondaires===undefined)GF.masquerSitesSecondaires=false;
@@ -3632,7 +3697,12 @@ function openGroupSheet(gid){
   var group=getGroupById(gid);if(!group){toast('Groupe introuvable');return;}
   var stats=getGroupStats(group), sites=_groupSites(group), badges=_groupBadgesHtml(group);
   var vehiclesHtml='<div id="group-vehicles" style="display:none;background:var(--bg3);border-radius:var(--radius);overflow:hidden;">'+renderVehicleRows(stats.allVehicles||[])+'</div>';
-  var rows=sites.map(function(c){var sk=makeSiteKey(c), ss=getSiteStats(sk), principal=groupSiteIsPrincipal(group.id,sk), dec=groupSiteIsDecisionnaire(group.id,sk);return `<div class="base-item" style="align-items:flex-start;"><div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;">${escH(c.ville||'Sans ville')} / ${escH(c.nom||'Nom client')} / ${escH(c.siret||'SIRET manquant')}</div><div style="font-size:10px;color:var(--text3);">TVA ${escH(c.tva||'—')} · ${ss.parc} véhicules · ${ss.dafRenew+ss.horsRenew} renouv.</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;"><span style="font-size:10px;color:var(--text2);">Site principal</span><label class="toggle"><input type="checkbox" class="grp-principal" data-sk="${escH(sk)}" ${principal?'checked':''}><span class="tgl-sl"></span></label><span style="font-size:10px;color:var(--text2);">Décisionnaire</span><label class="toggle"><input type="checkbox" class="grp-dec" data-sk="${escH(sk)}" ${dec?'checked':''} ${principal?'disabled':''}><span class="tgl-sl"></span></label></div></div><button class="btn btn-ghost btn-sm grp-open-site" data-sk="${escH(sk)}">Site</button>${!group.auto?`<button class="btn btn-ghost btn-sm grp-remove-site" data-sk="${escH(sk)}">Retirer</button>`:''}</div>`;}).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px;">Aucun site dans ce groupe.</div>';
+  var rows=sites.map(function(c){
+    var sk=makeSiteKey(c), ss=getSiteStats(sk), principal=groupSiteIsPrincipal(group.id,sk), dec=groupSiteIsDecisionnaire(group.id,sk);
+    var vKey=companyVerificationKey(c), vGrp=vKey?getCompanyVerification(vKey):null, sv=vGrp?getSiteVerificationForDisplay(c,vGrp):{siret:null,addr:null};
+    var adresseSite=[c.adresse,c.ville,c.dept,c.pays].filter(Boolean).join(', ');
+    return `<div class="base-item" style="align-items:flex-start;"><div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;">${escH(c.ville||'Sans ville')} / ${escH(c.nom||'Nom client')} / ${escH(c.siret||'SIRET manquant')}${renderSiegeVerificationMicro(sv.siret,'SIRET conforme au siège registre vérifié','SIRET différent du siège registre vérifié')}</div>${adresseSite?`<div style="font-size:10px;color:var(--text3);margin-top:1px;">📍 ${escH(adresseSite)}${renderSiegeVerificationMicro(sv.addr,'Adresse conforme au siège registre vérifié','Adresse différente du siège registre vérifié')}</div>`:''}<div style="font-size:10px;color:var(--text3);">TVA ${escH(c.tva||'—')} · ${ss.parc} véhicules · ${ss.dafRenew+ss.horsRenew} renouv.</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;"><span style="font-size:10px;color:var(--text2);">Site principal</span><label class="toggle"><input type="checkbox" class="grp-principal" data-sk="${escH(sk)}" ${principal?'checked':''}><span class="tgl-sl"></span></label><span style="font-size:10px;color:var(--text2);">Décisionnaire</span><label class="toggle"><input type="checkbox" class="grp-dec" data-sk="${escH(sk)}" ${dec?'checked':''} ${principal?'disabled':''}><span class="tgl-sl"></span></label></div></div><button class="btn btn-ghost btn-sm grp-open-site" data-sk="${escH(sk)}">Site</button>${!group.auto?`<button class="btn btn-ghost btn-sm grp-remove-site" data-sk="${escH(sk)}">Retirer</button>`:''}</div>`;
+  }).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px;">Aucun site dans ce groupe.</div>';
   var html=`<div style="padding:12px;"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;">FICHE GROUPE MÈRE ${group.auto?'AUTO TVA':'MANUEL'}</div><div style="font-size:18px;font-weight:800;margin-bottom:5px;">${escH(group.name||'Groupe')}</div><div class="c-badges" style="margin-bottom:8px;">${badges}</div><div class="kpi-grid kpi-grid-3" style="margin:0 0 8px;"><div class="kpi-card"><div class="kpi-val">${sites.length}</div><div class="kpi-lbl">Sites</div></div><div class="kpi-card"><div class="kpi-val">${stats.parc}</div><div class="kpi-lbl">Parc</div></div><div class="kpi-card c-daf"><div class="kpi-val">${stats.dafCount}</div><div class="kpi-lbl">DAF</div></div><div class="kpi-card c-daf"><div class="kpi-val">${stats.dafRenew}</div><div class="kpi-lbl">R.DAF</div></div><div class="kpi-card c-blue"><div class="kpi-val">${stats.horsRenew}</div><div class="kpi-lbl">R.Conc</div></div></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${!group.auto?'<button class="btn btn-primary btn-sm" id="btn-group-add-site">+ Ajouter un site</button><button class="btn btn-red btn-sm" id="btn-group-delete">Supprimer groupe</button>':'<button class="btn btn-secondary btn-sm" disabled>Groupe automatique TVA</button>'}<button class="btn btn-secondary btn-sm" id="btn-toggle-group-veh">Parc consolidé ▼</button></div><div class="card" style="margin:0 0 9px;padding:0;overflow:hidden;"><div class="card-title" style="padding:10px 12px 6px;margin:0;">Sites du groupe — un seul site principal possible</div>${rows}</div>${vehiclesHtml}</div>`;
   openSheet(group.name||'Groupe',html);
   QA('#sheet-body .grp-principal').forEach(function(el){el.onchange=function(){if(!this.checked){this.checked=true;toast('Choisis un autre site principal au lieu de décocher celui-ci');return;}setGroupSitePrincipal(group.id,this.dataset.sk,true);openGroupSheet(group.id);if(currentScreen==='tours')renderTours();};});
@@ -3739,6 +3809,230 @@ function normalizeEtatProspection(v){v=String(v||'').trim(); if(!v)return ''; va
 function renderEtatProspectionSelect(id,value){value=normalizeEtatProspection(value); var html='<select class="form-input" id="'+id+'" style="font-size:11px;padding:5px 7px;"><option value="">État prospection</option>'; ETAT_PROSPECTION_OPTIONS.forEach(function(o){html+='<option value="'+escH(o)+'"'+(value===o?' selected':'')+'>'+escH(o)+'</option>';}); if(value&&ETAT_PROSPECTION_OPTIONS.indexOf(value)<0)html+='<option value="'+escH(value)+'" selected>'+escH(value)+' (importé)</option>'; return html+'</select>'; }
 function getSiteEtatProspection(sk,c){var st=getAppSettings();return normalizeEtatProspection((st.siteEtatProspection&&st.siteEtatProspection[sk]) || (c&&c.etatProspection) || '');}
 function setSiteEtatProspection(sk,val){var st=getAppSettings();if(!st.siteEtatProspection)st.siteEtatProspection={};st.siteEtatProspection[sk]=normalizeEtatProspection(val);saveAppSettings(st);}
+
+// ===== VÉRIFICATION REGISTRE OFFICIEL (résistant aux imports — stocké dans settings) =====
+function companyVerificationKey(c){
+  if(!c)return '';
+  var siren=siretSiren(normSiret(c.siret))||String(c.siren||'').replace(/\D/g,'').slice(0,9);
+  if(siren&&siren.length===9)return 'siren:'+siren;
+  var tva=String(c.tva||'').trim();
+  if(tva)return 'tva:'+tva;
+  return '';
+}
+function getCompanyVerification(key){if(!key)return null;var st=getAppSettings();return (st.companyVerifications&&st.companyVerifications[key])||null;}
+function saveCompanyVerification(key,data){
+  if(!key||!data)return;
+  var st=getAppSettings();
+  if(!st.companyVerifications)st.companyVerifications={};
+  st.companyVerifications[key]=data;
+  saveAppSettings(st);
+}
+function getCompanyVerificationForTva(tva){
+  var sites=(IDX.sitesByTva&&IDX.sitesByTva[tva])||[];
+  for(var i=0;i<sites.length;i++){
+    var v=getCompanyVerification(companyVerificationKey(sites[i]));
+    if(v)return v;
+  }
+  return null;
+}
+function findSiteKeyMatchingSiege(tva,data){
+  if(!tva||!data)return '';
+  var sites=(IDX.sitesByTva&&IDX.sitesByTva[tva])||[];
+  var targetSiret=normSiret(data.siret||'');
+  if(targetSiret){
+    var bySiret=sites.find(function(s){return normSiret(s.siret)===targetSiret;});
+    if(bySiret)return bySiret._siteKey||makeSiteKey(bySiret);
+  }
+  if(data.siegeAdresse){
+    var byAddr=sites.find(function(s){
+      var local=[s.adresse,s.ville,s.dept].filter(Boolean).join(', ');
+      return compareAddresses(local,data.siegeAdresse)===true;
+    });
+    if(byAddr)return byAddr._siteKey||makeSiteKey(byAddr);
+  }
+  return '';
+}
+function groupHasExplicitPrincipal(gid){
+  var meta=getAppSettings().groupSiteMeta||{};
+  return Object.keys(meta).some(function(k){return k.indexOf(String(gid)+'|')===0&&meta[k].principal===true;});
+}
+function applyVerifiedSiegeFromRegistry(c,data){
+  if(!c||!data)return;
+  data.siegeSiteKey=findSiteKeyMatchingSiege(c.tva,data);
+  data.siegeRegistrySiret=data.siret||'';
+  var group=getAutoGroupForSite(c);
+  if(!group||!group.auto||!data.siegeSiteKey)return;
+  if(!groupHasExplicitPrincipal(group.id))setGroupSitePrincipal(group.id,data.siegeSiteKey,true);
+}
+function getVerifiedSiegeSiteKeyForGroup(group){
+  if(!group||!group.auto)return '';
+  var v=getCompanyVerificationForTva(group.tva);
+  if(!v)return '';
+  if(v.siegeSiteKey&&IDX.cBySite&&IDX.cBySite[v.siegeSiteKey])return v.siegeSiteKey;
+  return findSiteKeyMatchingSiege(group.tva,v);
+}
+function isSiretVerifiedForSite(c,v){
+  if(!c||!v)return false;
+  var cs=normSiret(c.siret),vs=normSiret(v.siret||v.siegeRegistrySiret);
+  return !!(cs&&vs&&cs===vs);
+}
+function getSiteVerificationForDisplay(c,v){
+  if(!c||!v)return {siret:null,addr:null};
+  var cs=normSiret(c.siret), vs=normSiret(v.siret||v.siegeRegistrySiret);
+  var localAddr=[c.adresse,c.ville,c.dept,c.pays].filter(Boolean).join(', ');
+  var siret=null;
+  if(cs&&vs)siret=cs===vs?'ok':'ko';
+  var addr=null;
+  if(localAddr&&v.siegeAdresse){
+    var cmp=compareAddresses(localAddr,v.siegeAdresse);
+    if(cmp===true)addr='ok';
+    else if(cmp===false)addr='ko';
+  }
+  return {siret:siret,addr:addr};
+}
+function renderVerifiedMicroBadge(title){
+  return '<span class="cb-verify-micro" title="'+escH(title||'Conforme au registre vérifié')+'" aria-label="Vérifié"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M12 1L3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5l-9-4zm-1 14.9l-3.5-3.4 1.4-1.4 2.1 2.1 4.7-4.7 1.4 1.4-6.1 6z"/></svg></span>';
+}
+function renderVerifiedMicroCross(title){
+  return '<span class="cb-verify-micro-fail" title="'+escH(title||'Diffère du siège registre vérifié')+'" aria-label="Non conforme au siège"><svg viewBox="0 0 24 24" width="10" height="10"><path fill="currentColor" d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm4.3 13.3L15.3 17 12 13.7 8.7 17 7.7 15.3 11 12 7.7 8.7 8.7 7.7 12 11l3.3-3.3 1 1L13 12l3.3 3.3z"/></svg></span>';
+}
+function renderSiegeVerificationMicro(status,okTitle,koTitle){
+  if(status==='ok')return renderVerifiedMicroBadge(okTitle);
+  if(status==='ko')return renderVerifiedMicroCross(koTitle);
+  return '';
+}
+function normAddrCompare(s){return String(s||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]/g,' ').replace(/\s+/g,' ').trim();}
+function compareAddresses(local,official){
+  if(!local||!official)return null;
+  var a=normAddrCompare(local),b=normAddrCompare(official);
+  if(!a||!b)return null;
+  if(a===b)return true;
+  var cpa=(String(local).match(/\b(\d{5})\b/)||[])[1],cpb=(String(official).match(/\b(\d{5})\b/)||[])[1];
+  if(cpa&&cpb&&cpa===cpb){
+    var words=a.split(' ').filter(function(w){return w.length>3;});
+    var hits=words.filter(function(w){return b.indexOf(w)>=0;});
+    return hits.length>=Math.min(2,Math.max(1,words.length));
+  }
+  return false;
+}
+function formatDirigeants(list){
+  return (list||[]).slice(0,4).map(function(d){
+    if(d.denomination)return escH(d.denomination+(d.qualite?' · '+d.qualite:''));
+    return escH([d.prenoms,d.nom].filter(Boolean).join(' ')+(d.qualite?' · '+d.qualite:''));
+  }).join('<br>')||'—';
+}
+function parseRegistryHit(hit,c){
+  var siege=hit.siege||{};
+  var adresseOff=siege.adresse||[siege.numero_voie,siege.type_voie,siege.libelle_voie,siege.code_postal,siege.libelle_commune].filter(Boolean).join(' ').trim();
+  var dirs=(hit.dirigeants||[]).filter(function(d){return d&&(d.nom||d.denomination);}).slice(0,6);
+  var etat=String(hit.etat_administratif||siege.etat_administratif||'').toUpperCase();
+  var etatLabel=etat==='A'?'En activité':(etat==='C'?'Cessée / radiée':(etat==='F'?'Fermée':(etat||'Inconnu')));
+  var localAddr=[c&&c.adresse,c&&c.ville,c&&c.dept,c&&c.pays].filter(Boolean).join(', ');
+  return {
+    checkedAt:new Date().toISOString(),
+    siren:hit.siren||'',
+    siret:siege.siret||'',
+    nom:hit.nom_complet||hit.nom_raison_sociale||'',
+    siegeAdresse:adresseOff,
+    etat:etat,
+    etatLabel:etatLabel,
+    nbEtab:hit.nombre_etablissements,
+    nbEtabOuverts:hit.nombre_etablissements_ouverts,
+    naf:hit.activite_principale||siege.activite_principale||'',
+    categorie:hit.categorie_entreprise||'',
+    effectif:hit.tranche_effectif_salarie||siege.tranche_effectif_salarie||'',
+    dirigeantsRaw:dirs,
+    dirigeants:dirs.map(function(d){
+      if(d.denomination)return d.denomination+(d.qualite?' · '+d.qualite:'');
+      return [d.prenoms,d.nom].filter(Boolean).join(' ')+(d.qualite?' · '+d.qualite:'');
+    }),
+    adresseLocal:localAddr,
+    adresseMatch:compareAddresses(localAddr,adresseOff)
+  };
+}
+function fetchCompanyFromRegistry(c){
+  var siren=siretSiren(normSiret(c&&c.siret))||String(c&&c.siren||'').replace(/\D/g,'').slice(0,9);
+  var siret=normSiret(c&&c.siret);
+  var q='';
+  if(siret&&siret.length===14)q=siret;
+  else if(siren&&siren.length===9)q=siren;
+  else{
+    var nom=String(c&&c.nom||'').trim(),ville=String(c&&c.ville||'').trim();
+    q=nom+(ville?' '+ville:'');
+  }
+  if(!q)return Promise.reject(new Error('SIREN, SIRET ou nom client requis'));
+  var url='https://recherche-entreprises.api.gouv.fr/search?q='+encodeURIComponent(q)+'&per_page=1';
+  return fetch(url).then(function(r){
+    if(!r.ok)throw new Error('Registre indisponible ('+r.status+')');
+    return r.json();
+  }).then(function(j){
+    var hit=(j&&j.results&&j.results[0])||null;
+    if(!hit)throw new Error('Aucune entreprise trouvée pour « '+q+' »');
+    return parseRegistryHit(hit,c);
+  });
+}
+function renderCompanyVerificationBox(c,sk){
+  var key=companyVerificationKey(c);
+  var v=key?getCompanyVerification(key):null;
+  var siren=v&&v.siren?v.siren:(key&&key.indexOf('siren:')===0?key.slice(6):'');
+  var annuaireUrl=siren?'https://annuaire-entreprises.data.gouv.fr/entreprise/'+encodeURIComponent(siren):'';
+  var cls='cb-verify-encart'+(v?' is-verified':'');
+  var html='';
+  if(!v){
+    html='<div class="'+cls+'" id="cb-verify-encart" data-sk="'+escH(sk||'')+'" data-vkey="'+escH(key||'')+'">';
+    html+='<div class="cb-verify-hdr"><div class="cb-verify-title"><span class="cb-verify-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 1L3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5l-9-4zm-1 14.9l-3.5-3.4 1.4-1.4 2.1 2.1 4.7-4.7 1.4 1.4-6.1 6z"/></svg></span> Registre officiel</div>';
+    html+='<button type="button" class="btn btn-primary btn-sm" id="btn-company-verify"><span class="cb-verify-btn-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M12 1L3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5l-9-4zm-1 14.9l-3.5-3.4 1.4-1.4 2.1 2.1 4.7-4.7 1.4 1.4-6.1 6z"/></svg></span> VERIFIER</button></div>';
+    html+='<div class="cb-verify-empty">Interroge l’API Recherche d’Entreprises (data.gouv.fr) : siège, statut, établissements, dirigeants. Donnée sauvegardée hors import CRM.</div>';
+  }else{
+    html='<div class="'+cls+'" id="cb-verify-encart" data-sk="'+escH(sk||'')+'" data-vkey="'+escH(key||'')+'">';
+    html+='<div class="cb-verify-hdr"><div class="cb-verify-title"><span class="cb-verify-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 1L3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5l-9-4zm-1 14.9l-3.5-3.4 1.4-1.4 2.1 2.1 4.7-4.7 1.4 1.4-6.1 6z"/></svg></span> Registre officiel · <span class="cb-verify-ok">VÉRIFIÉ</span></div>';
+    html+='<button type="button" class="btn btn-primary btn-sm" id="btn-company-verify"><span class="cb-verify-btn-badge" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M12 1L3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5l-9-4zm-1 14.9l-3.5-3.4 1.4-1.4 2.1 2.1 4.7-4.7 1.4 1.4-6.1 6z"/></svg></span> VERIFIER</button></div>';
+    var etatCls=(v.etat==='A'?'cb-verify-ok':'cb-verify-warn');
+    html+='<div class="cb-verify-row"><strong>'+escH(v.nom||'Entreprise')+'</strong></div>';
+    html+='<div class="cb-verify-row"><span class="'+etatCls+'">'+escH(v.etatLabel||'—')+'</span> · SIREN '+escH(v.siren||'—')+'</div>';
+    html+='<div class="cb-verify-row"><strong>Siège registre :</strong> '+escH(v.siegeAdresse||'—')+(v.siret?' · SIRET '+escH(v.siret):'')+'</div>';
+    var siegeSk=v.siegeSiteKey||findSiteKeyMatchingSiege(c.tva,v);
+    if(siegeSk){
+      var sc=IDX.cBySite&&IDX.cBySite[siegeSk];
+      var g=getAutoGroupForSite(c);
+      var isPr=g&&g.auto&&groupSiteIsPrincipal(g.id,siegeSk);
+      html+='<div class="cb-verify-row"><strong>Siège CRM :</strong> '+escH(sc?((sc.ville||'')+' / '+(sc.nom||'')):siegeSk)+(isPr?' · <span class="cb-verify-ok">Site principal groupe AUTO</span>':'')+'</div>';
+    }else if(v.siret||v.siegeAdresse){
+      html+='<div class="cb-verify-row cb-verify-warn">Aucun site CRM ne correspond au siège registre.</div>';
+    }
+    if(v.adresseLocal){
+      var cmp=v.adresseMatch===true?'<span class="cb-verify-ok">Cohérent avec la fiche</span>':(v.adresseMatch===false?'<span class="cb-verify-warn">Diffère de la fiche</span>':'');
+      html+='<div class="cb-verify-row"><strong>Fiche :</strong> '+escH(v.adresseLocal)+' '+cmp+'</div>';
+    }
+    html+='<div class="cb-verify-row"><strong>Établissements :</strong> '+escH(String(v.nbEtab!=null?v.nbEtab:'—'))+(v.nbEtabOuverts!=null?' · '+escH(String(v.nbEtabOuverts))+' ouverts':'')+'</div>';
+    html+='<div class="cb-verify-row"><strong>Dirigeant(s) :</strong><br>'+formatDirigeants(v.dirigeantsRaw||[])+'</div>';
+    if(v.naf)html+='<div class="cb-verify-row"><strong>NAF :</strong> '+escH(v.naf)+(v.categorie?' · '+escH(v.categorie):'')+'</div>';
+    html+='<div class="cb-verify-meta">Vérifié le '+escH(fmtDate(v.checkedAt))+(annuaireUrl?' · <a href="'+escH(annuaireUrl)+'" target="_blank" rel="noopener" style="color:var(--daf);">Annuaire ↗</a>':'')+'</div>';
+  }
+  html+='</div>';
+  return html;
+}
+function bindCompanyVerificationSheet(sk,c,reopenFn){
+  reopenFn=reopenFn||function(){openSiteSheet(sk);};
+  var btn=$('btn-company-verify');
+  if(!btn)return;
+  btn.onclick=function(){
+    var enc=$('cb-verify-encart');
+    if(enc)enc.innerHTML='<div class="cb-verify-loading">⏳ Interrogation du registre officiel…</div>';
+    fetchCompanyFromRegistry(c).then(function(data){
+      var key=companyVerificationKey(c);
+      if(!key)throw new Error('Impossible de mémoriser la vérification');
+      applyVerifiedSiegeFromRegistry(c,data);
+      saveCompanyVerification(key,data);
+      toast('Entreprise vérifiée');
+      if(currentScreen==='tours')renderTours();
+      reopenFn();
+    }).catch(function(e){
+      toast(e.message||'Vérification impossible');
+      reopenFn();
+    });
+  };
+}
 
 function _distinct(arr){var s={};arr.forEach(function(v){v=String(v||'').trim();if(v)s[v]=true;});return Object.keys(s).sort();}
 function _qItems(items, mapper, max){
@@ -4359,12 +4653,28 @@ renderModeEmploi = function(){
 (function(){
   function _settings(){return DB.getSettings()||{};}
   function _saveSettings(s){DB.saveSettings(s||{});autoSave();}
-  function _getArr(k){var s=_settings();return Array.isArray(s[k])?s[k]:[];}
-  function _setArr(k,v){var s=_settings();s[k]=v||[];_saveSettings(s);}
-  window.getHotDeals=function(){return _getArr('hotDeals');};
-  window.saveHotDeals=function(v){_setArr('hotDeals',v);};
-  window.getDeliveries=function(){return _getArr('deliveries');};
-  window.saveDeliveries=function(v){_setArr('deliveries',v);};
+  function _arrFromDb(k){
+    var top=DB.get(k);
+    if(Array.isArray(top))return top;
+    var s=_settings(), leg=s[k];
+    if(Array.isArray(leg)){
+      DB.set(k,leg);
+      delete s[k];
+      _saveSettings(s);
+      return leg;
+    }
+    return [];
+  }
+  function _saveArrToDb(k,v){
+    DB.set(k,v||[]);
+    var s=_settings();
+    if(s&&Array.isArray(s[k])){delete s[k];_saveSettings(s);}
+    autoSave();
+  }
+  window.getHotDeals=function(){return _arrFromDb('hotDeals');};
+  window.saveHotDeals=function(v){_saveArrToDb('hotDeals',v);};
+  window.getDeliveries=function(){return _arrFromDb('deliveries');};
+  window.saveDeliveries=function(v){_saveArrToDb('deliveries',v);};
   function _id(prefix){return prefix+'_'+Date.now()+'_'+Math.floor(Math.random()*100000);}
   function _clientBySiteKey(sk){return (IDX.cBySite&&IDX.cBySite[sk])||null;}
   function _siteLabel(c){return [c&&c.nom,c&&c.ville,c&&c.tva,c&&c.siret].filter(Boolean).join(' / ')||'Site inconnu';}
@@ -6659,7 +6969,7 @@ document.addEventListener('DOMContentLoaded',function(){
   function projectStatusFromDeal(d){var lines=arr(d.lines); if(!lines.length)return d.status||'EN_COURS'; var hasEn=false,hasFut=false,hasWin=false,hasLost=false,hasAb=false;lines.forEach(function(l){var r=lineResult(l);if(r==='EN_COURS')hasEn=true;if(r==='FUTUR'||r==='REPORTE'||r==='REPORTÉ')hasFut=true;if(r==='GAGNE')hasWin=true;if(r==='PERDU')hasLost=true;if(r==='ABANDON')hasAb=true;}); if(hasEn)return 'EN_COURS'; if(hasFut)return 'FUTUR'; if(hasWin)return 'GAGNE'; if(hasLost)return 'PERDU'; if(hasAb)return 'ABANDON'; return d.status||'EN_COURS'}
   function saveDeal(d){var ds=deals(),idx=ds.findIndex(function(x){return String(x.id)===String(d.id)});d.status=projectStatusFromDeal(d); if(idx>=0)ds[idx]=d;else ds.push(d);saveDeals(ds);syncProject(d)}
   function syncProject(d){try{var ps=projects(),changed=false;ps.forEach(function(p){if(String(p.id||p.projectId||'')===String(d.projectId||d.id)){p.status=d.status||projectStatusFromDeal(d);p.resultStatus=p.status;p.resultDate=today();changed=true;}});if(changed)DB.saveProjects(ps)}catch(e){}}
-  function ensureProjectDeals(){var ds=deals();var changed=false;projects().forEach(function(p){var pid=p.id||p.projectId;if(!pid)return;if(ds.some(function(d){return String(d.projectId)===String(pid)}))return;var c=clients().find(function(x){return String(x.tva||'')===String(p.tva||'')})||{};var q=Math.max(1,i(p.nb||p.qty||p.quantite||p.camions||1));ds.push({id:uid('deal'),projectId:pid,siteKey:p.siteKey||p.tva||'',tva:p.tva||'',client:p.client||p.nom||c.nom||'',created:p.created||p.date||today(),comment:p.comment||p.commentaire||'',status:p.status||'EN_COURS',lines:[{id:uid('line'),created:p.created||p.date||today(),type:p.type||p.typeVehicule||'Tracteur',model:p.model||p.modele||'',qty:q,result:(p.status==='FUTUR'||p.status==='REPORTE')?'FUTUR':'EN_COURS'}]});changed=true;});if(changed)saveDeals(ds);return ds}
+  function ensureProjectDeals(){var ds=deals();var changed=false;projects().forEach(function(p){var pid=p.id||p.projectId;if(!pid)return;if(ds.some(function(d){return String(d.projectId)===String(pid)}))return;var c=clients().find(function(x){return String(x.tva||'')===String(p.tva||'')})||{};var q=Math.max(1,i(p.nb||p.qty||p.quantite||p.camions||1));var psk=(typeof resolveProjectSiteKey==='function'?resolveProjectSiteKey(p):'')||p.siteKey||'';ds.push({id:uid('deal'),projectId:pid,siteKey:psk,tva:p.tva||'',client:p.client||p.nom||c.nom||'',created:p.created||p.date||today(),comment:p.comment||p.commentaire||'',status:p.status||'EN_COURS',lines:[{id:uid('line'),created:p.created||p.date||today(),type:p.type||p.typeVehicule||'Tracteur',model:p.model||p.modele||'',qty:q,result:(p.status==='FUTUR'||p.status==='REPORTE')?'FUTUR':'EN_COURS'}]});changed=true;});if(changed)saveDeals(ds);return ds}
   function distinctCarrosseries(){var s=new Set(['Fourgon','Benne','Frigorifique','Plateau','Citerne','Ampliroll','Toupie','Porte-conteneur','Savoyarde','Autre']);vehicles().forEach(function(v){if(v.carrosserie)s.add(v.carrosserie)});return Array.from(s).sort()}
   function carrosserieOptions(v){return distinctCarrosseries().map(function(x){return '<option value="'+esc(x)+'" '+(String(v||'')===String(x)?'selected':'')+'>'+esc(x)+'</option>'}).join('')}
   function orderComm(d){var q=lineQty(d); if(String(d.vnvo||'VN').toUpperCase()==='VO')return 400*q; return (String(d.type||'').toLowerCase().indexOf('port')>=0?550:400)*q}
@@ -6670,6 +6980,7 @@ document.addEventListener('DOMContentLoaded',function(){
   function receivedComm(d){return (d.rcvOrder?orderComm(d):0)+(d.rcvMaint?maintComm(d.maintenance,d.qty):0)+(d.rcvPaccar?paccarComm(d):0)+(d.rcvPrime?primeComm(d):0)}
   function syncDeliveryFromLine(d,l){var liv=deliveries();var source=d.id+'|'+l.id;var idx=liv.findIndex(function(x){return String(x.sourceId)===String(source)});if(lineResult(l)!=='GAGNE'){if(idx>=0){liv.splice(idx,1);saveDeliveries(liv)}return}var row=idx>=0?liv[idx]:{};row=Object.assign(row,{id:row.id||uid('liv'),sourceId:source,dealId:d.id,projectId:d.projectId||'',siteKey:d.siteKey||'',tva:d.tva||'',client:d.client||'',created:row.created||today(),qty:lineQty(l),type:l.type||'',model:l.model||'',carrosserie:l.carrosserie||'',orderDate:l.orderDate||row.orderDate||'',deliveryDate:l.deliveryDate||row.deliveryDate||'',productionNo:l.productionNo||row.productionNo||'',bodybuilder:l.bodybuilder||row.bodybuilder||'',vnvo:l.vnvo||row.vnvo||'VN',maintenance:l.maintenance||row.maintenance||'Non',lessor:l.lessor||row.lessor||'',paccar:l.paccar||row.paccar||'Non',marginPct:l.marginPct||row.marginPct||'',prime:n(l.prime!=null?l.prime:row.prime)});if(idx>=0)liv[idx]=row;else liv.push(row);saveDeliveries(liv)}
   function syncAllDeliveries(){deals().forEach(function(d){arr(d.lines).forEach(function(l){syncDeliveryFromLine(d,l)})})}
+  window.syncAllDeliveries=syncAllDeliveries;
   function openLineModal(dealId,idx){var ds=ensureProjectDeals(),d=ds.find(function(x){return String(x.id)===String(dealId)});if(!d)return;d.lines=arr(d.lines);var l=Object.assign({id:uid('line'),created:today(),type:'Tracteur',model:'',qty:1,result:'EN_COURS',vnvo:'VN',maintenance:'Non',paccar:'Non'},idx>=0?d.lines[idx]:{});var r=lineResult(l);var body=''
     +'<div class="form-group"><label class="form-label">Résultat</label><select class="form-input" id="v32-res"><option value="EN_COURS" '+(r==='EN_COURS'?'selected':'')+'>EN COURS</option><option value="FUTUR" '+(r==='FUTUR'?'selected':'')+'>REPORTÉ / FUTUR</option><option value="GAGNE" '+(r==='GAGNE'?'selected':'')+'>GAGNÉ</option><option value="PERDU" '+(r==='PERDU'?'selected':'')+'>PERDU</option><option value="ABANDON" '+(r==='ABANDON'?'selected':'')+'>ABANDON</option></select></div>'
     +'<div class="form-group"><label class="form-label">Type véhicule</label><select class="form-input" id="v32-type"><option '+(l.type==='Tracteur'?'selected':'')+'>Tracteur</option><option '+(l.type==='Porteur'?'selected':'')+'>Porteur</option></select></div>'
@@ -7407,12 +7718,13 @@ document.addEventListener('DOMContentLoaded',function(){
         // Also create in hotDeals
         var deals=getDeals();
         deals.push({id:'deal_'+Date.now(),projectId:pid,siteKey:selSk||'',tva:selTva,client:selNom,created:date,status:type,comment:commentaire,lines:[{id:'line_'+Date.now(),type:'Tracteur',model:'',qty:camions,wonQty:0,lostQty:0,concurrent:'',lossComment:'',orderDate:'',deliveryDate:'',productionNo:'',maintenance:'Non',paccar:'Non',marginPct:'',prime:0,result:'',vnvo:'VN'}]});
-        try{DB.set('hotDeals',deals);autoSave();}catch(e){}
+        try{if(window.saveHotDeals)window.saveHotDeals(deals);else DB.set('hotDeals',deals);autoSave();}catch(e){}
         try{buildIndex()}catch(e){}
         try{toast('Projet '+type+' créé pour '+selNom)}catch(e){}
         closeModal();
         if(typeof window.renderAffaires==='function')window.renderAffaires();
         if(typeof window.renderProjets==='function')window.renderProjets();
+        if(typeof currentScreen!=='undefined'&&currentScreen==='tours'&&typeof renderTours==='function')renderTours();
       };
     }
 
@@ -9540,12 +9852,15 @@ document.addEventListener('DOMContentLoaded',function(){
   function getStore(k){try{return DB&&DB.get?arr(DB.get(k)):[]}catch(e){return []}}
   function setStore(k,v){try{DB&&DB.set&&DB.set(k,arr(v)); if(typeof autoSave==='function')autoSave()}catch(e){}}
   function getDeals(){
-    try{if(typeof window.getHotDeals==='function')return arr(window.getHotDeals())}catch(e){}
-    return getStore('hotDeals');
+    var seen={}, out=[];
+    function add(list){arr(list).forEach(function(d){if(!d||!d.id||seen[d.id])return;seen[d.id]=1;out.push(d);});}
+    try{if(typeof window.getHotDeals==='function')add(window.getHotDeals());}catch(e){}
+    try{add(getStore('hotDeals'));}catch(e){}
+    return out;
   }
   function getDeliveries(){
     var out=[];
-    try{if(typeof window.getDeliveries==='function')out=arr(window.getDeliveries())}catch(e){}
+    try{if(typeof window.getDeliveries==='function')out=arr(window.getDeliveries());}catch(e){}
     if(!out.length)out=getStore('deliveries');
     if(!out.length)out=getStore('livraisons');
     return out;
@@ -9613,6 +9928,7 @@ document.addEventListener('DOMContentLoaded',function(){
   function openDealFromCommission(id){if(!id)return;try{if(typeof window.openDealV213==='function'){window.openDealV213(id);return}}catch(e){}try{if(typeof window.showScreen==='function')window.showScreen('affaires')}catch(e){}setTimeout(function(){var el=document.querySelector('[data-deal-id="'+String(id).replace(/"/g,'\\"')+'"]');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.outline='2px solid var(--daf)';el.style.outlineOffset='3px';setTimeout(function(){el.style.outline='';el.style.outlineOffset=''},1800)}},180)}
   function rowHtml(e){var d=e.d||{}, isOrder=e.kind==='order', amount=totalEntryAmount(e), color=isOrder?'var(--daf)':'var(--green)', date=isOrder?(d.orderDate||d.created):(d.deliveryDate||d.orderDate||d.created), prod=d.productionNo?('N° '+esc(d.productionNo)):'N° prod —';var line='<div class="comm-final-line" data-deal="'+esc(d.dealId||'')+'" style="border-top:1px solid var(--border);padding:9px 0;cursor:pointer;">'+'<div style="display:flex;gap:9px;align-items:flex-start;">'+'<input type="checkbox" class="comm-final-check" data-id="'+esc(d.id||'')+'" data-k="'+(isOrder?'rcvOrder':'rcvDelivery')+'" '+(isOrder?(d.rcvOrder?'checked':''):((deliveryRest(d)<=0&&deliveryCommission(d)>0)?'checked':''))+' onclick="event.stopPropagation()" style="width:16px;height:16px;accent-color:'+color+';margin-top:2px;">'+'<div style="flex:1;min-width:0;">'+'<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;"><div style="font-size:16px;font-weight:900;color:'+color+';">'+euro(amount)+'</div><button class="btn btn-ghost btn-sm comm-final-open" data-id="'+esc(d.dealId||'')+'" onclick="event.stopPropagation()" style="font-size:9px;color:var(--daf);border-color:var(--daf);">Affaire</button></div>'+'<div style="font-size:12px;color:var(--text);margin-top:2px;"><strong style="color:var(--text2);">'+fmt(date)+'</strong> - '+esc(d.client||'Client')+'</div>'+'<div style="font-size:10px;color:var(--text3);margin-top:2px;">x'+qty(d)+' '+esc(d.type||'Véhicule')+' - '+prod+'</div>';if(!isOrder){line+='<div style="font-size:10px;color:var(--text3);margin-top:5px;line-height:1.55;">C.E.R : '+euro(maintenanceCommission(d))+' · PACCAR : '+euro(paccarCommission(d))+' · Prime : '+euro(primeCommission(d))+'</div>'}return line+'</div></div></div>'}
   function renderCommissionsStable(){
+    try{if(typeof window.syncAllDeliveries==='function')window.syncAllDeliveries();}catch(e){}
     var cont=byId('livraisons-content'); if(!cont)return;
     var rows=syncWonDealsToDeliveriesFinal();
     var entries=buildEntries(rows), cm=currentYm(), cy=String(new Date().getFullYear()), filter=window.commFilterFinal||'all';
