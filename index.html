@@ -283,7 +283,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v41';
+const APP_BUILD='2026-05-27-bases-v44';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -1121,6 +1121,7 @@ function isClientExcludedMarche(c){
   if(ex.manual)return ex.excluded===true;
   return norm(c.exclu||'')==='OUI';
 }
+function isClientExcludedQualite(c){return isClientExcludedMarche(c);}
 function isClientAccessible(c){
   if(!c)return true;
   var st=DB.getSettings()||{};
@@ -1281,7 +1282,7 @@ function saveExclusionRec(cOrTva, updates, sk){
 }
 function syncClientExcluToggles(sk){
   var c=(IDX.cBySite&&IDX.cBySite[sk]);if(!c)return;
-  var val=!!isClientExcluded(c);
+  var val=!!isClientExcludedMarche(c);
   var el=$('tog-exclu-client');if(el)el.checked=val;
   QA('.q-tog-exclu').forEach(function(inp){if(inp.dataset.sk===sk)inp.checked=val;});
 }
@@ -3237,7 +3238,7 @@ function openSiteSheet(sk){
   const group=info.group;
   const hist=getHistoryEntries(c,sk);
   const projects=getProjectsForSite(c,sk);
-  const isExcluded=isClientExcluded(c), isUrgent=isClientUrgent(c), isInactif=isInactiveClientTours(c.tva,sk);
+  const isExcludedManual=isClientExcludedMarche(c), isUrgent=isClientUrgent(c), isInactif=isInactiveClientTours(c.tva,sk);
   const adresseStr=[c.adresse,c.ville,c.dept,c.pays].filter(Boolean).join(', ');
   const badges=[];
   const _isSecondary=!!(info&&info.hasGroup&&!info.principal);
@@ -3249,7 +3250,7 @@ function openSiteSheet(sk){
     if(isFlotteRegionale(c))badges.push('<span class="badge b-flotte">FLOTTE RÉGIO.</span>');
     if(isFlotteCoordonnee(c))badges.push('<span class="badge b-flotte">FLOTTE COORD.</span>');
     if(isFlotteNationale(c))badges.push('<span class="badge b-flotte">FLOTTE NAT.</span>');
-    if(isExcluded)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">EXCLU</span>');
+    if(isExcludedManual)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">EXCLU</span>');
     if(isInactif)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">INACTIF</span>');
   } else {
     badges.push('<span class="badge" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);">BADGES MÉTIER PORTÉS PAR LE SITE PRINCIPAL</span>');
@@ -3280,7 +3281,7 @@ function openSiteSheet(sk){
     ${renderCompanyVerificationBox(c,sk)}
     ${renderSiteGroupInfoBox(info)}
     <div style="background:var(--bg3);border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-      <div style="display:flex;align-items:center;gap:6px;"><span style="font-size:11px;color:var(--text2);">Exclu</span><label class="toggle" style="width:36px;height:20px;"><input type="checkbox" id="tog-exclu-client"${isExcluded?' checked':''}><span class="tgl-sl"></span></label></div>
+      <div style="display:flex;align-items:center;gap:6px;"><span style="font-size:11px;color:var(--text2);">Exclu</span><label class="toggle" style="width:36px;height:20px;"><input type="checkbox" id="tog-exclu-client"${isExcludedManual?' checked':''}><span class="tgl-sl"></span></label></div>
       <div style="display:flex;align-items:center;gap:6px;"><span style="font-size:11px;color:var(--text2);">Urgent</span><label class="toggle" style="width:36px;height:20px;"><input type="checkbox" id="tog-urgent-client"${isUrgent?' checked':''}><span class="tgl-sl"></span></label></div>
       <div style="font-size:10px;color:var(--text3);">Inactif: <strong>${isInactif?'OUI':'NON'}</strong></div>
       <div style="flex:1;min-width:150px;">${renderEtatProspectionSelect('site-etat-prosp',getSiteEtatProspection(sk,c))}</div>
@@ -4213,12 +4214,13 @@ function bindCompanyVerificationSheet(sk,c,reopenFn){
 
 function _distinct(arr){var s={};arr.forEach(function(v){v=String(v||'').trim();if(v)s[v]=true;});return Object.keys(s).sort();}
 function _qItems(items, mapper, max){
-  max=max||50;
   items=items||[];
   if(!items.length)return '<div class="q-item">Aucun élément</div>';
-  var slice=items.slice(0,max);
+  var unlimited=(max===0);
+  if(max==null)max=50;
+  var slice=unlimited?items:items.slice(0,max);
   var html=slice.map(function(x){return '<div class="q-item">'+mapper(x)+'</div>';}).join('');
-  if(items.length>max)html+='<div class="q-item" style="color:var(--text3);font-size:10px;">… '+(items.length-max)+' autres non listés (iPhone)</div>';
+  if(!unlimited&&items.length>max)html+='<div class="q-item" style="color:var(--text3);font-size:10px;">… '+(items.length-max)+' autres non listés (iPhone)</div>';
   return html;
 }
 function _qualityBlock(title, items, mapper, level){var id='ql_'+Math.random().toString(36).slice(2);var cls=level==='err'?'d-err':level==='warn'?'d-warn':'d-ok';return '<div class="diag-row"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'">'+items.length+'</span></div><div class="q-list" id="'+id+'">'+_qItems(items,mapper)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';}
@@ -4280,7 +4282,7 @@ function renderQualite(){
   html+=_qualityBlock('Doublons suspects TVA + plaque',dupVeh,_vehicleLine,'warn');
   html+='</div>';
   html+='<div class="card quality-section"><div class="card-title">🏷 Profils / flottes / exclusions</div>';
-  html+=_qualityBlock('Clients exclus',clients.filter(isClientExcluded),_clientLine,'warn');
+  html+=_qualityBlock('Clients exclus',clients.filter(isClientExcludedQualite),_clientLine,'warn');
   html+=_qualityBlock('Clients inactifs',clients.filter(function(c){return isInactiveClientMarche(c.tva,c._siteKey||makeSiteKey(c));}),_clientLine,'warn');
   html+=_qualityBlock('Tous clients flotte',clients.filter(isFlotteBadge),function(c){return _clientLine(c)+' / Profil: '+escH(c.profil||'');},'ok');
   html+=_qualityBlock('Flotte nationale',clients.filter(isFlotteNationale),function(c){return _clientLine(c)+' / Profil: '+escH(c.profil||'');},'ok');
@@ -4299,24 +4301,21 @@ function renderQualite(){
 }
 
 function renderModeEmploi(){
+  if(typeof window.renderModeEmploi==='function')return window.renderModeEmploi();
   var html=`<div style="font-size:12px;color:var(--text2);line-height:1.55;">
   <h3 style="color:var(--text);margin-bottom:6px;">Mode d'emploi — DAF_COMMERCE-Box</h3>
-  <p><strong>KPI</strong> : indicateurs chiffrés. Ils résument le nombre de sites, le parc total, les DAF, les renouvellements DAF et concurrence.</p>
-  <p><strong>Site</strong> : fiche terrain d'un client/dépôt. C'est ce qui apparaît dans TOURNÉES.</p>
-  <p><strong>Groupe</strong> : regroupement de plusieurs sites. Automatique si TVA commune, ou manuel pour relier plusieurs sociétés d'un même groupe.</p>
-  <p><strong>Site principal</strong> : seul site du groupe qui porte les KPI consolidés dans TOURNÉES. Les sites secondaires restent consultables mais ne doublonnent pas les KPI.</p>
-  <p><strong>Masquer sites secondaires</strong> : bouton visuel. ON = secondaires cachés ; OFF = secondaires visibles. Les KPI restent portés par les sites principaux.</p>
-  <p><strong>Exclu</strong> : EXCLU_MANU=OUI ou ACCESSIBLE=0. Le bouton Masquer exclus les retire de TOURNÉES.</p>
-  <p><strong>Inactif</strong> : site sans achat (immatriculation) sur les ${INACTIVE_PURCHASE_YEARS} dernières années calendaires, année courante incluse. Le bouton Masquer inactifs les retire de TOURNÉES.</p>
-  <p><strong>Renouvellement</strong> : tracteur 4 à 6 ans inclus ; porteur 5 à 7 ans inclus ; même règle DAF et concurrence.</p>
-  <p><strong>Possédé OUI/NON</strong> : NON conserve l'historique mais ne compte plus dans les renouvellements, scores et activité commerciale.</p>
+  <p><strong>Site</strong> : fiche terrain affichée dans TOURNÉES. <strong>Groupe</strong> : plusieurs sites consolidés (AUTO TVA ou manuel). Le nom affiché reprend celui du <strong>site principal</strong>.</p>
+  <p><strong>Exclu</strong> (badge / Qualité / toggle fiche) : <strong>EXCLU_MANU = OUI</strong> dans le CRM ou exclusion manuelle via le toggle Exclu. Ce n’est <em>pas</em> la colonne ACCESSIBLE.</p>
+  <p><strong>Accessible OFF</strong> : colonne ACCESSIBLE = 0/NON ou toggle Accessible sur la fiche. Liste séparée dans QUALITÉ. Le masque Tournées « Accessible OFF » agit sur ce critère.</p>
+  <p><strong>Masquer exclus</strong> (Tournées) : retire EXCLU_MANU = OUI <strong>et</strong> ACCESSIBLE = 0 de la liste.</p>
+  <p><strong>Inactif</strong> : aucune immat. sur les ${INACTIVE_PURCHASE_YEARS} dernières années calendaires (année courante incluse), ou parc vide.</p>
+  <p><strong>KPI Groupes</strong> (Marché et Tournées) : nombre de groupes · clic = filtre · double-clic = modal liste + vue croisée Groupe × indicateurs.</p>
+  <p><strong>QUALITÉ</strong> : listes complètes Clients exclus / Accessibles OFF / Inactifs avec compteur exact et toggles synchronisés avec la fiche site.</p>
   <hr style="border-color:var(--border);margin:10px 0;">
-  <h4 style="color:var(--text);">Import clic par clic</h4>
-  <p>1. Aller dans PLUS. 2. Choisir BASE CRM.xlsx. 3. Sélectionner vendeurs/pays/départements si la fenêtre de filtre apparaît. 4. Vérifier l'aperçu : nombre de lignes. 5. Valider Importer. 6. Faire la même chose avec IMMATRICULATIONS.xlsx.</p>
-  <h4 style="color:var(--text);">Sauvegarde iCloud clic par clic</h4>
-  <p>1. PLUS → Exporter sauvegarde JSON. 2. L'iPhone télécharge un fichier. 3. Dans Fichiers, déplacer le JSON dans iCloud Drive / DAF_COMMERCE-Box Backups. 4. Pour restaurer : PLUS → Charger sauvegarde JSON puis sélectionner ce fichier.</p>
-  <h4 style="color:var(--text);">Bases</h4>
-  <p>Une base active est l'espace de travail affiché. Importer Excel remplace les données sources, mais les éléments manuels sauvegardés dans l'application doivent rester : groupes, contacts, états prospection, projets, commentaires, exclusions, possessions OUI/NON.</p>
+  <h4 style="color:var(--text);">Repartir à zéro</h4>
+  <p>PLUS → <strong>Tout effacer — repartir à zéro</strong> (ou URL <code>?reset=1</code>). L’import CRM seul ne vide pas les exclusions ni les réglages manuels.</p>
+  <h4 style="color:var(--text);">Sauvegarde JSON</h4>
+  <p>Contient : groupes, projets, affaires chaudes, livraisons, archives, contacts, exclusions, overrides Accessible, possessions OUI/NON, états prospection, réglages.</p>
   </div>`;
   openModal('📖 Mode d’emploi',html,[{label:'Fermer',cls:'btn-primary'}]);
 }
@@ -4439,11 +4438,11 @@ function exportBackupJSONDirect(){
 
 function renderMore(){
   const xlsxOk=typeof XLSX!=='undefined';var html='';html+=renderXlsxStatus(xlsxOk);html+=renderImportCard(xlsxOk);html+=renderBasesCard();
-  html+=`<div class="card"><div class="card-title">💾 Sauvegarde iCloud</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Enregistrez le fichier JSON dans iCloud Drive pour sécuriser groupes, projets, contacts, réglages et données manuelles.</div></div>`;
+  html+=`<div class="card"><div class="card-title">💾 Sauvegarde iCloud</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Sauvegarde complète : groupes, exclusions, overrides Accessible, projets, affaires chaudes, livraisons, archives, contacts, possessions OUI/NON, réglages. L’import CRM seul ne remplace pas ces données — utiliser « Tout effacer » pour repartir à zéro.</div></div>`;
   html+=`<div class="card"><div class="card-title">🔍 Qualité</div><button class="btn btn-secondary" id="btn-open-qualite" style="width:100%;">Ouvrir Qualité complète</button></div>`;
   html+=`<div class="card"><div class="card-title">📖 Mode d'emploi</div><button class="btn btn-secondary" id="btn-mode-emploi" style="width:100%;">Ouvrir le mode d'emploi complet</button></div>`;
   $('more-content').innerHTML=html;bindImportEvents();bindBasesEvents();
-  safeOn('btn-open-qualite','click',function(){try{renderQualite();}catch(e){toast('Erreur ouverture Qualité');console.error(e);}});safeOn('btn-mode-emploi','click',function(){try{renderModeEmploi();}catch(e){toast('Erreur mode d’emploi');console.error(e);}});safeOn('btn-export-json','click',exportBackupJSONDirect);safeOn('btn-restore-json','click',function(){var f=$('file-restore');if(f)f.click();});safeOn('file-restore','change',function(e){var f=e.target.files[0];if(f)restoreJSON(f);});
+  safeOn('btn-open-qualite','click',function(){try{renderQualite();}catch(e){toast('Erreur ouverture Qualité');console.error(e);}});safeOn('btn-mode-emploi','click',function(){try{(window.renderModeEmploi||renderModeEmploi)();}catch(e){toast('Erreur mode d’emploi');console.error(e);}});safeOn('btn-export-json','click',exportBackupJSONDirect);safeOn('btn-restore-json','click',function(){var f=$('file-restore');if(f)f.click();});safeOn('file-restore','change',function(e){var f=e.target.files[0];if(f)restoreJSON(f);});
 }
 
 
@@ -4567,7 +4566,7 @@ function _qualitySiteItem(c){
 }
 function _qualitySiteItemExclu(c){
   var sk=makeSiteKey(c);
-  return '<div class="q-item-row" style="display:flex;gap:8px;align-items:flex-start;justify-content:space-between;width:100%;"><div class="q-title-line" style="flex:1;min-width:0;"><strong>'+escH(c.nom||'Nom ?')+'</strong><br>'+escH(c.ville||'Ville ?')+' / TVA '+escH(c.tva||'—')+' / SIRET '+escH(c.siret||'—')+'</div><div class="q-actions" style="flex-direction:column;align-items:flex-end;margin-top:0;">'+_qualityToggleField('Exclu',isClientExcluded(c),sk,'q-tog-exclu')+'<button class="btn btn-secondary btn-sm q-open-site" data-sk="'+escH(sk)+'" style="margin-top:4px;">Ouvrir fiche</button></div></div>';
+  return '<div class="q-item-row" style="display:flex;gap:8px;align-items:flex-start;justify-content:space-between;width:100%;"><div class="q-title-line" style="flex:1;min-width:0;"><strong>'+escH(c.nom||'Nom ?')+'</strong><br>'+escH(c.ville||'Ville ?')+' / TVA '+escH(c.tva||'—')+' / SIRET '+escH(c.siret||'—')+'</div><div class="q-actions" style="flex-direction:column;align-items:flex-end;margin-top:0;">'+_qualityToggleField('Exclu',isClientExcludedMarche(c),sk,'q-tog-exclu')+'<button class="btn btn-secondary btn-sm q-open-site" data-sk="'+escH(sk)+'" style="margin-top:4px;">Ouvrir fiche</button></div></div>';
 }
 function _qualitySiteItemAccessible(c){
   var sk=makeSiteKey(c);
@@ -4597,10 +4596,15 @@ function _qualityVehicleItem(v){
   var sk=_siteKeyFromVehicle(v);
   return '<div class="q-title-line"><strong>'+escH(v.client||v.tva||'Client ?')+'</strong><br>'+escH(v.plaque||'Plaque ?')+' / '+escH(v.marque||'Marque ?')+' / '+escH(v.date||'Date ?')+' / '+escH(v.type||'Type ?')+'</div><div class="q-actions">'+(sk?'<button class="btn btn-secondary btn-sm q-open-site" data-sk="'+escH(sk)+'">Ouvrir fiche</button>':'<span class="q-empty">Aucune fiche site rattachée</span>')+'</div>';
 }
-function _qualityBlockAction(title, items, mapper, level){
+function _qualityBlockAction(title, items, mapper, level, listMax){
   var id='ql_'+Math.random().toString(36).slice(2);
   var cls=level==='err'?'d-err':level==='warn'?'d-warn':'d-ok';
-  return '<div class="diag-row"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'">'+items.length+'</span></div><div class="q-list" id="'+id+'">'+_qItems(items,mapper,50)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';
+  var max=(listMax===undefined||listMax===null)?50:listMax;
+  var hint='';
+  if(title.indexOf('inactifs')>=0)hint='Aucune immat. sur les '+INACTIVE_PURCHASE_YEARS+' dernières années calendaires (année courante incluse), ou parc vide.';
+  else if(title.indexOf('exclus')>=0)hint='EXCLU_MANU = OUI dans le CRM ou exclusion manuelle via le toggle Exclu.';
+  else if(title.indexOf('Accessibles OFF')>=0)hint='Colonne ACCESSIBLE = 0/NON ou toggle Accessible OFF en fiche site.';
+  return '<div class="diag-row"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'">'+items.length+'</span></div>'+(hint?'<div style="font-size:9px;color:var(--text3);line-height:1.35;margin:2px 0 4px;">'+hint+'</div>':'')+'<div class="q-list" id="'+id+'">'+_qItems(items,mapper,max)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';
 }
 function _splitBlock(title, yesTitle, yesItems, noTitle, noItems, mapper){
   return '<div class="card quality-section"><div class="card-title">'+title+'</div>'+_qualityBlockAction(yesTitle,yesItems,mapper,'ok')+_qualityBlockAction(noTitle,noItems,mapper,noItems.length?'warn':'ok')+'</div>';
@@ -4656,11 +4660,7 @@ function _renderQualiteBody(){
   var sansGroupement=clients.filter(function(c){return !c.groupement;});
   var avecEtat=clients.filter(function(c){return !!getSiteEtatProspection(makeSiteKey(c),c);});
   var sansEtat=clients.filter(function(c){return !getSiteEtatProspection(makeSiteKey(c),c);});
-  var inactifsPreview=[];
-  for(var _qi=0;_qi<clients.length&&inactifsPreview.length<50;_qi++){
-    var _qc=clients[_qi];
-    if(isInactiveClientMarche(_qc.tva,_qc._siteKey||makeSiteKey(_qc)))inactifsPreview.push(_qc);
-  }
+  var inactifsAll=clients.filter(function(c){return isInactiveClientMarche(c.tva,c._siteKey||makeSiteKey(c));});
   var html='';
   html+='<div class="screen-header"><div class="screen-title">🔍 Qualité</div><div class="screen-sub">Contrôle visuel des données, groupes, imports et anomalies</div></div>';
   html+='<div style="margin:0 12px 8px;"><button type="button" class="btn btn-ghost btn-sm" onclick="renderMore()" style="width:100%;">← Retour Plus</button></div>';
@@ -4697,9 +4697,9 @@ function _renderQualiteBody(){
   html+=_qualityBlockAction('Doublons suspects TVA + plaque',dup,_qualityVehicleItem,'warn');
   html+='</div>';
   html+='<div class="card quality-section" id="qualite-exclusions-card"><div class="card-title">🚩 Exclusions / activité / flottes</div>';
-  html+=_qualityBlockAction('Clients exclus',clients.filter(isClientExcluded),_qualitySiteItemExclu,'warn');
-  html+=_qualityBlockAction('Clients Accessibles OFF',clients.filter(function(c){return !isClientAccessible(c);}),_qualitySiteItemAccessible,'warn');
-  html+=_qualityBlockAction('Clients inactifs (aperçu)',inactifsPreview,_qualitySiteItem,'warn');
+  html+=_qualityBlockAction('Clients exclus',clients.filter(isClientExcludedQualite),_qualitySiteItemExclu,'warn',0);
+  html+=_qualityBlockAction('Clients Accessibles OFF',clients.filter(function(c){return !isClientAccessible(c);}),_qualitySiteItemAccessible,'warn',0);
+  html+=_qualityBlockAction('Clients inactifs',inactifsAll,_qualitySiteItem,'warn',0);
   html+=_qualityBlockAction('Clients flotte',clients.filter(isFlotteBadge),_qualitySiteItem,'ok');
   html+=_qualityBlockAction('Flotte nationale',clients.filter(isFlotteNationale),_qualitySiteItem,'ok');
   html+=_qualityBlockAction('Flotte régionale',clients.filter(isFlotteRegionale),_qualitySiteItem,'ok');
@@ -6597,78 +6597,75 @@ document.addEventListener('DOMContentLoaded',function(){
   window.renderModeEmploi=function(){
     var sec=function(t,b){return '<div class="card"><div class="card-title">'+t+'</div><div style="font-size:12px;color:var(--text2);line-height:1.65;">'+b+'</div></div>'};
     var table=function(rows){return '<div style="overflow-x:auto;"><table style="width:100%;min-width:620px;border-collapse:collapse;font-size:11px;"><tr style="color:var(--text3);text-align:left;"><th>Élément</th><th>Définition / formule</th><th>Influence</th><th>Vérification manuelle</th></tr>'+rows.map(function(r){return '<tr style="border-top:1px solid var(--border);"><td><strong>'+r[0]+'</strong></td><td>'+r[1]+'</td><td>'+r[2]+'</td><td>'+r[3]+'</td></tr>'}).join('')+'</table></div>'};
-    var html='<div style="padding:10px 12px 20px;"><h3 style="margin-bottom:8px;">📖 Mode d’emploi complet — DAF_COMMERCE-Box</h3><div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Cette notice explique chaque page, chaque bouton, chaque KPI, sa définition, son critère de calcul, son impact dans l’application et comment le vérifier manuellement.</div>';
-    html+=sec('1. Principe général','<p><strong>DAF_COMMERCE-Box</strong> est un outil de pilotage commercial poids lourds. Il utilise deux grandes sources : la base CRM clients et le fichier immatriculations. La base CRM décrit les sites clients ; le fichier immatriculations décrit les véhicules. Les actions manuelles comme projets, affaires, groupes, contacts, adresses, exclusions et états prospection sont sauvegardées dans l’application et dans l’export JSON.</p><p><strong>Règle clé :</strong> MARCHÉ analyse les immatriculations ; TOURNÉES sert à cibler les sites à travailler ; AFFAIRES suit le pipeline ; SUIVI LIVRAISONS calcule les commissions ; QUALITÉ vérifie les anomalies.</p>');
+    var html='<div style="padding:10px 12px 20px;"><h3 style="margin-bottom:8px;">📖 Mode d’emploi complet — DAF_COMMERCE-Box</h3><div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Build '+APP_BUILD+' · Cette notice explique chaque page, bouton et KPI : définition, critère, impact et vérification manuelle.</div>';
+    html+=sec('1. Principe général','<p><strong>DAF_COMMERCE-Box</strong> s’appuie sur le CRM (sites) et les immatriculations (véhicules). Les actions manuelles (groupes, exclusions, accessible, projets, affaires, contacts…) sont stockées localement sur l’iPhone et dans l’export JSON.</p><p><strong>Important :</strong> réimporter le CRM <em>ne supprime pas</em> les exclusions, overrides Accessible ni les réglages. Pour repartir vraiment à zéro : PLUS → <strong>Tout effacer</strong> ou ouvrir l’app avec <code>?reset=1</code>, puis réimporter CRM + immat.</p><p><strong>Règle clé :</strong> MARCHÉ = analyse parc · TOURNÉES = ciblage sites · QUALITÉ = contrôle données · AFFAIRES / LIVRAISONS = pipeline et commissions.</p>');
     html+=sec('2. Page MARCHÉ',table([
-      ['Parc total','Nombre de véhicules retenus par le périmètre affiché. Selon le bouton Exclusion/Hors Flotte, certains véhicules peuvent être retirés.','Influence les parts de marché, tendances, graphiques et KPI globaux.','Filtrer dans Excel les mêmes critères puis compter les lignes véhicules.'],
-      ['DAF à renouveler','Véhicules DAF possédés et renouvelables selon type : tracteur 4 à 6 ans inclus, porteur 5 à 7 ans inclus.','Alimente KPI Marché, Tournées, badges DAF RENOUV.','Dans Excel : Marque DAF + année dans fenêtre de renouvellement + possédé ≠ NON.'],
-      ['Hors DAF renouvelable','Même règle d’âge, mais marque différente de DAF.','Alimente KPI concurrence et badge CONC. RENOUV.','Filtrer les marques non DAF dans la fenêtre de renouvellement.'],
-      ['Hors Flotte NAT.','Quand activé, retire les profils commerciaux exactement Flotte Nationale du marché.','Change les KPI Marché et graphiques Marché.','Dans QUALITÉ, ouvrir Flotte nationale et comparer le nombre de véhicules concernés.'],
-      ['Exclusion ON','Retire EXCLU_MANU=OUI, ACCESSIBLE=0 et inactifs selon règle active.','Nettoie la lecture marché exploitable.','Comparer avec QUALITÉ > Exclus et Inactifs.'],
-      ['Graphique Tendances depuis 2017','Évolution par marque depuis 2017, toutes marques affichées. Couleur fixe par marque, DAF toujours orange.','Permet de voir progression/recul des marques.','Dans Excel : tableau croisé Année x Marque depuis 2017.'],
-      ['Marque × Année — NB IMMAT','Compte d’immatriculations par marque et année.','Permet d’identifier les volumes par marque.','Comparer au TCD Excel : lignes Marque, colonnes Année, valeurs nombre de plaques.'],
-      ['Marque × Année — % PDM','Part de chaque marque dans l’année : marque / total année.','Mesure la part de marché annuelle.','Dans Excel : volume marque année ÷ total année.']
+      ['KPI Groupes','Nombre de groupes (AUTO TVA ou manuels). Clic → modal liste des groupes avec bouton Ouvrir.','Vue consolidée multi-sites.','QUALITÉ > Groupes ou double-clic KPI Groupes Marché.'],
+      ['Parc total / DAF / PDM','Véhicules du périmètre Marché selon filtres type, vendeur, masques.','Graphiques, tendances, KPI globaux.','Comparer au TCD Excel.'],
+      ['Portefeuille / Gagnés','Portefeuille = quantités ouvertes projets + affaires. Gagnés = quantités gagnées sur l’année (affaires + projets simples, sans double comptage).','Barres objectif PDM en haut de page.','Comparer page AFFAIRES et PROJETS.'],
+      ['Exclusion ON','Retire EXCLU_MANU=OUI, ACCESSIBLE=0 et inactifs selon règles actives.','Nettoie le marché exploitable.','Comparer Exclusion OFF vs ON.'],
+      ['Accessible OFF ON','Retire les sites non accessibles (colonne CRM ou override manuel).','Filtre Marché distinct de la liste Qualité « exclus ».','QUALITÉ > Clients Accessibles OFF.'],
+      ['Graphiques Marque × Année','NB IMMAT et % PDM · cellules cliquables → liste véhicules + fiche.','Analyse parts de marché.','TCD Excel Marque × Année.']
     ]));
     html+=sec('3. Page TOURNÉES',table([
-      ['KPI interactifs','Chaque KPI correspond à un filtre : Tous, Avec DAF, Sans DAF, Urgents, Flotte, Protocole. Cliquer sur le KPI applique le même filtre qu’un bouton.','Change la liste affichée. Le KPI actif est entouré en orange.','Cliquer sur KPI puis vérifier que les clients listés respectent le critère.'],
-      ['Bouton Tous','Remet la cible affichée à tous les sites, sans désactiver les exclusions ON/OFF.','Réinitialise le filtre métier sélectionné.','Après Protocole ou Urgent, cliquer Tous : la liste générale revient.'],
-      ['Avec DAF','Sites possédant au moins un DAF actif/possédé.','Cible fidélisation/défense parc.','Dans fiche site, au moins un véhicule DAF possédé.'],
-      ['Sans DAF','Sites sans aucun DAF possédé. Les anciens DAF non possédés ne comptent pas.','Cible conquête concurrence.','Vérifier fiche parc : aucun DAF en possession OUI.'],
-      ['Urgents','Sites marqués urgent manuellement.','N’influence pas le score ; filtre uniquement.','Contrôler badge URGENT en fiche site.'],
-      ['Flotte','Affiche uniquement les profils commerciaux contenant Flotte.','Cible clients flotte.','Comparer QUALITÉ > Flottes.'],
-      ['Protocole','Affiche uniquement les sites ayant un Groupement renseigné. Badge PROTOCOLE.','Cible clients sous protocole/groupement.','Comparer QUALITÉ > Groupements.'],
-      ['Masquer exclus','Masque EXCLU_MANU=OUI et ACCESSIBLE=0.','Nettoie la liste commerciale.','Comparer QUALITÉ > Clients exclus.'],
-      ['Masquer inactifs','Masque les sites sans achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années.','Évite les clients dormants.','Comparer QUALITÉ > Inactifs.'],
-      ['Masquer clients avec projet','Masque les sites avec affaire/projet déjà renseigné ou sans projet annuel.','Évite de retravailler un client déjà qualifié.','Désactiver pour voir revenir les clients.'],
-      ['Masquer sites secondaires','Masque visuellement les sites secondaires de groupes. Les KPI restent portés par le site principal.','Évite la pollution terrain sans perdre le potentiel groupe.','Ouvrir fiche Groupe pour voir principaux/secondaires.']
+      ['KPI Sites (clic / double-clic)','Clic simple = filtre la liste (entourage orange). Double-clic = modal détail ou vue croisée.','Clients actifs, Groupes, Fidélisation, Urgents, Inactifs.','Tester chaque KPI : liste filtrée puis modal.'],
+      ['KPI Groupes','Nombre de groupes visibles. Clic = sites rattachés à un groupe. Double-clic = modal groupes + vue croisée Groupe × indicateurs (Parc, R.DAF…).','Remplace l’ancien KPI Conquête.','Double-clic KPI Groupes → Ouvrir une fiche Groupe.'],
+      ['+ Créer groupe (jaune)','Crée un groupe manuel depuis la barre Tournées.','Même action que PLUS / Qualité > + Créer groupe.','Créer puis vérifier fiche Groupe.'],
+      ['Masques par défaut ON','Inactifs, Projets et Sites secondaires masqués au premier affichage. Profils par défaut : Flotte coordonnée, Régionale, Vente détail (si présents dans le CRM).','Liste Tournées plus ciblée dès l’ouverture.','Désactiver les masques pour voir tout.'],
+      ['Masquer exclus','Retire de la liste : EXCLU_MANU=OUI <strong>et</strong> ACCESSIBLE=0.','Distinct de la liste Qualité « Clients exclus » (EXCLU seul).','Comparer QUALITÉ > Clients exclus vs Accessibles OFF.'],
+      ['Masquer Accessible OFF','Retire les sites non accessibles (CRM ou toggle fiche).','Filtre terrain complémentaire.','Toggle Accessible sur une fiche test.'],
+      ['Masquer inactifs','Sites sans immat. sur '+INACTIVE_PURCHASE_YEARS+' ans calendaires (année courante incluse) ou sans parc.','Évite les clients dormants.','QUALITÉ > Clients inactifs (liste complète).'],
+      ['Masquer sites secondaires','Masque visuellement les sites secondaires de groupe. KPI consolidés sur le site principal.','ON par défaut.','Fiche Groupe : principal vs secondaire.'],
+      ['Boutons Avec/Sans DAF, Urgents, Flotte, Protocole','Filtres métier rapides · Tous / KPI Tous réinitialise le filtre actif.','Change la cible commerciale.','Vérifier badge sur chaque fiche listée.']
     ]));
     html+=sec('4. Fiche Site',table([
-      ['Copier adresse','Copie l’adresse principale du site.','Aide terrain, sans influence KPI.','Coller dans Notes ou Plans.'],
-      ['Copier SIRET','Copie le SIRET du site.','Aide vérification administrative.','Coller dans Safari ou INSEE.'],
-      ['Rechercher SIRET Safari','Ouvre une recherche web du SIRET.','Aide contrôle société.','Le bouton lance Safari/recherche.'],
-      ['Waze','Ouvre le guidage vers l’adresse.','Aide tournées.','Vérifier que l’adresse est correcte.'],
-      ['Adresses supplémentaires','Adresses informatives : dépôt, parking, entrée PL, atelier.','Aucune influence KPI.','Chaque adresse a Copier/Waze.'],
-      ['Possédé OUI/NON','Indique si le véhicule est encore au parc client.','Influence renouvellement, actif/inactif, score, KPI tournées.','Mettre NON : le véhicule sort des opportunités commerciales.'],
-      ['Groupement','Texte importé ou renseigné : sert au badge PROTOCOLE.','Influence bouton Protocole, contrôle Qualité.','Comparer QUALITÉ > Avec/Sans groupement.'],
-      ['État prospection','Liste : À prospecter, Prospecté, Ne pas prospecter. Sauvegardé et résistant à l’import.','Information commerciale, exploitable en Qualité.','Vérifier QUALITÉ > États Prospection.'],
-      ['Contacts','Nom, prénom, téléphone, mail, poste.','Informatif, sans KPI.','Voir fiche site.']
+      ['Toggle Exclu','EXCLU_MANU=OUI (CRM) ou exclusion manuelle enregistrée dans l’app. Synchronisé avec QUALITÉ > Clients exclus.','Badge EXCLU · liste Qualité exclus · Masquer exclus Tournées si EXCLU ou Accessible=0.','Basculer Exclu ON/OFF : vérifier compteur Qualité.'],
+      ['Toggle Accessible','Colonne ACCESSIBLE ou override manuel (settings). Synchronisé avec QUALITÉ > Clients Accessibles OFF.','Masque Accessible OFF · Masquer exclus Tournées si ACCESSIBLE=0.','Basculer Accessible : site passe d’une liste Qualité à l’autre.'],
+      ['Voir / modifier le groupe','Ouvre la fiche Groupe mère (encart ou bouton rapide).','Consolidation parc et KPI groupe.','Site rattaché à un groupe AUTO ou manuel.'],
+      ['Vérification registre','Contrôle SIRET/adresse vs registre (API). Pastilles ✓/✗ sur fiche.','Aide qualité données · n’influence pas les KPI.','Encart VÉRIFIER sur fiche site.'],
+      ['Possédé OUI/NON','Véhicule encore au parc client.','Renouvellement, score, inactif, KPI Tournées.','Mettre NON : sort des opportunités.'],
+      ['Projet détecté / Pas de projet','Alimente PROJETS et masque « clients avec projet ».','Pipeline commercial.','Page PROJETS.']
     ]));
     html+=sec('5. Groupes',table([
-      ['Groupe','Regroupement de plusieurs sites. Automatique si TVA commune ou manuel via PLUS/Groupes.','Crée badges GROUPE, Site principal/secondaire et consolide le potentiel.','QUALITÉ/PLUS > Groupes liste les sites.'],
-      ['Site principal','Un seul par groupe. Porte les KPI et badges consolidés du groupe.','Apparaît dans Tournées même si secondaires masqués.','Fiche Groupe : vérifier le site principal.'],
-      ['Site secondaire','Site fille informatif. Peut être affiché ou masqué. Ne porte pas les KPI pour éviter doublons.','Masquer sites secondaires agit uniquement visuellement.','Désactiver le bouton pour afficher les secondaires.'],
-      ['Décisionnaire','Information uniquement. Site principal toujours décisionnaire ; secondaire peut l’être.','Aucune influence KPI, score ou filtrage.','Fiche Groupe.']
+      ['Nom affiché','Nom du <strong>site principal</strong> du groupe (pas la TVA). Groupes AUTO TVA : nom dérivé du site principal.','Libellé Tournées, modales, fiche Groupe.','Fiche Groupe vs nom site principal.'],
+      ['Création','PLUS → Groupes · Qualité → + Créer groupe · Tournées → + Créer groupe (bouton jaune).','Groupe manuel multi-sites.','getAllGroups() dans Qualité.'],
+      ['Site principal / secondaire','Un seul principal · KPI consolidés sur lui. Secondaire consultable, masquable.','Tournées KPI et badges.','Fiche Groupe : bascule principal.'],
+      ['Décisionnaire','Informatif uniquement.','Aucun KPI.','Fiche Groupe.']
     ]));
-    html+=sec('6. AFFAIRES',table([
-      ['Affaire','Une affaire est le suivi détaillé d’un projet commercial. Elle est créée depuis la fiche client/projet.','Alimente historique projet, livraisons, commissions et KPI affaires.','Créer projet en fiche site puis ouvrir AFFAIRES.'],
-      ['KPI Affaires','Actives, En cours, Futur/reporté, Gagnées, Perdues, Abandon. Ils filtrent la page.','Change les affaires affichées.','Cliquer chaque KPI et vérifier la liste.'],
-      ['+ Ajouter véhicule','Ajoute une ligne véhicule à l’affaire.','Permet plusieurs types/modèles dans une même affaire.','Une ligne = type + modèle + quantité.'],
-      ['Modifier résultat','Résultat par ligne : gagné, perdu, reporté, abandon.','Gagné crée livraison ; perdu demande concurrent/commentaire ; reporté reste futur.','Modifier une ligne et vérifier Suivi Livraisons.'],
-      ['Perdu','Marque concurrente + commentaire perte.','Alimente historique et KPI perdus.','Vérifier fiche client historique.'],
-      ['Reporté','Devient projet futur, reste actif.','Compté en Futur/reporté, pas archivé.','KPI Futur/reporté.'],
-      ['Gagné','Crée lignes dans Suivi Livraisons et commissions.','Alimente KPI gagnés, livraisons, commissions.','Vérifier Suivi Livraisons.']
+    html+=sec('6. Page QUALITÉ — listes Exclusions / activité',table([
+      ['Clients exclus','Liste <strong>complète</strong> · compteur = nombre exact. Critère : EXCLU_MANU=OUI ou toggle Exclu ON. Toggle Exclu sur chaque ligne, synchronisé fiche site.','Contrôle exclusions manuelles CRM.','Ne confondre pas avec Accessibles OFF.'],
+      ['Clients Accessibles OFF','Liste complète · ACCESSIBLE=0/NON/FALSE ou toggle Accessible OFF. Toggle synchronisé fiche.','Explique les sites masqués par Accessible.','Après import CRM : compter colonne ACCESSIBLE=0.'],
+      ['Clients inactifs','Liste complète · aucune immat. sur '+INACTIVE_PURCHASE_YEARS+' ans calendaires (année courante incluse) ou parc vide.','Lié au masque Masquer inactifs Tournées.','Filtrer Excel dates immat. récentes.'],
+      ['Diagnostic import','Colonnes CRM/immat reconnues (EXCLU, ACCESSIBLE, SIRET…).','Sécurise l’interprétation Excel.','Vérifier colonnes rouges avant de faire confiance aux KPI.'],
+      ['Autres contrôles','Sites/véhicules incomplets, doublons, orphelins, flottes, groupes.','Audit données.','Ouvrir fiche depuis chaque ligne.']
     ]));
-    html+=sec('7. Suivi Livraisons & Commissions',table([
-      ['Commandes','Nombre de lignes livraison.','KPI performance.','Compter les lignes du tableau.'],
-      ['Véhicules gagnés','Somme des quantités gagnées.','Base des commissions.','Comparer aux affaires gagnées.'],
-      ['Contrat entretien','Nombre et % de véhicules avec contrat.','KPI performance.','Véhicules contrat ÷ véhicules gagnés.'],
-      ['PACCAR','Nombre et % de véhicules financés PACCAR.','KPI performance et commission.','Véhicules PACCAR ÷ véhicules gagnés.'],
-      ['Commission prise ordre','Tracteur VN 400€, Porteur VN 550€, VO 400€.','Calcul commission au mois de prise d’ordre.','Vérifier Type + VN/VO + Qté.'],
-      ['Contrat entretien','Care+ 100€, Xtra Care 200€, FlexCare/FullCare 300€.','Commission livraison.','Vérifier type de contrat.'],
-      ['PACCAR Financial','300€ par véhicule concerné.','Commission livraison.','Case PACCAR = OUI.'],
-      ['Prime marge restante','Montant manuel. % marge restante sert à la performance.','Ajout au total commission.','Vérifier champ prime et marge %.'],
-      ['Cases reçues ✅','Chaque commission peut être cochée reçue/non reçue.','Calcule touchées et restant à percevoir.','Comparer total théorique, touché, reste.']
+    html+=sec('7. AFFAIRES · LIVRAISONS · PROJETS',table([
+      ['Projet simple','Fiche site → Projet détecté. Statut, quantité, type, période, commentaire. Reste succinct.','Page PROJETS · masque Tournées « clients avec projet ».','Page PROJETS · bouton 🔥 Développer en affaire chaude.'],
+      ['Affaire chaude','Résultat détaillé véhicule par véhicule : type, modèle, gagné/perdu. + Ajouter un véhicule = une unité. × Dupliquer = copie une ligne identique.','Archives · livraisons · KPI Gagnés Marché.','Page AFFAIRES · modifier chaque ligne.'],
+      ['Résultat gagné/perdu','Saisi uniquement dans AFFAIRES. Si PERDU : marque concurrente + commentaire obligatoires avant archivage.','Bloque l’archivage si incomplet.','Tester une perte sans concurrent.'],
+      ['Archiver affaire','Affaire terminée → quitte les actives → Archives Affaires Chaudes.','Historique pipeline.','Archives en bas page AFFAIRES.'],
+      ['Suivi livraisons','Créé automatiquement depuis les quantités gagnées · commissions PO/livraison/contrat/PACCAR.','Récap annuel commissions.','Page LIVRAISONS après archivage gagné.']
+    ])+'<p style="margin-top:10px;"><strong>Architecture :</strong> le <em>Projet</em> indique le besoin global ; l’<em>Affaire chaude</em> porte le détail et le résultat. Seuls les véhicules gagnés alimentent les livraisons.</p>');
+    html+=sec('8. Sauvegarde · reset · import',table([
+      ['Backup barre nav (💾)','Icône en bas · libellé « Non exporté » (orange) ou « Exporté » (vert). Ouvre la modal avec <strong>Télécharger maintenant</strong>.','Export JSON daté vers iCloud Drive / '+BACKUP_FOLDER+'.','Modifier un groupe puis vérifier le libellé nav.'],
+      ['Backup auto 30 min','Si modifications non exportées et clients présents, téléchargement automatique après 30 min.','Sécurise le travail manuel sans action.','Attendre ou forcer via Télécharger maintenant.'],
+      ['Exporter JSON (PLUS)','Même contenu que backup nav · nom de fichier daté.','Sauvegarde complète du travail manuel.','PLUS → Exporter sauvegarde JSON.'],
+      ['Sauvegarde nom fixe (PLUS)','Fichier toujours <strong>DAF_Professional_sauvegarde.json</strong>. iOS peut demander validation remplacement.','Pratique pour un emplacement iCloud unique.','PLUS → Enregistrer sauvegarde nom fixe.'],
+      ['Charger JSON','Remplace la base active par la sauvegarde (groupes, exclusions, overrides Accessible, affaires…).','Restauration complète.','Après restore : vérifier Qualité.'],
+      ['Tout effacer','PLUS → bouton rouge · efface localStorage + IndexedDB véhicules.','Repartir à zéro sur l’appareil.','Puis réimporter CRM + immat uniquement.'],
+      ['Vider base active','Efface une base sans toucher les autres.','Reset partiel multi-secteurs.','Une base multi-secteurs.'],
+      ['Import CRM seul','Remplace les clients importés · <strong>conserve</strong> exclusions, overrides Accessible, groupes, projets…','Peut laisser des exclusions « fantômes ».','Si doute : Tout effacer avant réimport.'],
+      ['Import XLSX immat','PLUS → Immatriculations · filtres année/vendeur/pays/dépt.','Gros fichiers : risque mémoire Safari.','Au-delà de ~15 000 lignes, préférer CSV.'],
+      ['Import CSV léger','Excel : filtrer puis Enregistrer sous CSV UTF-8 · PLUS → <strong>IMMATRICULATIONS CSV léger recommandé</strong>.','Mêmes colonnes, lecture plus légère sur iPhone.','Même résultat qu’XLSX après import.']
     ]));
-    html+=sec('8. QUALITÉ',table([
-      ['Sans vendeur/pays/département','Liste les sites dont une donnée commerciale manque.','N’influence pas directement les KPI, mais signale un problème d’import.','Comparer colonne CRM.'],
-      ['Sans TVA/SIRET','Signale les données administratives manquantes.','TVA/SIRET influencent rattachement site/groupe.','Comparer CRM et immatriculations.'],
-      ['Avec/Sans groupement','Permet de vérifier les clients protocole.','Influence badge PROTOCOLE et bouton Protocole.','Comparer colonne Groupement.'],
-      ['Exclus/Inactifs','Listes de contrôle pour comprendre pourquoi des sites disparaissent.','Lié aux boutons Masquer exclus/inactifs et Exclusion ON Marché.','Comparer bouton ON/OFF avec listes Qualité.'],
-      ['Diagnostic Import','Affiche colonnes reconnues CRM/immat. Vert trouvé, orange optionnel absent, rouge critique absent.','Sécurise l’import.','Comparer les intitulés Excel.']
+    html+=sec('9. Badges et distinctions importantes',table([
+      ['Badge EXCLU (fiche)','EXCLU_MANU=OUI ou exclusion manuelle toggle. <em>Pas</em> affiché pour seul ACCESSIBLE=0.','Information visuelle.','Site ACCESSIBLE=0 sans EXCLU : pas de badge EXCLU.'],
+      ['Masquer exclus Tournées','EXCLU_MANU=OUI <strong>ou</strong> ACCESSIBLE=0.','Filtre liste terrain.','Deux critères réunis ici, séparés dans Qualité.'],
+      ['INACTIF','Aucun achat immat. '+INACTIVE_PURCHASE_YEARS+' ans · année courante incluse.','Masque inactifs · KPI inactifs Qualité.','Ex. en '+YEAR+' : au moins une immat. ≥ '+(YEAR-INACTIVE_PURCHASE_YEARS+1)+'.']
     ]));
-    html+=sec('9. Sauvegarde / iCloud / JSON','<p><strong>Exporter sauvegarde JSON</strong> crée un fichier contenant les données manuelles : groupes, affaires, livraisons, projets, contacts, adresses, états prospection, exclusions, réglages. Enregistrez-le dans iCloud Drive.</p><p><strong>Charger sauvegarde JSON</strong> restaure ces données. Sur iPhone, iOS peut demander de confirmer le remplacement du fichier ; l’application ne peut pas écrire silencieusement dans iCloud sans validation système.</p><p><strong>Bon réflexe :</strong> après une grosse séance de travail, exporter une sauvegarde.</p>');
-    html+=sec('10. Comment vérifier un résultat manuellement','<p><strong>Exemple Exclusion ON :</strong> activez Exclusion ON dans Marché, notez le parc. Allez dans QUALITÉ > Exclus/Inactifs, additionnez les véhicules concernés dans Excel, puis comparez avec la différence Exclusion OFF vs ON.</p><p><strong>Exemple Protocole :</strong> cliquez KPI Protocole dans Tournées. Les sites affichés doivent tous avoir un Groupement renseigné. Vérifiez dans QUALITÉ > Avec groupement.</p><p><strong>Exemple renouvellement :</strong> filtrez Excel sur type Tracteur, âge 4 à 6 ans, possédé OUI, puis marque DAF ou non DAF.</p>');
+    html+=sec('10. Vérifications manuelles types','<p><strong>Exclus Qualité vs Tournées :</strong> un site ACCESSIBLE=0 apparaît dans Qualité > Accessibles OFF, pas dans Clients exclus. Il disparaît quand Masquer exclus est ON en Tournées.</p><p><strong>Groupes :</strong> double-clic KPI Groupes → modal → Ouvrir → vérifier site principal et parc consolidé.</p><p><strong>Reset complet :</strong> Tout effacer → import CRM → import immat → Qualité : Clients exclus ne doit lister que EXCLU_MANU=OUI (plus les seuls ACCESSIBLE=0).</p><p><strong>Backup :</strong> après une modification manuelle, l’icône 💾 affiche « Non exporté » · ouvrir → Télécharger maintenant → déplacer le JSON dans iCloud Drive / '+BACKUP_FOLDER+'.</p>');
     html+='</div>'; openSheet('Mode d’emploi complet',html);
+    renderModeEmploi=window.renderModeEmploi;
   };
 
   // 6) Render screen garde la priorité aux pages spéciales.
@@ -8658,11 +8655,10 @@ document.addEventListener('DOMContentLoaded',function(){
     if(list.length){
       html+='<div style="font-size:10px;color:var(--text3);margin:7px 0;line-height:1.35;">Clients/sites non accessibles selon la colonne ACCESSIBLE ou la modification manuelle dans la fiche client.</div>';
       html+='<div style="max-height:260px;overflow:auto;border-top:1px solid var(--border);">';
-      list.slice(0,200).forEach(function(c){var sk=siteKeySafe(c);html+='<div class="base-item cb-open-site-from-quality" data-sk="'+safeTxt(sk)+'" style="cursor:pointer;">'
+      list.forEach(function(c){var sk=siteKeySafe(c);html+='<div class="base-item cb-open-site-from-quality" data-sk="'+safeTxt(sk)+'" style="cursor:pointer;">'
         +'<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+safeTxt(c.nom||'Sans nom')+'</div>'
         +'<div style="font-size:10px;color:var(--text3);">'+safeTxt(c.ville||'')+' · '+safeTxt(c.tva||'')+' · ACCESSIBLE='+safeTxt(c.accessible||'manuel')+'</div></div>'
         +'<button class="btn btn-secondary btn-sm">Fiche</button></div>';});
-      if(list.length>200)html+='<div style="font-size:10px;color:var(--text3);padding:7px;">Liste limitée à 200 lignes pour préserver la fluidité.</div>';
       html+='</div>';
     }
     html+='</div>';
@@ -8723,11 +8719,10 @@ document.addEventListener('DOMContentLoaded',function(){
     h+='<div style="font-size:10px;color:var(--text3);margin:6px 0;line-height:1.35;">Liste des sites masqués par Accessible OFF, utile pour vérifier les erreurs de qualification.</div>';
     if(list.length){
       h+='<div style="max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:10px;">';
-      list.slice(0,200).forEach(function(c){var sk=siteKey(c);h+='<div class="base-item" style="cursor:pointer;" onclick="window._cbOpenAccessibleOffClient(\''+html(sk).replace(/'/g,'&#39;')+'\')">'
+      list.forEach(function(c){var sk=siteKey(c);h+='<div class="base-item" style="cursor:pointer;" onclick="window._cbOpenAccessibleOffClient(\''+html(sk).replace(/'/g,'&#39;')+'\')">'
         +'<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+html(c.nom||'Sans nom')+'</div>'
         +'<div style="font-size:10px;color:var(--text3);">'+html(c.ville||'')+' · '+html(c.tva||'')+' · ACCESSIBLE='+html(c.accessible||'manuel')+'</div></div>'
         +'<button class="btn btn-secondary btn-sm">Fiche</button></div>';});
-      if(list.length>200)h+='<div style="font-size:10px;color:var(--text3);padding:8px;">Liste limitée à 200 lignes pour préserver la fluidité.</div>';
       h+='</div>';
     }
     h+='</div>';

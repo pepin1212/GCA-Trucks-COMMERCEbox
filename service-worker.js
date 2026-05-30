@@ -1,6 +1,6 @@
 // DAF-Trucks CommerceBox — Service Worker — Cache hors-ligne
 // Incrémenter CACHE à chaque release terrain pour forcer la mise à jour.
-const CACHE = 'daf-commercebox-v2-corrige-2026-bases-v41';
+const CACHE = 'daf-commercebox-v2-corrige-2026-bases-v44';
 
 function bustUrl(url) {
   if (!url || url.indexOf('http') !== 0) return url;
