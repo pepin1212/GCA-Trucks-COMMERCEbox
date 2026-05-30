@@ -216,7 +216,8 @@ input[type=file]{display:none}
       <option value="nom_asc">Nom A&#8594;Z</option>
       <option value="renew_desc">Renouvellement &#9660;</option>
     </select>
-    <div style="display:flex;gap:5px;margin-left:auto;">
+    <div style="display:flex;gap:5px;margin-left:auto;flex-wrap:wrap;">
+      <button class="btn btn-sm" id="btn-create-group-tours" style="background:#ffe600;color:#111;font-weight:800;border:1px solid rgba(255,230,0,.6);">+ Créer groupe</button>
       <button class="btn btn-secondary btn-sm" id="btn-expand">Ouvrir</button>
       <button class="btn btn-secondary btn-sm" id="btn-collapse">Fermer</button>
       <button class="btn btn-ghost btn-sm" id="btn-tours-reset">Tous</button>
@@ -282,7 +283,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v37';
+const APP_BUILD='2026-05-27-bases-v39';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -586,9 +587,13 @@ function getBackupFilename(){
 }
 
 function getBackupData(){
+  if(typeof window.migrateCommerceStorage==='function')window.migrateCommerceStorage();
   const base=DB.getBase();
+  var st=Object.assign({},DB.getSettings()||{});
+  ['hotDeals','deliveries','archivedHotDeals','hotDealArchives','dealArchives'].forEach(function(k){delete st[k];});
+  var archives=(typeof getArchivedHotDeals==='function'?getArchivedHotDeals():[])||[];
   return {
-    version:6,
+    version:8,
     app:'DAF_COMMERCE-Box',
     folder:BACKUP_FOLDER,
     base,
@@ -599,9 +604,25 @@ function getBackupData(){
     projects:DB.getProjects(),
     history:DB.getHistory(),
     possession:DB.getPossession(),
-    settings:DB.getSettings(),
+    settings:st,
+    exclusions:DB.getExclusions(),
+    hotDeals:(typeof getHotDeals==='function'?getHotDeals():[])||[],
+    deliveries:(typeof getDeliveries==='function'?getDeliveries():[])||[],
+    archivedHotDeals:archives,
+    hotDealArchives:archives,
     exportDate:new Date().toISOString()
   };
+}
+function restoreCommerceFromBackup(data){
+  if(!data)return;
+  var st=data.settings||{};
+  var hd=data.hotDeals||st.hotDeals||[];
+  var del=data.deliveries||st.deliveries||[];
+  var ar=data.archivedHotDeals||data.hotDealArchives||st.archivedHotDeals||st.hotDealArchives||st.dealArchives||[];
+  if(typeof saveHotDeals==='function')saveHotDeals(hd);else DB.set('hotDeals',hd||[]);
+  if(typeof saveDeliveries==='function')saveDeliveries(del);else DB.set('deliveries',del||[]);
+  if(typeof saveArchivedHotDeals==='function')saveArchivedHotDeals(ar);else{DB.set('archivedHotDeals',ar||[]);DB.set('hotDealArchives',ar||[]);}
+  if(typeof window.migrateCommerceStorage==='function')window.migrateCommerceStorage();
 }
 
 function triggerBackupDownload(silent){ if(silent===undefined)silent=false;
@@ -671,14 +692,28 @@ const GF = {
   exclInactifsMarche: false,
   exclAccessibleOffMarche: false,
   exclFlotteNationaleMarche: false,
-  // TOURNÉES : masques OFF par défaut (= même périmètre visible que Marché sans filtre).
+  // TOURNÉES : masques ON par défaut pour inactifs, sites sec. et projets.
   masquerExclusTours: false,
-  masquerInactifsTours: false,
+  masquerInactifsTours: true,
   masquerFlotteNationaleTours: false,
-  masquerProjet: false,
-  masquerSitesSecondaires: false,
+  masquerProjet: true,
+  masquerSitesSecondaires: true,
+  cbToursProfils: null,
   marcheTypeFilter: 'tous',
 };
+function resolveDefaultToursProfils(){
+  var patterns=[/coordonn/i,/r[eé]gion/i,/vente.*d[eé]tail|d[eé]tail/i];
+  var profiles=(typeof getDistinctProfils==='function'?getDistinctProfils():[]);
+  var out=[];
+  patterns.forEach(function(re){
+    var m=profiles.find(function(p){return re.test(String(p||''));});
+    if(m&&out.indexOf(m)<0)out.push(m);
+  });
+  return out;
+}
+function initToursDefaultFilters(){
+  if(GF.cbToursProfils===null||GF.cbToursProfils===undefined)GF.cbToursProfils=resolveDefaultToursProfils();
+}
 
 // ===== COLUMN MAPPING =====
 function findCol(headers, keys) {
@@ -1866,13 +1901,24 @@ function getMarcheKpiVehiclesList(kind,filtVeh){
 }
 function openMarcheVehicleSelectionModal(title,matched){_openKpiVehicleModal(title,matched,'marque');}
 function openMarcheSiteSelectionModal(title,clients){_openKpiSiteModal(title,clients,matchesMarcheVehicle);}
+function openMarcheGroupsModal(){
+  var groups=getAllGroups();
+  var inner=groups.map(function(g){
+    var sites=_groupSites(g);
+    var st=getGroupStats(g);
+    return '<div class="diag-row" style="align-items:flex-start;"><div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:800;color:var(--text);">'+escH(getGroupDisplayName(g))+' '+(g.auto?'<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);font-size:8px;">AUTO</span>':'')+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">'+sites.length+' site(s) · Parc '+st.parc+' · R.DAF '+st.dafRenew+' · R.Conc '+st.horsRenew+'</div></div><button class="btn btn-secondary btn-sm marche-open-group" data-gid="'+escH(g.id)+'">Ouvrir</button></div>';
+  }).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun groupe (AUTO TVA ou manuel).</div>';
+  openModal('👥 Groupes ('+groups.length+')','<div style="max-height:55vh;overflow:auto;">'+inner+'</div>',[{label:'Fermer',cls:'btn-primary'}]);
+  QA('#modal-body .marche-open-group').forEach(function(b){b.onclick=function(){closeModal();openGroupSheet(this.dataset.gid);};});
+}
 function _bindMarcheKpiClicks(filtered,filtVeh){
-  var siteLabels={actifs:'Clients actifs',conquete:'Conquête (sans DAF)',fidelisation:'Fidélisation (DAF)',urgents:'Urgents',inactifs:'Clients inactifs'};
+  var siteLabels={actifs:'Clients actifs',groupes:'Groupes',fidelisation:'Fidélisation (DAF)',urgents:'Urgents',inactifs:'Clients inactifs'};
   var vehLabels={parc:'Parc total',hors_daf:'Immat. Hors DAF',hors_renew:'Hors DAF renouv.',daf:'Immat. DAF',daf_renew:'DAF à renouveler'};
   QA('#marche-content [data-marche-kpi]').forEach(function(el){
     el.onclick=function(){
       var k=this.dataset.marcheKpi;
-      if(siteLabels[k])openMarcheSiteSelectionModal(siteLabels[k],getMarcheKpiSites(k,filtered));
+      if(k==='groupes')openMarcheGroupsModal();
+      else if(siteLabels[k])openMarcheSiteSelectionModal(siteLabels[k],getMarcheKpiSites(k,filtered));
       else if(vehLabels[k])openMarcheVehicleSelectionModal(vehLabels[k],getMarcheKpiVehiclesList(k,filtVeh));
     };
   });
@@ -1914,13 +1960,14 @@ function renderMarche(){
   var camGagnes=(typeof getWonVehiculesYear==='function')?getWonVehiculesYear(YEAR):DB.getProjects().filter(function(p){return p.status==='GAGNE'&&getYear(p.updated||p.created||p.date)===YEAR;}).reduce(function(a,p){return a+(parseInt(p.camions)||0);},0);
   var dafRenewKpi=filtVeh.filter(isRenewDafMarche).length;
   var horsRenewKpi=filtVeh.filter(isRenewHorsMarche).length;
-  var clientsAvecDaf=0,clientsSansDaf=0;
+  var clientsAvecDaf=0;
   filtered.forEach(function(c){
     var sk=c._siteKey||makeSiteKey(c);
     var vehSite=(IDX.vBySite[sk]||[]).filter(matchesMarcheVehicle);
     if(!vehSite.length)return;
-    if(vehSite.some(isDaf))clientsAvecDaf++;else clientsSansDaf++;
+    if(vehSite.some(isDaf))clientsAvecDaf++;
   });
+  var kGroupes=(typeof getAllGroups==='function'?getAllGroups():[]).length;
 
   // === BUILD HTML (KPI immédiats — graphiques en différé) ===
   var html='';
@@ -1957,7 +2004,7 @@ function renderMarche(){
     +'<div><div class="marche-kpi-side-lbl">Sites</div>'
     +'<div class="kpi-grid kpi-col-stack">'
     +'<div class="kpi-card c-green" data-marche-kpi="actifs" title="Cliquer pour voir le détail"><div class="kpi-val">'+kClientsActifs+'</div><div class="kpi-lbl">Clients actifs</div></div>'
-    +'<div class="kpi-card c-blue" data-marche-kpi="conquete" title="Cliquer pour voir le détail"><div class="kpi-val">'+clientsSansDaf+'</div><div class="kpi-lbl">Conquête (sans DAF)</div></div>'
+    +'<div class="kpi-card c-blue" data-marche-kpi="groupes" title="Cliquer pour voir la liste des groupes"><div class="kpi-val">'+kGroupes+'</div><div class="kpi-lbl">Groupes</div></div>'
     +'<div class="kpi-card c-daf" data-marche-kpi="fidelisation" title="Cliquer pour voir le détail"><div class="kpi-val">'+clientsAvecDaf+'</div><div class="kpi-lbl">Fidélisation (DAF)</div></div>'
     +'<div class="kpi-card c-red" data-marche-kpi="urgents" title="Cliquer pour voir le détail"><div class="kpi-val">'+urgents.length+'</div><div class="kpi-lbl">Urgents</div></div>'
     +'<div class="kpi-card" data-marche-kpi="inactifs" title="Cliquer pour voir le détail"><div class="kpi-val">'+kClientsInactifs+'</div><div class="kpi-lbl">Clients inactifs</div></div>'
@@ -2141,7 +2188,7 @@ function renderBasesCard(){
 }
 
 function _baseStorageKeys(){
-  return ['clients','vehicles','crm','projects','history','possession','settings','exclusions'];
+  return ['clients','vehicles','crm','projects','history','possession','settings','exclusions','hotDeals','deliveries','archivedHotDeals','hotDealArchives'];
 }
 function _purgeBaseData(baseId){
   _baseStorageKeys().forEach(function(k){
@@ -2945,6 +2992,7 @@ function bindEvents(){
     data.forEach(function(c){toursExp['c_'+(c.canton||'Sans canton')]=true;toursExp['v_'+(c.canton||'Sans canton')+'_'+(c.ville||'Sans ville')]=true;});
     renderTours();
   });
+  safeOn('btn-create-group-tours','click',createManualGroup);
   safeOn('btn-collapse','click',function(){toursExp={};renderTours();});
   safeOn('btn-tours-reset','click',function(){
     toursF='all';toursSearch='';
@@ -2958,6 +3006,7 @@ function bindEvents(){
   safeOn('nav-save-btn','click',function(){if(DB.getClients().length===0){toast('Aucune donnée à sauvegarder');return;}showBackupInstructions();});
   window.addEventListener('beforeunload',function(e){if(_unsavedChanges&&DB.getClients().length>0){e.preventDefault();e.returnValue='Des données non exportées existent.';}});
   scheduleAutoBackup();
+  initToursDefaultFilters();
   // Enregistrement du service worker pour le mode hors-ligne (PWA).
   if('serviceWorker' in navigator){
     navigator.serviceWorker.register('./service-worker.js?v='+encodeURIComponent(APP_BUILD)).then(function(reg){
@@ -2979,10 +3028,10 @@ function saveManualGroups(groups){var st=getAppSettings();st.manualGroups=groups
 function groupIdForTva(tva){return 'AUTO_TVA_'+String(tva||'').replace(/[^A-Za-z0-9]/g,'_');}
 function makeManualGroupId(){return 'GRP_'+Date.now()+'_'+Math.floor(Math.random()*1000);}
 function siteInManualGroup(sk){var groups=getManualGroups();for(var i=0;i<groups.length;i++){if((groups[i].siteKeys||[]).indexOf(sk)>=0)return groups[i];}return null;}
-function getAutoGroupForSite(c){if(!c||!c.tva)return null;var arr=(IDX.sitesByTva&&IDX.sitesByTva[c.tva])||[];if(arr.length<2)return null;return {id:groupIdForTva(c.tva),name:'Groupe TVA '+c.tva,auto:true,tva:c.tva,siteKeys:arr.map(makeSiteKey)};}
+function getAutoGroupForSite(c){if(!c||!c.tva)return null;var arr=(IDX.sitesByTva&&IDX.sitesByTva[c.tva])||[];if(arr.length<2)return null;return {id:groupIdForTva(c.tva),name:'',auto:true,tva:c.tva,siteKeys:arr.map(makeSiteKey)};}
 function getGroupForSiteKey(sk){var c=IDX.cBySite&&IDX.cBySite[sk];if(!c)return null;return siteInManualGroup(sk)||getAutoGroupForSite(c);}
-function getGroupById(gid){var groups=getManualGroups();for(var i=0;i<groups.length;i++){if(groups[i].id===gid)return groups[i];}if(String(gid||'').indexOf('AUTO_TVA_')===0){var tva=String(gid).replace('AUTO_TVA_','');var keys=Object.keys(IDX.sitesByTva||{});for(var k=0;k<keys.length;k++){if(groupIdForTva(keys[k])===gid){var arr=IDX.sitesByTva[keys[k]]||[];return {id:gid,name:'Groupe TVA '+keys[k],auto:true,tva:keys[k],siteKeys:arr.map(makeSiteKey)};}}}return null;}
-function getAllGroups(){var out=[];var seen={};getManualGroups().forEach(function(g){out.push(g);seen[g.id]=true;});Object.keys(IDX.sitesByTva||{}).forEach(function(tva){var arr=IDX.sitesByTva[tva]||[];if(arr.length>1){var gid=groupIdForTva(tva);if(!seen[gid])out.push({id:gid,name:'Groupe TVA '+tva,auto:true,tva:tva,siteKeys:arr.map(makeSiteKey)});}});return out;}
+function getGroupById(gid){var groups=getManualGroups();for(var i=0;i<groups.length;i++){if(groups[i].id===gid)return groups[i];}if(String(gid||'').indexOf('AUTO_TVA_')===0){var keys=Object.keys(IDX.sitesByTva||{});for(var k=0;k<keys.length;k++){if(groupIdForTva(keys[k])===gid){var arr=IDX.sitesByTva[keys[k]]||[];return {id:gid,name:'',auto:true,tva:keys[k],siteKeys:arr.map(makeSiteKey)};}}}return null;}
+function getAllGroups(){var out=[];var seen={};getManualGroups().forEach(function(g){out.push(g);seen[g.id]=true;});Object.keys(IDX.sitesByTva||{}).forEach(function(tva){var arr=IDX.sitesByTva[tva]||[];if(arr.length>1){var gid=groupIdForTva(tva);if(!seen[gid])out.push({id:gid,name:'',auto:true,tva:tva,siteKeys:arr.map(makeSiteKey)});}});return out;}
 function getGroupMeta(){var st=getAppSettings();if(!st.groupSiteMeta)st.groupSiteMeta={};return st.groupSiteMeta;}
 function setGroupMeta(gid,sk,updates){var st=getAppSettings();if(!st.groupSiteMeta)st.groupSiteMeta={};var key=gid+'|'+sk;if(!st.groupSiteMeta[key])st.groupSiteMeta[key]={};Object.assign(st.groupSiteMeta[key],updates||{});saveAppSettings(st);}
 function getGroupSiteMeta(gid,sk){var st=getAppSettings();return ((st.groupSiteMeta||{})[gid+'|'+sk])||{};}
@@ -3004,7 +3053,7 @@ function renderQuickActions(c,group){var adresseStr=[c.adresse,c.ville,c.dept,c.
   ${adresseStr?`<button class="btn btn-secondary btn-sm" id="btn-copy-site-addr">📋 Copier adresse</button>`:''}
   ${c.siret?`<button class="btn btn-secondary btn-sm" id="btn-copy-site-siret">📋 Copier SIRET</button><a href="https://www.google.com/search?q=${encodeURIComponent(c.siret)}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">🔎 SIRET Safari</a>`:''}
   <a href="${wazeUrl}" target="_blank" class="btn btn-blue btn-sm" style="text-decoration:none;">🧭 Waze</a>
-  ${group?`<button class="btn btn-secondary btn-sm" id="btn-open-group">👥 Voir groupe</button>`:''}
+  ${group?`<button class="btn btn-secondary btn-sm btn-open-group-sheet" data-gid="${escH(group.id)}">👥 Voir groupe</button>`:''}
 </div>`;}
 function renderContactsBlock(sk){var st=getAppSettings();var contacts=(st.siteContacts&&st.siteContacts[sk])||[];var html=contacts.map(function(ct,i){return `<div class="diag-row"><div><div style="font-size:11px;font-weight:700;color:var(--text);">${escH((ct.prenom||'')+' '+(ct.nom||''))}</div><div style="font-size:10px;color:var(--text3);">${escH(ct.poste||'')} ${ct.tel?' · '+escH(ct.tel):''} ${ct.mail?' · '+escH(ct.mail):''}</div></div><button class="hist-del contact-del" data-i="${i}">✕</button></div>`;}).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun contact renseigné</div>';return `<div class="card" style="margin:0 0 9px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="card-title" style="margin:0;">👤 Contacts</div><button class="btn btn-secondary btn-sm" id="btn-add-contact">+ Contact</button></div><div style="margin-top:8px;">${html}</div></div>`;}
 // ===== FICHES ENTREPRISE / SITE (canonique) =====
@@ -3096,7 +3145,7 @@ function renderGroupsQuality(){
       return '<div style="font-size:10px;color:var(--text3);margin-top:3px;">• '+escH(c.ville||'')+' / '+escH(c.nom||'')+' / TVA '+escH(c.tva||'')+' / SIRET '+escH(c.siret||'—')+' / '+(groupSiteIsPrincipal(g.id,sk)?'Principal':'Secondaire')+' / Décisionnaire '+(groupSiteIsDecisionnaire(g.id,sk)?'OUI':'NON')+'</div>';
     }).join('');
     if(sites.length>8)siteLines+='<div style="font-size:9px;color:var(--text3);margin-top:3px;">… '+(sites.length-8)+' autres sites</div>';
-    return '<div class="diag-row" style="align-items:flex-start;"><div style="flex:1;"><div style="font-size:12px;font-weight:800;color:var(--text);">'+escH(g.name)+' '+(g.auto?'<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">AUTO</span>':'')+'</div>'+siteLines+'</div><button class="btn btn-secondary btn-sm open-group" data-gid="'+escH(g.id)+'">Ouvrir</button></div>';
+    return '<div class="diag-row" style="align-items:flex-start;"><div style="flex:1;"><div style="font-size:12px;font-weight:800;color:var(--text);">'+escH(getGroupDisplayName(g))+' '+(g.auto?'<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">AUTO</span>':'')+'</div>'+siteLines+'</div><button class="btn btn-secondary btn-sm open-group" data-gid="'+escH(g.id)+'">Ouvrir</button></div>';
   }).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun groupe détecté.</div>';
   return '<div class="card quality-section" id="qualite-groupes-card">'
     +'<div class="quality-collapse-hdr" data-qcollapse="qualite-groupes-body" style="display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;user-select:none;">'
@@ -3125,10 +3174,10 @@ function renderSiteGroupInfoBox(info){
       <span class="badge" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);">DÉCISIONNAIRE ${decisionnaire?'OUI':'NON'}</span>
     </div>
     <div style="font-size:11px;color:var(--text2);line-height:1.45;">
-      <strong>${escH(g.name||'Groupe')}</strong><br>
+      <strong>${escH(getGroupDisplayName(g))}</strong><br>
       Ces informations sont modifiables uniquement dans la fiche Groupe.
     </div>
-    <button class="btn btn-secondary btn-sm" id="btn-open-group" style="width:100%;margin-top:8px;">👥 Voir / modifier le groupe</button>
+    <button class="btn btn-secondary btn-sm btn-open-group-sheet" data-gid="${escH(g.id)}" style="width:100%;margin-top:8px;">👥 Voir / modifier le groupe</button>
   </div>`;
 }
 
@@ -3210,7 +3259,7 @@ function openSiteSheet(sk){
   openSheet(c.nom||'Fiche site',html);
   safeOn('btn-copy-site-addr','click',function(){if(navigator.clipboard)navigator.clipboard.writeText(adresseStr).then(function(){toast('Adresse copiée');});});
   safeOn('btn-copy-site-siret','click',function(){if(navigator.clipboard)navigator.clipboard.writeText(c.siret||'').then(function(){toast('SIRET copié');});});safeOn('btn-add-site-address','click',function(){openExtraAddressModal(sk);});QA('#sheet-body .extra-address-del').forEach(function(b){b.onclick=function(){deleteExtraAddress(sk,parseInt(this.dataset.i));};});QA('#sheet-body .extra-address-copy').forEach(function(b){b.onclick=function(){var a=getExtraAddresses(sk)[parseInt(this.dataset.i)];if(a&&navigator.clipboard)navigator.clipboard.writeText(a.address||'').then(function(){toast('Adresse copiée');});};});
-  safeOn('btn-open-group','click',function(){if(group)openGroupSheet(group.id);});
+  QA('#sheet-body .btn-open-group-sheet').forEach(function(b){b.onclick=function(){var gid=this.dataset.gid;if(gid)openGroupSheet(gid);};});
   bindCompanyVerificationSheet(sk,c);
   safeOn('tog-exclu-client','change',function(){saveExclusionRec(c,{excluded:this.checked,manual:true});buildIndex();if(currentScreen==='tours')renderTours();toast(this.checked?'Client exclu':'Client réintégré');});
   safeOn('tog-urgent-client','change',function(){saveExclusionRec(c,{urgent:this.checked,manualUrgent:true});buildIndex();if(currentScreen==='tours')renderTours();toast(this.checked?'Client urgent':'Urgence retirée');});
@@ -3269,6 +3318,17 @@ function _groupPrincipalKey(gid){
     if(siegeSk&&keys.indexOf(siegeSk)>=0)return siegeSk;
   }
   return keys[0];
+}
+function getGroupDisplayName(group){
+  if(!group)return 'Groupe';
+  if(!group.auto)return group.name||'Groupe';
+  var pk=typeof _groupPrincipalKey==='function'?_groupPrincipalKey(group.id):'';
+  var c=pk&&IDX.cBySite&&IDX.cBySite[pk];
+  if(c){
+    var label=[c.nom,c.ville].filter(Boolean).join(' · ');
+    if(label)return label;
+  }
+  return group.tva?('Groupe '+group.tva):'Groupe';
 }
 function groupSiteIsPrincipal(gid,sk){return _groupPrincipalKey(gid)===sk;}
 function groupSiteIsDecisionnaire(gid,sk){
@@ -3562,6 +3622,7 @@ function _restoreToursScroll(saved){
 }
 function renderTours(){
   try{
+  initToursDefaultFilters();
   var scrollSave=_saveToursScroll();
   window._toursRenderGen=(window._toursRenderGen||0)+1;
   var gen=window._toursRenderGen;
@@ -3691,7 +3752,7 @@ function renderSiteGroupInfoBox(info){
   if(!info||!info.hasGroup||!info.group)return '';
   var g=info.group, st=getGroupStats(g), sites=_groupSites(g), principal=!!info.principal, decisionnaire=!!info.decisionnaire;
   var siteList=sites.map(function(s){var sk=makeSiteKey(s), ss=getSiteStats(sk);return '<div style="font-size:10px;color:var(--text3);padding:3px 0;border-top:1px solid var(--border);">• '+escH(s.ville||'')+' / '+escH(s.nom||'')+' / '+escH(s.siret||'SIRET ?')+' · '+(groupSiteIsPrincipal(g.id,sk)?'Principal':'Secondaire')+' · '+ss.parc+' véh.</div>';}).join('');
-  return `<div class="card group-box" style="margin:0 0 9px;"><div class="card-title" style="color:var(--daf);margin-bottom:7px;">👥 Groupe mère consolidé</div><div class="c-badges" style="margin-bottom:7px;"><span class="badge b-groupe">GROUPE</span><span class="badge ${principal?'b-projet':''}" style="${principal?'':'background:var(--bg3);color:var(--text3);border:1px solid var(--border);'}">${principal?'SITE PRINCIPAL':'SITE SECONDAIRE'}</span><span class="badge" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);">DÉCISIONNAIRE ${decisionnaire?'OUI':'NON'}</span></div><div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:6px;">${escH(g.name||'Groupe')}</div><div class="kpi-grid kpi-grid-3" style="margin:0 0 8px;"><div class="kpi-card"><div class="kpi-val">${st.parc}</div><div class="kpi-lbl">Parc groupe</div></div><div class="kpi-card c-daf"><div class="kpi-val">${st.dafRenew}</div><div class="kpi-lbl">R.DAF gr.</div></div><div class="kpi-card c-blue"><div class="kpi-val">${st.horsRenew}</div><div class="kpi-lbl">R.Conc gr.</div></div></div><div style="font-size:11px;color:var(--text2);line-height:1.45;margin-bottom:7px;">Le site principal porte le potentiel consolidé de tous les sites du groupe dans TOURNÉES.</div>${siteList}<button class="btn btn-secondary btn-sm" id="btn-open-group" style="width:100%;margin-top:8px;">👥 Voir / modifier le groupe</button></div>`;
+  return `<div class="card group-box" style="margin:0 0 9px;"><div class="card-title" style="color:var(--daf);margin-bottom:7px;">👥 Groupe mère consolidé</div><div class="c-badges" style="margin-bottom:7px;"><span class="badge b-groupe">GROUPE</span><span class="badge ${principal?'b-projet':''}" style="${principal?'':'background:var(--bg3);color:var(--text3);border:1px solid var(--border);'}">${principal?'SITE PRINCIPAL':'SITE SECONDAIRE'}</span><span class="badge" style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);">DÉCISIONNAIRE ${decisionnaire?'OUI':'NON'}</span></div><div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:6px;">${escH(getGroupDisplayName(g))}</div><div class="kpi-grid kpi-grid-3" style="margin:0 0 8px;"><div class="kpi-card"><div class="kpi-val">${st.parc}</div><div class="kpi-lbl">Parc groupe</div></div><div class="kpi-card c-daf"><div class="kpi-val">${st.dafRenew}</div><div class="kpi-lbl">R.DAF gr.</div></div><div class="kpi-card c-blue"><div class="kpi-val">${st.horsRenew}</div><div class="kpi-lbl">R.Conc gr.</div></div></div><div style="font-size:11px;color:var(--text2);line-height:1.45;margin-bottom:7px;">Le site principal porte le potentiel consolidé de tous les sites du groupe dans TOURNÉES.</div>${siteList}<button class="btn btn-secondary btn-sm" id="btn-open-group" style="width:100%;margin-top:8px;">👥 Voir / modifier le groupe</button></div>`;
 }
 function openGroupSheet(gid){
   var group=getGroupById(gid);if(!group){toast('Groupe introuvable');return;}
@@ -3703,8 +3764,8 @@ function openGroupSheet(gid){
     var adresseSite=[c.adresse,c.ville,c.dept,c.pays].filter(Boolean).join(', ');
     return `<div class="base-item" style="align-items:flex-start;"><div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;">${escH(c.ville||'Sans ville')} / ${escH(c.nom||'Nom client')} / ${escH(c.siret||'SIRET manquant')}${renderSiegeVerificationMicro(sv.siret,'SIRET conforme au siège registre vérifié','SIRET différent du siège registre vérifié')}</div>${adresseSite?`<div style="font-size:10px;color:var(--text3);margin-top:1px;">📍 ${escH(adresseSite)}${renderSiegeVerificationMicro(sv.addr,'Adresse conforme au siège registre vérifié','Adresse différente du siège registre vérifié')}</div>`:''}<div style="font-size:10px;color:var(--text3);">TVA ${escH(c.tva||'—')} · ${ss.parc} véhicules · ${ss.dafRenew+ss.horsRenew} renouv.</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;"><span style="font-size:10px;color:var(--text2);">Site principal</span><label class="toggle"><input type="checkbox" class="grp-principal" data-sk="${escH(sk)}" ${principal?'checked':''}><span class="tgl-sl"></span></label><span style="font-size:10px;color:var(--text2);">Décisionnaire</span><label class="toggle"><input type="checkbox" class="grp-dec" data-sk="${escH(sk)}" ${dec?'checked':''} ${principal?'disabled':''}><span class="tgl-sl"></span></label></div></div><button class="btn btn-ghost btn-sm grp-open-site" data-sk="${escH(sk)}">Site</button>${!group.auto?`<button class="btn btn-ghost btn-sm grp-remove-site" data-sk="${escH(sk)}">Retirer</button>`:''}</div>`;
   }).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px;">Aucun site dans ce groupe.</div>';
-  var html=`<div style="padding:12px;"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;">FICHE GROUPE MÈRE ${group.auto?'AUTO TVA':'MANUEL'}</div><div style="font-size:18px;font-weight:800;margin-bottom:5px;">${escH(group.name||'Groupe')}</div><div class="c-badges" style="margin-bottom:8px;">${badges}</div><div class="kpi-grid kpi-grid-3" style="margin:0 0 8px;"><div class="kpi-card"><div class="kpi-val">${sites.length}</div><div class="kpi-lbl">Sites</div></div><div class="kpi-card"><div class="kpi-val">${stats.parc}</div><div class="kpi-lbl">Parc</div></div><div class="kpi-card c-daf"><div class="kpi-val">${stats.dafCount}</div><div class="kpi-lbl">DAF</div></div><div class="kpi-card c-daf"><div class="kpi-val">${stats.dafRenew}</div><div class="kpi-lbl">R.DAF</div></div><div class="kpi-card c-blue"><div class="kpi-val">${stats.horsRenew}</div><div class="kpi-lbl">R.Conc</div></div></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${!group.auto?'<button class="btn btn-primary btn-sm" id="btn-group-add-site">+ Ajouter un site</button><button class="btn btn-red btn-sm" id="btn-group-delete">Supprimer groupe</button>':'<button class="btn btn-secondary btn-sm" disabled>Groupe automatique TVA</button>'}<button class="btn btn-secondary btn-sm" id="btn-toggle-group-veh">Parc consolidé ▼</button></div><div class="card" style="margin:0 0 9px;padding:0;overflow:hidden;"><div class="card-title" style="padding:10px 12px 6px;margin:0;">Sites du groupe — un seul site principal possible</div>${rows}</div>${vehiclesHtml}</div>`;
-  openSheet(group.name||'Groupe',html);
+  var html=`<div style="padding:12px;"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;">FICHE GROUPE MÈRE ${group.auto?'AUTO TVA':'MANUEL'}</div><div style="font-size:18px;font-weight:800;margin-bottom:5px;">${escH(getGroupDisplayName(group))}</div><div class="c-badges" style="margin-bottom:8px;">${badges}</div><div class="kpi-grid kpi-grid-3" style="margin:0 0 8px;"><div class="kpi-card"><div class="kpi-val">${sites.length}</div><div class="kpi-lbl">Sites</div></div><div class="kpi-card"><div class="kpi-val">${stats.parc}</div><div class="kpi-lbl">Parc</div></div><div class="kpi-card c-daf"><div class="kpi-val">${stats.dafCount}</div><div class="kpi-lbl">DAF</div></div><div class="kpi-card c-daf"><div class="kpi-val">${stats.dafRenew}</div><div class="kpi-lbl">R.DAF</div></div><div class="kpi-card c-blue"><div class="kpi-val">${stats.horsRenew}</div><div class="kpi-lbl">R.Conc</div></div></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${!group.auto?'<button class="btn btn-primary btn-sm" id="btn-group-add-site">+ Ajouter un site</button><button class="btn btn-red btn-sm" id="btn-group-delete">Supprimer groupe</button>':'<button class="btn btn-secondary btn-sm" disabled>Groupe automatique TVA</button>'}<button class="btn btn-secondary btn-sm" id="btn-toggle-group-veh">Parc consolidé ▼</button></div><div class="card" style="margin:0 0 9px;padding:0;overflow:hidden;"><div class="card-title" style="padding:10px 12px 6px;margin:0;">Sites du groupe — un seul site principal possible</div>${rows}</div>${vehiclesHtml}</div>`;
+  openSheet(getGroupDisplayName(group)||'Groupe',html);
   QA('#sheet-body .grp-principal').forEach(function(el){el.onchange=function(){if(!this.checked){this.checked=true;toast('Choisis un autre site principal au lieu de décocher celui-ci');return;}setGroupSitePrincipal(group.id,this.dataset.sk,true);openGroupSheet(group.id);if(currentScreen==='tours')renderTours();};});
   QA('#sheet-body .grp-dec').forEach(function(el){el.onchange=function(){setGroupSiteDecisionnaire(group.id,this.dataset.sk,this.checked);openGroupSheet(group.id);};});
   QA('#sheet-body .grp-open-site').forEach(function(el){el.onclick=function(){openSiteSheet(this.dataset.sk);};});
@@ -4243,8 +4304,7 @@ function bindImportEvents(){
   if(zi&&fi){zi.onclick=function(){fi.click();};fi.onchange=function(e){var f=e.target.files[0];if(!f)return;parseExcel(f).then(function(data){showImportFilterModal(f,data,'immat');}).catch(function(){toast('Erreur import immatriculations');});};}
   bindBasesEvents();
 }
-function restoreJSON(file){return new Promise(function(resolve){const reader=new FileReader();reader.onload=function(e){try{const data=JSON.parse(e.target.result);openModal('📥 Restaurer',`<p style="font-size:12px;color:var(--text2);">Restaurer la sauvegarde <strong>${escH(data.nom||data.base||'?')}</strong> ?<br><br>Les données actuelles de la base active seront remplacées.</p>`,[{label:'Annuler',cls:'btn-ghost'},{label:'Restaurer',cls:'btn-primary',action:function(){if(data.clients)DB.saveClients(data.clients);if(data.crm)DB.saveCRM(data.crm);if(data.projects)DB.saveProjects(data.projects);if(data.history)DB.saveHistory(data.history);if(data.possession)DB.savePossession(data.possession);if(data.settings)DB.saveSettings(data.settings);if(data.exclusions)DB.saveExclusions(data.exclusions);var p=data.vehicles?DB.saveVehicles(data.vehicles):Promise.resolve(true);p.then(function(){buildIndex();autoSave();toast('Restauration effectuée');renderScreen(currentScreen);resolve(true);});}}]);}catch(err){toast('Fichier JSON invalide');resolve(false);}};reader.readAsText(file);});}
-function getBackupData(){const base=DB.getBase();return {version:7,app:'DAF_COMMERCE-Box',base:base,nom:DB.getBases()[base],clients:DB.getClients(),vehicles:DB.getVehicles(),crm:DB.getCRM(),projects:DB.getProjects(),history:DB.getHistory(),possession:DB.getPossession(),settings:DB.getSettings(),exclusions:DB.getExclusions(),exportDate:new Date().toISOString()};}
+function restoreJSON(file){return new Promise(function(resolve){const reader=new FileReader();reader.onload=function(e){try{const data=JSON.parse(e.target.result);openModal('📥 Restaurer',`<p style="font-size:12px;color:var(--text2);">Restaurer la sauvegarde <strong>${escH(data.nom||data.base||'?')}</strong> ?<br><br>Les données actuelles de la base active seront remplacées.</p>`,[{label:'Annuler',cls:'btn-ghost'},{label:'Restaurer',cls:'btn-primary',action:function(){if(data.clients)DB.saveClients(data.clients);if(data.crm)DB.saveCRM(data.crm);if(data.projects)DB.saveProjects(data.projects);if(data.history)DB.saveHistory(data.history);if(data.possession)DB.savePossession(data.possession);if(data.settings)DB.saveSettings(data.settings);if(data.exclusions)DB.saveExclusions(data.exclusions);restoreCommerceFromBackup(data);var p=data.vehicles?DB.saveVehicles(data.vehicles):Promise.resolve(true);p.then(function(){buildIndex();autoSave();toast('Restauration effectuée');renderScreen(currentScreen);resolve(true);});}}]);}catch(err){toast('Fichier JSON invalide');resolve(false);}};reader.readAsText(file);});}
 function exportBackupJSONDirect(){
   try{
     var data=getBackupData();
@@ -4813,8 +4873,38 @@ renderModeEmploi = function(){
     return total;
   };
   window.getWonVehiculesYear=function(year){
-    var deals=hotDeals(), linked={}; var total=0; deals.forEach(function(d){if(d.projectId)linked[d.projectId]=true; var y=(new Date(d.updated||d.created||'')).getFullYear(); if(!year||y===year)total+=dealWon(d);});
-    (DB.getProjects()||[]).forEach(function(p){ if(!linked[p.id] && String(p.status||'').toUpperCase()==='GAGNE' && getYear(p.updated||p.created||p.date)===year) total+=(parseInt(p.camions||p.nb)||0); });
+    year=year||YEAR;
+    var total=0, linked={};
+    function winYear(d){
+      var p=DB.getProjects()||[];
+      if(d.projectId){var pr=p.find(function(x){return x.id===d.projectId;});if(pr)return getYear(pr.updated||pr.created||pr.date);}
+      return getYear(d.resultDate||d.archivedDate||d.updated||d.created||'');
+    }
+    function countWon(d){
+      var w=dealWon(d);
+      if(w>0)return w;
+      var st=String(d.finalStatus||d.status||'').toUpperCase();
+      if(st==='GAGNE'||st==='GAGNE_PARTIEL'){
+        var planned=dealPlanned(d);
+        if(planned>0)return planned;
+        if(d.projectId){var pr=(DB.getProjects()||[]).find(function(x){return x.id===d.projectId;});if(pr)return parseInt(pr.camions||pr.nb)||0;}
+        return 1;
+      }
+      return 0;
+    }
+    function scan(arr){
+      (arr||[]).forEach(function(d){
+        if(d.projectId)linked[d.projectId]=true;
+        if(winYear(d)===year)total+=countWon(d);
+      });
+    }
+    scan(hotDeals());
+    if(typeof getArchivedHotDeals==='function')scan(getArchivedHotDeals());
+    (DB.getProjects()||[]).forEach(function(p){
+      if(linked[p.id])return;
+      if(String(p.status||'').toUpperCase()==='GAGNE'&&getYear(p.updated||p.created||p.date)===year)
+        total+=(parseInt(p.camions||p.nb)||0);
+    });
     return total;
   };
 
@@ -10781,6 +10871,68 @@ document.addEventListener('DOMContentLoaded',function(){
     };
     window.renderAffaires._v24NavWrap=true;
   }
+})();
+
+// ===== STOCKAGE CANONIQUE AFFAIRES / LIVRAISONS (backup + restore unifiés) =====
+(function(){
+  var ARCH_LEGACY=['hotDealArchives','dealArchives'];
+  var COMMERCE_KEYS=['hotDeals','deliveries','archivedHotDeals'].concat(ARCH_LEGACY);
+  function mergeById(lists){
+    var out=[], seen={};
+    (lists||[]).forEach(function(list){
+      (list||[]).forEach(function(x){
+        if(!x)return;
+        var id=x.id!=null?String(x.id):'';
+        if(id){
+          if(seen[id])return;
+          seen[id]=true;
+        }
+        out.push(x);
+      });
+    });
+    return out;
+  }
+  function readAll(key,legacy){
+    legacy=legacy||[];
+    var st={};
+    try{st=DB.getSettings()||{};}catch(e){}
+    var sources=[DB.get(key)];
+    legacy.forEach(function(k){sources.push(DB.get(k));});
+    sources.push(st[key]);
+    legacy.forEach(function(k){sources.push(st[k]);});
+    return mergeById(sources);
+  }
+  function writeAll(key,val,legacy){
+    legacy=legacy||[];
+    var arr=Array.isArray(val)?val:[];
+    DB.set(key,arr);
+    legacy.forEach(function(k){DB.set(k,arr);});
+    var st={};
+    try{st=DB.getSettings()||{};}catch(e){}
+    var dirty=false;
+    COMMERCE_KEYS.forEach(function(k){
+      if(st[k]){delete st[k];dirty=true;}
+    });
+    if(dirty){try{DB.saveSettings(st);}catch(e){}}
+    try{if(typeof autoSave==='function')autoSave();}catch(e){}
+  }
+  window.getHotDeals=function(){return readAll('hotDeals',[]);};
+  window.saveHotDeals=function(v){writeAll('hotDeals',v,[]);};
+  window.getDeliveries=function(){return readAll('deliveries',[]);};
+  window.saveDeliveries=function(v){writeAll('deliveries',v,[]);};
+  window.getArchivedHotDeals=function(){return readAll('archivedHotDeals',ARCH_LEGACY);};
+  window.saveArchivedHotDeals=function(v){writeAll('archivedHotDeals',v,ARCH_LEGACY);};
+  window.getHotDealArchives=window.getArchivedHotDeals;
+  window.saveHotDealArchives=window.saveArchivedHotDeals;
+  window.migrateCommerceStorage=function(){
+    var hd=readAll('hotDeals',[]);
+    var del=readAll('deliveries',[]);
+    var ar=readAll('archivedHotDeals',ARCH_LEGACY);
+    writeAll('hotDeals',hd,[]);
+    writeAll('deliveries',del,[]);
+    writeAll('archivedHotDeals',ar,ARCH_LEGACY);
+  };
+  window.migrateCommerceStorage();
 })();
 </script>
 </body>
