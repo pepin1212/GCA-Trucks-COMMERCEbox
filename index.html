@@ -288,7 +288,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v48';
+const APP_BUILD='2026-05-27-bases-v49';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -1188,8 +1188,13 @@ function isClientAccessible(c){
   var sk=c._siteKey||makeSiteKey(c);
   if(Object.prototype.hasOwnProperty.call(m,sk))return !!m[sk];
   if(Object.prototype.hasOwnProperty.call(m,c.tva||''))return !!m[c.tva||''];
-  var acc=String(c.accessible||'').trim().toUpperCase();
-  return !(acc==='0'||acc==='NON'||acc==='FALSE'||acc==='FAUX');
+  var acc=c.accessible;
+  if(acc===0||acc===false||acc==='0')return false;
+  var s=String(acc||'').trim().toUpperCase();
+  return !(s==='0'||s==='NON'||s==='FALSE'||s==='FAUX'||s==='NO');
+}
+function getClientsAccessibleOffList(){
+  return (DB.getClients()||[]).filter(function(c){return !isClientAccessible(c);});
 }
 // Tournées badge/masque « Exclus » : EXCLU_MANUEL + ACCESSIBLE=0
 function isClientExcluded(c){
@@ -4416,14 +4421,34 @@ function bindCompanyVerificationSheet(sk,c,reopenFn){
 }
 
 function _distinct(arr){var s={};arr.forEach(function(v){v=String(v||'').trim();if(v)s[v]=true;});return Object.keys(s).sort();}
+var QUALITY_LIST_ALL=-1;
+var QUALITY_LIST_DEFAULT=50;
+function _isQualityListUnlimited(listMax){
+  return listMax===QUALITY_LIST_ALL||listMax===0||listMax===-1||listMax===false||listMax===true;
+}
+function _purgeLegacyQualityAccessibleDom(){
+  ['cb-quality-accessible-off','cb-quality-accessible-off-row'].forEach(function(id){
+    var el=$(id);if(el)el.remove();
+  });
+  QA('#more-content .card.quality-section').forEach(function(card){
+    if(card.id==='qualite-exclusions-card')return;
+    var titleEl=card.querySelector('.card-title');
+    if(!titleEl)return;
+    var t=String(titleEl.textContent||'').toUpperCase();
+    if(t.indexOf('EXCLUSIONS')<0||t.indexOf('FLOTTES')<0)return;
+    var rows=card.querySelectorAll('.diag-row .diag-lbl');
+    var onlyAccessible=rows.length===1&&String(rows[0].textContent||'').indexOf('Accessibles OFF')>=0;
+    if(onlyAccessible)card.remove();
+  });
+}
 function _qItems(items, mapper, max){
   items=items||[];
   if(!items.length)return '<div class="q-item">Aucun élément</div>';
-  var unlimited=(max===0||max===-1||max===false);
-  if(!unlimited&&(max==null||max===undefined))max=50;
-  var slice=unlimited?items:items.slice(0,max);
+  var unlimited=_isQualityListUnlimited(max);
+  var limit=unlimited?items.length:(Number(max)>0?Number(max):QUALITY_LIST_DEFAULT);
+  var slice=unlimited?items:items.slice(0,limit);
   var html=slice.map(function(x){return '<div class="q-item">'+mapper(x)+'</div>';}).join('');
-  if(!unlimited&&items.length>max)html+='<div class="q-item" style="color:var(--text3);font-size:10px;">… '+(items.length-max)+' autres non listés · compteur = '+items.length+'</div>';
+  if(!unlimited&&items.length>limit)html+='<div class="q-item" style="color:var(--text3);font-size:10px;">… '+(items.length-limit)+' autres non listés · total = '+items.length+'</div>';
   return html;
 }
 function _qualityBlock(title, items, mapper, level){var id='ql_'+Math.random().toString(36).slice(2);var cls=level==='err'?'d-err':level==='warn'?'d-warn':'d-ok';return '<div class="diag-row"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'">'+items.length+'</span></div><div class="q-list" id="'+id+'">'+_qItems(items,mapper)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';}
@@ -4800,15 +4825,16 @@ function _qualityVehicleItem(v){
   return '<div class="q-title-line"><strong>'+escH(v.client||v.tva||'Client ?')+'</strong><br>'+escH(v.plaque||'Plaque ?')+' / '+escH(v.marque||'Marque ?')+' / '+escH(v.date||'Date ?')+' / '+escH(v.type||'Type ?')+'</div><div class="q-actions">'+(sk?'<button class="btn btn-secondary btn-sm q-open-site" data-sk="'+escH(sk)+'">Ouvrir fiche</button>':'<span class="q-empty">Aucune fiche site rattachée</span>')+'</div>';
 }
 function _qualityBlockAction(title, items, mapper, level, listMax){
+  items=items||[];
   var id='ql_'+Math.random().toString(36).slice(2);
   var cls=level==='err'?'d-err':level==='warn'?'d-warn':'d-ok';
-  var unlimited=(listMax===0||listMax===-1||listMax===false);
-  var max=unlimited?0:((listMax===undefined||listMax===null)?50:listMax);
+  var unlimited=_isQualityListUnlimited(listMax);
+  var max=unlimited?QUALITY_LIST_ALL:(listMax==null?QUALITY_LIST_DEFAULT:Number(listMax)||QUALITY_LIST_DEFAULT);
   var hint='';
   if(title.indexOf('inactifs')>=0)hint='Aucune immat. sur les '+INACTIVE_PURCHASE_YEARS+' dernières années calendaires (année courante incluse), ou parc vide.';
   else if(title.indexOf('exclus')>=0)hint='EXCLU_MANU = OUI dans le CRM ou exclusion manuelle via le toggle Exclu.';
-  else if(title.indexOf('Accessibles OFF')>=0)hint='Colonne ACCESSIBLE = 0/NON ou toggle Accessible OFF en fiche site.';
-  return '<div class="diag-row"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'">'+items.length+'</span></div>'+(hint?'<div style="font-size:9px;color:var(--text3);line-height:1.35;margin:2px 0 4px;">'+hint+'</div>':'')+'<div class="q-list" id="'+id+'">'+_qItems(items,mapper,max)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';
+  else if(title.indexOf('Accessibles OFF')>=0)hint='Colonne ACCESSIBLE = 0/NON ou toggle Accessible OFF en fiche site · compteur = total réel ('+items.length+').';
+  return '<div class="diag-row" data-q-block="'+escH(title)+'"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'" data-q-count="'+items.length+'">'+items.length+'</span></div>'+(hint?'<div style="font-size:9px;color:var(--text3);line-height:1.35;margin:2px 0 4px;">'+hint+'</div>':'')+'<div class="q-list" id="'+id+'">'+_qItems(items,mapper,max)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';
 }
 function _splitBlock(title, yesTitle, yesItems, noTitle, noItems, mapper){
   return '<div class="card quality-section"><div class="card-title">'+title+'</div>'+_qualityBlockAction(yesTitle,yesItems,mapper,'ok')+_qualityBlockAction(noTitle,noItems,mapper,noItems.length?'warn':'ok')+'</div>';
@@ -4832,6 +4858,7 @@ function _bindQualityInteractions(){
 }
 
 function _renderQualiteBody(){
+  _purgeLegacyQualityAccessibleDom();
   var clients=DB.getClients()||[], vehicles=DB.getVehicles()||[];
   var groups=getAllGroups();
   var knownTva={}; clients.forEach(function(c){if(c.tva)knownTva[c.tva]=true;});
@@ -4865,6 +4892,7 @@ function _renderQualiteBody(){
   var avecEtat=clients.filter(function(c){return !!getSiteEtatProspection(makeSiteKey(c),c);});
   var sansEtat=clients.filter(function(c){return !getSiteEtatProspection(makeSiteKey(c),c);});
   var inactifsAll=clients.filter(function(c){return isInactiveClientMarche(c.tva,c._siteKey||makeSiteKey(c));});
+  var accessibleOff=getClientsAccessibleOffList();
   var html='';
   html+='<div class="screen-header"><div class="screen-title">🔍 Qualité</div><div class="screen-sub">Contrôle visuel des données, groupes, imports et anomalies</div></div>';
   html+='<div style="margin:0 12px 8px;"><button type="button" class="btn btn-ghost btn-sm" onclick="renderMore()" style="width:100%;">← Retour Plus</button></div>';
@@ -4901,15 +4929,16 @@ function _renderQualiteBody(){
   html+=_qualityBlockAction('Doublons suspects TVA + plaque',dup,_qualityVehicleItem,'warn');
   html+='</div>';
   html+='<div class="card quality-section" id="qualite-exclusions-card"><div class="card-title">🚩 Exclusions / activité / flottes</div>';
-  html+=_qualityBlockAction('Clients exclus',clients.filter(isClientExcludedQualite),_qualitySiteItemExclu,'warn',0);
-  html+=_qualityBlockAction('Clients Accessibles OFF',clients.filter(function(c){return !isClientAccessible(c);}),_qualitySiteItemAccessible,'warn',0);
-  html+=_qualityBlockAction('Clients inactifs',inactifsAll,_qualitySiteItem,'warn',0);
+  html+=_qualityBlockAction('Clients exclus',clients.filter(isClientExcludedQualite),_qualitySiteItemExclu,'warn',QUALITY_LIST_ALL);
+  html+=_qualityBlockAction('Clients Accessibles OFF',accessibleOff,_qualitySiteItemAccessible,'warn',QUALITY_LIST_ALL);
+  html+=_qualityBlockAction('Clients inactifs',inactifsAll,_qualitySiteItem,'warn',QUALITY_LIST_ALL);
   html+=_qualityBlockAction('Clients flotte',clients.filter(isFlotteBadge),_qualitySiteItem,'ok');
   html+=_qualityBlockAction('Flotte nationale',clients.filter(isFlotteNationale),_qualitySiteItem,'ok');
   html+=_qualityBlockAction('Flotte régionale',clients.filter(isFlotteRegionale),_qualitySiteItem,'ok');
   html+=_qualityBlockAction('Flotte coordonnée',clients.filter(isFlotteCoordonnee),_qualitySiteItem,'ok');
   html+='</div>';
   $('more-content').innerHTML=html;
+  _purgeLegacyQualityAccessibleDom();
   _bindQualityInteractions();
 };
 
@@ -11145,6 +11174,33 @@ document.addEventListener('DOMContentLoaded',function(){
     writeAll('archivedHotDeals',ar,ARCH_LEGACY);
   };
   window.migrateCommerceStorage();
+})();
+</script>
+
+<script>
+/* Qualité — garde-fou : supprime les anciens encarts Accessibles OFF injectés par cache/patch legacy */
+(function(){
+  'use strict';
+  function purge(){
+    if(typeof _purgeLegacyQualityAccessibleDom==='function'){_purgeLegacyQualityAccessibleDom();return;}
+    ['cb-quality-accessible-off','cb-quality-accessible-off-row'].forEach(function(id){
+      var el=document.getElementById(id);if(el)el.remove();
+    });
+  }
+  var rq=window.renderQualite;
+  if(typeof rq==='function'&&!rq._qualAccessibleGuard){
+    window.renderQualite=function(){
+      var r=rq.apply(this,arguments);
+      setTimeout(purge,0);
+      setTimeout(purge,200);
+      return r;
+    };
+    window.renderQualite._qualAccessibleGuard=true;
+  }
+  document.addEventListener('click',function(e){
+    var btn=e.target&&e.target.closest&&e.target.closest('#btn-open-qualite');
+    if(btn)setTimeout(purge,250);
+  },true);
 })();
 </script>
 </body>
