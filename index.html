@@ -288,7 +288,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v49';
+const APP_BUILD='2026-05-27-bases-v50';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -816,7 +816,7 @@ function mapClientRow(row, headers) {
     nom:f(['NOM','CLIENT','RAISON SOCIALE','RAISON_SOCIALE','ENTREPRISE','NAME']),
     ville,
     canton:f(['CANTON','SECTEUR','ZONE']),
-    accessible:f(['ACCESSIBLE','ACCESS']),
+    accessible:f(['ACCESSIBLE','ACCESSIBLE CLIENT','COLONNE ACCESSIBLE','ACCESSIBLE SITE']),
     profil:profilFinal,
     priorite:f(['PRIORITE_FORCEE','PRIORITE FORCEE','PRIORITE']),
     exclu:f(['EXCLU_MANU','EXCLU_MANUEL','EXCLU']),
@@ -1181,21 +1181,74 @@ function isClientExcludedMarche(c){
   return norm(c.exclu||'')==='OUI';
 }
 function isClientExcludedQualite(c){return isClientExcludedMarche(c);}
-function isClientAccessible(c){
-  if(!c)return true;
+function isAccessibleCrmValue(acc){
+  if(acc===undefined||acc===null)return true;
+  if(acc===0||acc===false)return false;
+  var s=String(acc).trim().toUpperCase();
+  if(!s)return true;
+  if(s==='0'||s==='NON'||s==='FALSE'||s==='FAUX'||s==='NO'||s==='N'||s==='NOK')return false;
+  if(s==='1'||s==='OUI'||s==='YES'||s==='TRUE'||s==='VRAI'||s==='Y'||s==='OK')return true;
+  return true;
+}
+function getAccessibleOffReason(c){
+  if(!c)return null;
   var st=DB.getSettings()||{};
   var m=st.accessibleOverrides||{};
   var sk=c._siteKey||makeSiteKey(c);
-  if(Object.prototype.hasOwnProperty.call(m,sk))return !!m[sk];
-  if(Object.prototype.hasOwnProperty.call(m,c.tva||''))return !!m[c.tva||''];
-  var acc=c.accessible;
-  if(acc===0||acc===false||acc==='0')return false;
-  var s=String(acc||'').trim().toUpperCase();
-  return !(s==='0'||s==='NON'||s==='FALSE'||s==='FAUX'||s==='NO');
+  if(Object.prototype.hasOwnProperty.call(m,sk))return m[sk]?null:'override';
+  var tva=c.tva||'';
+  if(tva&&Object.prototype.hasOwnProperty.call(m,tva)&&!m[tva]){
+    var sites=(IDX.sitesByTva&&IDX.sitesByTva[tva])||[];
+    if(sites.length<=1)return 'override';
+  }
+  return isAccessibleCrmValue(c.accessible)?null:'crm';
+}
+function isClientAccessible(c){return !getAccessibleOffReason(c);}
+function countAccessibleOffBreakdown(){
+  var clients=DB.getClients()||[];
+  var crm=0,override=0,items=[];
+  clients.forEach(function(c){
+    var reason=getAccessibleOffReason(c);
+    if(!reason)return;
+    items.push(c);
+    if(reason==='crm')crm++; else override++;
+  });
+  return {total:items.length,crm:crm,override:override,items:items};
 }
 function getClientsAccessibleOffList(){
-  return (DB.getClients()||[]).filter(function(c){return !isClientAccessible(c);});
+  return countAccessibleOffBreakdown().items;
 }
+function countAccessibleOffInImport(data){
+  if(!data||data.length<2)return {off:0,on:0,empty:0,total:0,col:''};
+  var headers=(data[0]||[]).map(function(h){return String(h||'').trim();});
+  var idx=findCol(headers,['ACCESSIBLE','ACCESSIBLE CLIENT','COLONNE ACCESSIBLE','ACCESSIBLE SITE']);
+  if(idx<0)return {off:0,on:0,empty:0,total:0,col:''};
+  var off=0,on=0,empty=0,total=0;
+  data.slice(1).forEach(function(r){
+    if(!r.some(function(c){return c!=='';}))return;
+    total++;
+    var acc=r[idx];
+    if(!isAccessibleCrmValue(acc))off++;
+    else if(!String(acc||'').trim())empty++;
+    else on++;
+  });
+  return {off:off,on:on,empty:empty,total:total,col:headers[idx]||''};
+}
+function clearAccessibleOverrides(){
+  openModal('Réinitialiser les toggles Accessible','<p style="font-size:12px;color:var(--text2);line-height:1.55;">Efface tous les overrides manuels <strong>Accessible</strong> enregistrés dans l’app (fiches site / Qualité).<br><br>Les sites repasseront sur la colonne <strong>ACCESSIBLE</strong> du CRM uniquement.<br><br>Cette action ne modifie pas le fichier Excel importé.</p>',[
+    {label:'Annuler',cls:'btn-ghost'},
+    {label:'Réinitialiser',cls:'btn-primary',action:function(){
+      var st=DB.getSettings()||{};
+      st.accessibleOverrides={};
+      DB.saveSettings(st);
+      autoSave();
+      try{buildIndex();}catch(e){}
+      scheduleQualityListRefresh();
+      toast('Overrides Accessible effacés');
+    }}
+  ]);
+}
+window.clearAccessibleOverrides=clearAccessibleOverrides;
 // Tournées badge/masque « Exclus » : EXCLU_MANUEL + ACCESSIBLE=0
 function isClientExcluded(c){
   if(!c)return false;
@@ -4103,7 +4156,7 @@ if(!window._groupSheetDelegationBound){
 
 // ===== PHASE 5 FINAL — QUALITÉ / IMPORT FILTRÉ / SAUVEGARDE / MODE D'EMPLOI =====
 (function(){try{var css=document.createElement('style');  css.textContent=`
-      .quality-section .diag-row{align-items:flex-start}.q-list{display:none;margin-top:6px;padding:6px;background:var(--bg3);border-radius:8px;max-height:220px;overflow:auto}.q-list.open{display:block}.q-item{font-size:10px;color:var(--text2);padding:3px 0;border-bottom:1px solid var(--border)}.v-info{overflow-wrap:anywhere;word-break:break-word}.v-detail{line-height:1.35;white-space:normal}.v-client-name{font-size:10px;color:var(--text2);font-weight:700;margin-bottom:1px;white-space:normal;overflow-wrap:anywhere}
+      .quality-section .diag-row{align-items:flex-start}.q-list{display:none;margin-top:6px;padding:6px;background:var(--bg3);border-radius:8px;max-height:220px;overflow:auto}.q-list.q-list-full{max-height:min(70vh,900px)}.q-list.open{display:block}.q-item{font-size:10px;color:var(--text2);padding:3px 0;border-bottom:1px solid var(--border)}.v-info{overflow-wrap:anywhere;word-break:break-word}.v-detail{line-height:1.35;white-space:normal}.v-client-name{font-size:10px;color:var(--text2);font-weight:700;margin-bottom:1px;white-space:normal;overflow-wrap:anywhere}
       .quality-collapse-hdr.quality-collapse-open .quality-collapse-chevron{display:inline-block;transform:rotate(90deg)}
       .fpill-alert{border:1px solid var(--red)!important;color:var(--red)!important;font-weight:700}
       .fpill-alert.active{background:var(--red)!important;color:#fff!important;border-color:var(--red)!important}
@@ -4120,7 +4173,7 @@ const IMPORT_DIAG_RULES = {
     {key:'siret', label:'SIRET', critical:false, aliases:['SIRET','N° SIRET','N SIRET','NUM SIRET','NUMERO SIRET','SIRET ETABLISSEMENT','SIRET ENTREPRISE','SIRET CLIENT','CODE SIRET']},
     {key:'ville', label:'Ville', critical:false, aliases:['VILLE','COMMUNE','CITY']},
     {key:'canton', label:'Canton / secteur', critical:false, aliases:['CANTON','SECTEUR','ZONE']},
-    {key:'accessible', label:'Accessible', critical:false, aliases:['ACCESSIBLE','ACCESS']},
+    {key:'accessible', label:'Accessible', critical:false, aliases:['ACCESSIBLE','ACCESSIBLE CLIENT','COLONNE ACCESSIBLE','ACCESSIBLE SITE']},
     {key:'profil', label:'Profil commercial', critical:false, aliases:['PROFIL_COMMERCIAL','PROFIL COMMERCIAL','PROFIL COMMERCIAL CLIENT','PROFIL COMMERCIAL ACTUEL','PROFIL CLIENT','PROFIL_CLIENT','TYPE CLIENT','TYPE_CLIENT','SEGMENT','SEGMENT CLIENT','CATEGORIE','CATÉGORIE','CATEGORIE CLIENT','CATÉGORIE CLIENT','CLASSEMENT','FAMILLE CLIENT','FLOTTE','TYPE FLOTTE','STATUT FLOTTE','PROFIL']},
     {key:'priorite', label:'Priorité / urgent', critical:false, aliases:['PRIORITE_FORCEE','PRIORITE FORCEE','PRIORITE']},
     {key:'exclu', label:'Exclusion manuelle', critical:false, aliases:['EXCLU_MANU','EXCLU_MANUEL','EXCLU']},
@@ -4173,6 +4226,11 @@ function renderImportDiagnostics(){
     }).join('');
     var date=d.date?fmtDate(d.date):'—';
     var extra='';
+    if(type==='crm'){
+      if(typeof d.accessibleOffCrm==='number'){
+        extra='<div style="font-size:10px;color:var(--text2);margin:6px 0;line-height:1.45;">Colonne ACCESSIBLE lue : <strong>'+escH(String(d.accessibleCol||'—'))+'</strong> · lignes CRM analysées : <strong>'+escH(String(d.accessibleRows||0))+'</strong> · ACCESSIBLE=0/NON : <strong>'+d.accessibleOffCrm+'</strong> · OUI/1 : <strong>'+escH(String(d.accessibleOnCrm||0))+'</strong> · vide ( = accessible ) : <strong>'+escH(String(d.accessibleEmptyCrm||0))+'</strong></div>';
+      }
+    }
     if(type==='immat'){
       var dbVeh=(DB.getVehicles()||[]).length;
       extra='<div style="font-size:10px;color:var(--text2);margin:6px 0;line-height:1.45;">Lignes lues : <strong>'+escH(String(d.rowCount||0))+'</strong> · Véhicules enregistrés : <strong>'+dbVeh+'</strong>';
@@ -4441,14 +4499,15 @@ function _purgeLegacyQualityAccessibleDom(){
     if(onlyAccessible)card.remove();
   });
 }
-function _qItems(items, mapper, max){
+function _qItems(items, mapper, max, unlimited){
   items=items||[];
   if(!items.length)return '<div class="q-item">Aucun élément</div>';
-  var unlimited=_isQualityListUnlimited(max);
-  var limit=unlimited?items.length:(Number(max)>0?Number(max):QUALITY_LIST_DEFAULT);
-  var slice=unlimited?items:items.slice(0,limit);
+  var isUnlimited=!!unlimited||_isQualityListUnlimited(max);
+  var limit=isUnlimited?items.length:(Number(max)>0?Number(max):QUALITY_LIST_DEFAULT);
+  var slice=isUnlimited?items:items.slice(0,limit);
   var html=slice.map(function(x){return '<div class="q-item">'+mapper(x)+'</div>';}).join('');
-  if(!unlimited&&items.length>limit)html+='<div class="q-item" style="color:var(--text3);font-size:10px;">… '+(items.length-limit)+' autres non listés · total = '+items.length+'</div>';
+  if(isUnlimited&&items.length>0)html+='<div class="q-item" style="color:var(--text3);font-size:10px;">Liste complète · '+items.length+' site'+(items.length>1?'s':'')+'</div>';
+  else if(!isUnlimited&&items.length>limit)html+='<div class="q-item" style="color:var(--text3);font-size:10px;">… '+(items.length-limit)+' autres non listés · total = '+items.length+'</div>';
   return html;
 }
 function _qualityBlock(title, items, mapper, level){var id='ql_'+Math.random().toString(36).slice(2);var cls=level==='err'?'d-err':level==='warn'?'d-warn':'d-ok';return '<div class="diag-row"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'">'+items.length+'</span></div><div class="q-list" id="'+id+'">'+_qItems(items,mapper)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';}
@@ -4610,7 +4669,8 @@ function showImportFilterModal(file,data,type){
       setTimeout(function(){toast(msg);},300);
     }
     if(type==='crm'){
-      saveImportDiagnostic('crm',fdata);
+      var accStats=countAccessibleOffInImport(fdata);
+      saveImportDiagnostic('crm',fdata,{accessibleOffCrm:accStats.off,accessibleOnCrm:accStats.on,accessibleEmptyCrm:accStats.empty,accessibleRows:accStats.total,accessibleCol:accStats.col});
       var res=importCRM(fdata);res.clients=_mergeManualClientFields(res.clients,DB.getClients());
       var okSave=DB.saveClients(res.clients);
       $('crm-status')&&($('crm-status').textContent=res.clients.length+' clients importés');
@@ -4824,17 +4884,20 @@ function _qualityVehicleItem(v){
   var sk=_siteKeyFromVehicle(v);
   return '<div class="q-title-line"><strong>'+escH(v.client||v.tva||'Client ?')+'</strong><br>'+escH(v.plaque||'Plaque ?')+' / '+escH(v.marque||'Marque ?')+' / '+escH(v.date||'Date ?')+' / '+escH(v.type||'Type ?')+'</div><div class="q-actions">'+(sk?'<button class="btn btn-secondary btn-sm q-open-site" data-sk="'+escH(sk)+'">Ouvrir fiche</button>':'<span class="q-empty">Aucune fiche site rattachée</span>')+'</div>';
 }
-function _qualityBlockAction(title, items, mapper, level, listMax){
+function _qualityBlockAction(title, items, mapper, level, listMax, hintOverride){
   items=items||[];
   var id='ql_'+Math.random().toString(36).slice(2);
   var cls=level==='err'?'d-err':level==='warn'?'d-warn':'d-ok';
   var unlimited=_isQualityListUnlimited(listMax);
-  var max=unlimited?QUALITY_LIST_ALL:(listMax==null?QUALITY_LIST_DEFAULT:Number(listMax)||QUALITY_LIST_DEFAULT);
-  var hint='';
-  if(title.indexOf('inactifs')>=0)hint='Aucune immat. sur les '+INACTIVE_PURCHASE_YEARS+' dernières années calendaires (année courante incluse), ou parc vide.';
-  else if(title.indexOf('exclus')>=0)hint='EXCLU_MANU = OUI dans le CRM ou exclusion manuelle via le toggle Exclu.';
-  else if(title.indexOf('Accessibles OFF')>=0)hint='Colonne ACCESSIBLE = 0/NON ou toggle Accessible OFF en fiche site · compteur = total réel ('+items.length+').';
-  return '<div class="diag-row" data-q-block="'+escH(title)+'"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'" data-q-count="'+items.length+'">'+items.length+'</span></div>'+(hint?'<div style="font-size:9px;color:var(--text3);line-height:1.35;margin:2px 0 4px;">'+hint+'</div>':'')+'<div class="q-list" id="'+id+'">'+_qItems(items,mapper,max)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';
+  var max=unlimited?items.length:(listMax==null?QUALITY_LIST_DEFAULT:Number(listMax)||QUALITY_LIST_DEFAULT);
+  var hint=hintOverride||'';
+  if(!hint){
+    if(title==='Clients inactifs')hint='Aucune immat. sur les '+INACTIVE_PURCHASE_YEARS+' dernières années calendaires (année courante incluse), ou parc vide.';
+    else if(title==='Clients exclus')hint='EXCLU_MANU = OUI dans le CRM ou exclusion manuelle via le toggle Exclu.';
+    else if(title==='Clients Accessibles OFF')hint='Colonne ACCESSIBLE = 0/NON ou toggle Accessible OFF en fiche site.';
+  }
+  var listCls=unlimited?'q-list q-list-full':'q-list';
+  return '<div class="diag-row" data-q-block="'+escH(title)+'"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'" data-q-count="'+items.length+'">'+items.length+'</span></div>'+(hint?'<div style="font-size:9px;color:var(--text3);line-height:1.35;margin:2px 0 4px;">'+hint+'</div>':'')+'<div class="'+listCls+'" id="'+id+'">'+_qItems(items,mapper,max,unlimited)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';
 }
 function _splitBlock(title, yesTitle, yesItems, noTitle, noItems, mapper){
   return '<div class="card quality-section"><div class="card-title">'+title+'</div>'+_qualityBlockAction(yesTitle,yesItems,mapper,'ok')+_qualityBlockAction(noTitle,noItems,mapper,noItems.length?'warn':'ok')+'</div>';
@@ -4892,7 +4955,8 @@ function _renderQualiteBody(){
   var avecEtat=clients.filter(function(c){return !!getSiteEtatProspection(makeSiteKey(c),c);});
   var sansEtat=clients.filter(function(c){return !getSiteEtatProspection(makeSiteKey(c),c);});
   var inactifsAll=clients.filter(function(c){return isInactiveClientMarche(c.tva,c._siteKey||makeSiteKey(c));});
-  var accessibleOff=getClientsAccessibleOffList();
+  var accBreak=countAccessibleOffBreakdown();
+  var accHint='CRM ACCESSIBLE=0/NON : <strong>'+accBreak.crm+'</strong> · toggles OFF : <strong>'+accBreak.override+'</strong> · total : <strong>'+accBreak.total+'</strong> / '+clients.length+' sites · <button type="button" class="btn btn-ghost btn-sm" style="font-size:9px;padding:2px 6px;vertical-align:baseline;" onclick="clearAccessibleOverrides()">Réinitialiser toggles</button>';
   var html='';
   html+='<div class="screen-header"><div class="screen-title">🔍 Qualité</div><div class="screen-sub">Contrôle visuel des données, groupes, imports et anomalies</div></div>';
   html+='<div style="margin:0 12px 8px;"><button type="button" class="btn btn-ghost btn-sm" onclick="renderMore()" style="width:100%;">← Retour Plus</button></div>';
@@ -4930,7 +4994,7 @@ function _renderQualiteBody(){
   html+='</div>';
   html+='<div class="card quality-section" id="qualite-exclusions-card"><div class="card-title">🚩 Exclusions / activité / flottes</div>';
   html+=_qualityBlockAction('Clients exclus',clients.filter(isClientExcludedQualite),_qualitySiteItemExclu,'warn',QUALITY_LIST_ALL);
-  html+=_qualityBlockAction('Clients Accessibles OFF',accessibleOff,_qualitySiteItemAccessible,'warn',QUALITY_LIST_ALL);
+  html+=_qualityBlockAction('Clients Accessibles OFF',accBreak.items,_qualitySiteItemAccessible,'warn',QUALITY_LIST_ALL,accHint);
   html+=_qualityBlockAction('Clients inactifs',inactifsAll,_qualitySiteItem,'warn',QUALITY_LIST_ALL);
   html+=_qualityBlockAction('Clients flotte',clients.filter(isFlotteBadge),_qualitySiteItem,'ok');
   html+=_qualityBlockAction('Flotte nationale',clients.filter(isFlotteNationale),_qualitySiteItem,'ok');
