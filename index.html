@@ -142,6 +142,8 @@ input[type=file]{display:none}
 .gf-bar::-webkit-scrollbar{display:none}
 .gf-chip{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:9px;font-weight:700;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);white-space:nowrap;cursor:pointer;transition:all .15s}
 .gf-chip.on{background:var(--daf-bg);border-color:var(--daf);color:var(--daf)}
+.gf-chip.mask-exclude{background:var(--orange-bg);border-color:var(--orange);color:var(--orange)}
+.gf-chip.mask-only{background:var(--green-bg);border-color:var(--green);color:var(--green)}
 .gf-chip.disabled{opacity:.4;pointer-events:none}
 .save-bar{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--text3);padding:3px 0}
 .save-dot{width:5px;height:5px;border-radius:50%;background:var(--text3)}
@@ -173,6 +175,8 @@ input[type=file]{display:none}
 .gf-sel{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text2);cursor:pointer;transition:all .15s;appearance:none;-webkit-appearance:none;}
 .gf-sel-active{background:var(--daf-bg);border-color:var(--daf);color:var(--daf);}
 .gf-sel option{background:var(--bg3);color:var(--text);}
+.brand-logo{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;line-height:0;flex-shrink:0}
+.brand-logo svg{display:block;max-height:22px;width:auto}
 </style>
 <!-- HTML BODY -->
 <body>
@@ -204,11 +208,12 @@ input[type=file]{display:none}
     <div class="fpill" data-f="flotte">Flotte</div>
   </div>
   <div id="tours-mask-bar" style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:6px 12px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:40px;z-index:200;overflow:visible;">
-    <button class="gf-chip" id="btn-mask-exclus">Exclus ON</button>
-    <button class="gf-chip" id="btn-mask-inactifs">Inactifs ON</button>
-    <button class="gf-chip" id="btn-mask-flotte-nat">Flotte Nat. ON</button>
-    <button class="gf-chip" id="btn-mask-projets">Projets ON</button>
-    <button class="gf-chip" id="btn-mask-sites-sec">Sites sec. ON</button>
+    <button class="gf-chip" id="btn-mask-exclus">Exclus</button>
+    <button class="gf-chip" id="btn-mask-accessible-off">Accessible OFF</button>
+    <button class="gf-chip mask-exclude" id="btn-mask-inactifs">Inactifs OFF</button>
+    <button class="gf-chip" id="btn-mask-flotte-nat">Flotte Nat. OFF</button>
+    <button class="gf-chip mask-exclude" id="btn-mask-projets">Projets OFF</button>
+    <button class="gf-chip mask-exclude" id="btn-mask-sites-sec">Sites sec. OFF</button>
     <select class="form-input" id="tours-sort-sel" style="font-size:10px;padding:4px 7px;min-width:110px;">
       <option value="score">Score &#9660;</option>
       <option value="parc_desc">Parc total &#9660;</option>
@@ -283,7 +288,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v44';
+const APP_BUILD='2026-05-27-bases-v48';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -692,12 +697,19 @@ const GF = {
   exclInactifsMarche: false,
   exclAccessibleOffMarche: false,
   exclFlotteNationaleMarche: false,
-  // TOURNÉES : masques ON par défaut pour inactifs, sites sec. et projets.
+  // TOURNÉES : masques tri-état (neutral | exclude=OFF orange | only=ON vert)
+  toursMaskExclus: 'neutral',
+  toursMaskAccessible: 'neutral',
+  toursMaskInactifs: 'exclude',
+  toursMaskProjets: 'exclude',
+  toursMaskSitesSec: 'exclude',
+  // legacy booléens (migration uniquement)
   masquerExclusTours: false,
   masquerInactifsTours: true,
   masquerFlotteNationaleTours: false,
   masquerProjet: true,
   masquerSitesSecondaires: true,
+  masquerAccessibleOffTours: false,
   cbToursProfils: null,
   marcheTypeFilter: 'tous',
 };
@@ -713,6 +725,53 @@ function resolveDefaultToursProfils(){
 }
 function initToursDefaultFilters(){
   if(GF.cbToursProfils===null||GF.cbToursProfils===undefined)GF.cbToursProfils=resolveDefaultToursProfils();
+  ensureToursMaskTriState();
+}
+var TOURS_MASK_DEFS=[
+  {id:'exclus',btn:'btn-mask-exclus',label:'Exclus',key:'toursMaskExclus'},
+  {id:'accessible',btn:'btn-mask-accessible-off',label:'Accessible OFF',key:'toursMaskAccessible'},
+  {id:'inactifs',btn:'btn-mask-inactifs',label:'Inactifs',key:'toursMaskInactifs'},
+  {id:'projets',btn:'btn-mask-projets',label:'Projets',key:'toursMaskProjets'},
+  {id:'sitesSec',btn:'btn-mask-sites-sec',label:'Sites sec.',key:'toursMaskSitesSec'}
+];
+function ensureToursMaskTriState(){
+  if(GF._toursMaskTriState)return;
+  var mig=[
+    ['toursMaskExclus','masquerExclusTours','neutral'],
+    ['toursMaskAccessible','masquerAccessibleOffTours','neutral'],
+    ['toursMaskInactifs','masquerInactifsTours','exclude'],
+    ['toursMaskProjets','masquerProjet','exclude'],
+    ['toursMaskSitesSec','masquerSitesSecondaires','exclude']
+  ];
+  mig.forEach(function(m){
+    if(GF[m[0]]==null||GF[m[0]]===undefined){
+      GF[m[0]]=(typeof GF[m[1]]==='boolean')?(GF[m[1]]?'exclude':'neutral'):m[2];
+    }
+  });
+  GF._toursMaskTriState=true;
+}
+function cycleToursMaskState(s){
+  if(s==='neutral')return 'exclude';
+  if(s==='exclude')return 'only';
+  return 'neutral';
+}
+function toursMaskRowMatch(c,id){
+  switch(id){
+    case 'exclus':return !!c.isExcluManu;
+    case 'accessible':return !!c.isAccessibleOff;
+    case 'inactifs':return !!c.isInactif;
+    case 'projets':return !!(c.hasProjet||c.pasProjet);
+    case 'sitesSec':return !!c.isSiteSecondaire;
+    default:return false;
+  }
+}
+function bindToursMaskButton(btnId,gfKey){
+  safeOn(btnId,'click',function(){
+    ensureToursMaskTriState();
+    GF[gfKey]=cycleToursMaskState(GF[gfKey]||'neutral');
+    if(gfKey==='toursMaskProjets'){var bot=$('tog-masq-proj');if(bot)bot.checked=(GF[gfKey]==='exclude');}
+    renderTours();
+  });
 }
 
 // ===== COLUMN MAPPING =====
@@ -1687,19 +1746,106 @@ function bindSheetEvents(){
 }
 
 // ===== MODAL =====
-function openModal(title,bodyHtml,buttons){
+let _modalExportGetter=null;
+function _csvEscapeCell(v){v=String(v==null?'':v);return '"'+v.replace(/"/g,'""')+'"';}
+function _sanitizeExportFilename(title){
+  return String(title||'export').replace(/[^\w\s\-àâäéèêëïîôùûüçÀÂÄÉÈÊËÏÎÔÙÛÜÇ]/g,'').replace(/\s+/g,'_').slice(0,80)||'export';
+}
+function _extractRowsFromTable(table){
+  var rows=[];
+  if(!table)return rows;
+  table.querySelectorAll('tr').forEach(function(tr){
+    var cells=tr.querySelectorAll('th,td');
+    if(!cells.length)return;
+    rows.push(Array.from(cells).map(function(c){
+      var n=c.cloneNode(true);
+      n.querySelectorAll('button,input,select,textarea').forEach(function(el){el.remove();});
+      return (n.textContent||'').trim().replace(/\s+/g,' ');
+    }));
+  });
+  return rows;
+}
+function _modalBodyToExportRows(body){
+  body=body||$('modal-body');
+  if(!body)return null;
+  var view=body.querySelector('#kpi-modal-view')||body;
+  var tables=view.querySelectorAll('table');
+  if(tables.length){
+    var all=[];
+    tables.forEach(function(t,idx){
+      if(idx>0&&all.length)all.push([]);
+      all=all.concat(_extractRowsFromTable(t));
+    });
+    if(all.length)return all;
+  }
+  var items=view.querySelectorAll('.base-item, .diag-row, .rank-row, .q-item');
+  if(items.length){
+    var rows=[['Libellé','Détail']];
+    items.forEach(function(it){
+      var titleEl=it.querySelector('strong,.rank-info div,.q-title-line strong');
+      var title=titleEl?(titleEl.textContent||'').trim():'';
+      var detail=(it.textContent||'').trim().replace(/\s+/g,' ').replace(/Ouvrir|Fiche|Modifier|Masquer|Voir/g,'').trim();
+      if(!title)title=detail.split(' · ')[0]||detail;
+      rows.push([title,detail]);
+    });
+    if(rows.length>1)return rows;
+  }
+  return null;
+}
+function exportRowsToExcel(filename,rows){
+  if(!rows||!rows.length){toast('Rien à exporter');return;}
+  var base=_sanitizeExportFilename(filename);
+  if(typeof XLSX!=='undefined'){
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Export');
+    XLSX.writeFile(wb,base+'.xlsx');
+  }else{
+    var csv='\ufeff'+rows.map(function(r){return r.map(_csvEscapeCell).join(';');}).join('\n');
+    var blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=base+'.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
+  toast('📊 Export Excel téléchargé');
+}
+function _modalHasExportableContent(){
+  var body=$('modal-body');
+  if(!body)return false;
+  if(typeof _modalExportGetter==='function')return true;
+  var view=body.querySelector('#kpi-modal-view')||body;
+  if(view.querySelector('table'))return true;
+  if(view.querySelectorAll('.base-item, .diag-row, .rank-row, .q-item').length>=1)return true;
+  return false;
+}
+function _buttonsHasExport(buttons){
+  return (buttons||[]).some(function(b){var l=String(b.label||'').toLowerCase();return l.indexOf('export')>=0||l.indexOf('excel')>=0;});
+}
+function openModal(title,bodyHtml,buttons,exportGetter){
+  buttons=buttons||[{label:'Fermer',cls:'btn-primary'}];
+  _modalExportGetter=(typeof exportGetter==='function')?exportGetter:null;
   $('modal-title').textContent=title;
   $('modal-body').innerHTML=bodyHtml;
-  $('modal-foot').innerHTML=buttons.map((b,i)=>
+  var footButtons=buttons.slice();
+  if(!_buttonsHasExport(footButtons)&&_modalHasExportableContent()){
+    footButtons.unshift({label:'📊 Exporter Excel',cls:'btn-secondary',close:false,action:function(){
+      var rows=_modalExportGetter?_modalExportGetter():_modalBodyToExportRows();
+      exportRowsToExcel(title,rows);
+    }});
+  }
+  $('modal-foot').innerHTML=footButtons.map((b,i)=>
     `<button class="btn ${b.cls||'btn-secondary'}" id="mb${i}" style="width:100%;">${escH(b.label)}</button>`
   ).join('');
   $('modal-ov').classList.add('open');
-  buttons.forEach((b,i)=>{
+  footButtons.forEach((b,i)=>{
     const el=$(`mb${i}`);
     if(el)el.onclick=()=>{b.action&&b.action();if(b.close!==false)closeModal();};
   });
 }
-function closeModal(){$('modal-ov').classList.remove('open');}
+function closeModal(){$('modal-ov').classList.remove('open');_modalExportGetter=null;}
 
 // ===== HOME RENDER =====
 function _computeMarcheGraphCtx(filtVeh, filtered, totalVeh){
@@ -2503,43 +2649,53 @@ let toursF='all', toursSearch='', toursExp={};
 // ===== CLIENT SHEET =====
 
 const BRAND_LOGOS = {
-  'DAF': '<svg width="36" height="20" viewBox="0 0 36 20" aria-label="DAF"><rect width="36" height="20" rx="2" fill="#00338D"/><text x="18" y="12.5" text-anchor="middle" font-size="10" font-weight="900" fill="#fff" font-family="Arial Black,Arial,sans-serif" letter-spacing="2.5">DAF</text><path d="M0 16 Q18 13 36 16 L36 20 L0 20 Z" fill="#D22630"/></svg>',
+  'DAF': '<span class="brand-logo"><svg width="42" height="22" viewBox="0 0 42 22" aria-label="DAF"><rect width="42" height="22" rx="2" fill="#00338D"/><text x="21" y="13.5" text-anchor="middle" font-size="11" font-weight="900" fill="#FFFFFF" font-family="Arial Black,Arial,sans-serif" letter-spacing="3.2">DAF</text><path d="M0 16.5 Q21 12.5 42 16.5 L42 22 L0 22 Z" fill="#D22630"/></svg></span>',
 
-  'VOLVO': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Volvo"><circle cx="11" cy="11" r="10.5" fill="#003B7A"/><circle cx="11" cy="11" r="8.5" fill="none" stroke="#fff" stroke-width="1.1"/><path d="M11 2.2 L11 11 M11 11 L17.8 14.8 M11 11 L4.2 14.8" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="11" cy="2.2" r="1" fill="#fff"/><circle cx="17.8" cy="14.8" r="1" fill="#fff"/><circle cx="4.2" cy="14.8" r="1" fill="#fff"/></svg>',
+  'VOLVO': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Volvo"><circle cx="12" cy="12" r="11" fill="#003057"/><circle cx="12" cy="12" r="9.2" fill="none" stroke="#FFFFFF" stroke-width="1.2"/><path d="M12 3.5 L12 12 M12 12 L18.2 15.8 M12 12 L5.8 15.8" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="3.5" r="1.1" fill="#FFFFFF"/><circle cx="18.2" cy="15.8" r="1.1" fill="#FFFFFF"/><circle cx="5.8" cy="15.8" r="1.1" fill="#FFFFFF"/><line x1="5.5" y1="12" x2="18.5" y2="12" stroke="#FFFFFF" stroke-width="1.3" stroke-linecap="round"/></svg></span>',
 
-  'MERCEDES': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Mercedes"><circle cx="11" cy="11" r="10.5" fill="#111"/><circle cx="11" cy="11" r="9" fill="none" stroke="#bbb" stroke-width=".8"/><path d="M11 2.8 L11 11 M11 11 L17.6 15.1 M11 11 L4.4 15.1" stroke="#ddd" stroke-width="1.5" stroke-linecap="round"/><circle cx="11" cy="2.8" r="1" fill="#ddd"/><circle cx="17.6" cy="15.1" r="1" fill="#ddd"/><circle cx="4.4" cy="15.1" r="1" fill="#ddd"/></svg>',
+  'MERCEDES-BENZ': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Mercedes-Benz"><circle cx="12" cy="12" r="11" fill="#0A0A0A"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="#C0C0C0" stroke-width="1"/><path d="M12 3.2 L12 12 M12 12 L18.1 15.6 M12 12 L5.9 15.6" stroke="#E8E8E8" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="3.2" r=".9" fill="#E8E8E8"/><circle cx="18.1" cy="15.6" r=".9" fill="#E8E8E8"/><circle cx="5.9" cy="15.6" r=".9" fill="#E8E8E8"/></svg></span>',
 
-  'MERCEDES-BENZ': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Mercedes-Benz"><circle cx="11" cy="11" r="10.5" fill="#111"/><circle cx="11" cy="11" r="9" fill="none" stroke="#bbb" stroke-width=".8"/><path d="M11 2.8 L11 11 M11 11 L17.6 15.1 M11 11 L4.4 15.1" stroke="#ddd" stroke-width="1.5" stroke-linecap="round"/><circle cx="11" cy="2.8" r="1" fill="#ddd"/><circle cx="17.6" cy="15.1" r="1" fill="#ddd"/><circle cx="4.4" cy="15.1" r="1" fill="#ddd"/></svg>',
+  'MERCEDES': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Mercedes"><circle cx="12" cy="12" r="11" fill="#0A0A0A"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="#C0C0C0" stroke-width="1"/><path d="M12 3.2 L12 12 M12 12 L18.1 15.6 M12 12 L5.9 15.6" stroke="#E8E8E8" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="3.2" r=".9" fill="#E8E8E8"/><circle cx="18.1" cy="15.6" r=".9" fill="#E8E8E8"/><circle cx="5.9" cy="15.6" r=".9" fill="#E8E8E8"/></svg></span>',
 
-  'SCANIA': '<svg width="22" height="24" viewBox="0 0 22 24" aria-label="Scania"><rect width="22" height="24" rx="3" fill="#041E42"/><path d="M11 3 L13.2 9.2 L19.8 9.2 L14.3 12.8 L16.5 19 L11 15.2 L5.5 19 L7.7 12.8 L2.2 9.2 L8.8 9.2 Z" fill="#C8A84B"/><path d="M11 6.5 L12 10 L15.5 10 L12.8 12 L13.8 15.5 L11 13.5 L8.2 15.5 L9.2 12 L6.5 10 L10 10 Z" fill="#041E42" opacity=".35"/></svg>',
+  'SCANIA': '<span class="brand-logo"><svg width="26" height="30" viewBox="0 0 26 30" aria-label="Scania"><rect width="26" height="30" rx="2" fill="#041E42"/><path fill="#C8A84B" d="M13 5C9.2 5 6.5 8 6.5 11.8c0 2 .5 3.8 1.4 5.3L5.5 25h17L18.1 17.1c.9-1.5 1.4-3.3 1.4-5.3C19.5 8 16.8 5 13 5z"/><circle cx="10.5" cy="11.5" r="1.3" fill="#041E42"/><path fill="#041E42" d="M16.5 10.5L22 7.5l-1.8 4.8z"/><path fill="#C8A84B" d="M9 6.5l1-2.2 1 2.2M12.5 5.5l1-2.2 1 2.2M16 6.5l1-2.2 1 2.2"/></svg></span>',
 
-  'MAN': '<svg width="24" height="22" viewBox="0 0 24 22" aria-label="MAN"><rect width="24" height="22" rx="2" fill="#E2001A"/><path d="M4 17 C4 8 12 5 20 8 C20 14 16 18 12 18 C8 18 4 17 4 17 Z" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/><text x="12" y="16.5" text-anchor="middle" font-size="5.5" font-weight="900" fill="#fff" font-family="Arial,sans-serif" letter-spacing=".5">MAN</text></svg>',
+  'MAN': '<span class="brand-logo"><svg width="26" height="26" viewBox="0 0 26 26" aria-label="MAN"><rect width="26" height="26" rx="2" fill="#E2001A"/><circle cx="13" cy="10" r="6.5" fill="none" stroke="#FFFFFF" stroke-width="1.2"/><path fill="#FFFFFF" d="M13 5.5c-2.2 0-4 1.8-4 4 0 1.1.4 2.1 1.1 2.9-.7.9-1.1 2-1.1 3.1 0 .7.6 1.3 1.3 1.3h5.4c.7 0 1.3-.6 1.3-1.3 0-1.1-.4-2.2-1.1-3.1.7-.8 1.1-1.8 1.1-2.9 0-2.2-1.8-4-4-4z"/><text x="13" y="23.5" text-anchor="middle" font-size="6.5" font-weight="900" fill="#FFFFFF" font-family="Arial Black,Arial,sans-serif" letter-spacing="1">MAN</text></svg></span>',
 
-  'RENAULT': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Renault"><polygon points="11,1 21,11 11,21 1,11" fill="#FFCC00"/><polygon points="11,4 18,11 11,18 4,11" fill="none" stroke="#1a1a1a" stroke-width="1.3"/><polygon points="11,7 15,11 11,15 7,11" fill="#1a1a1a"/></svg>',
+  'RENAULT TRUCKS': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Renault Trucks"><polygon points="12,1 23,12 12,23 1,12" fill="#FFCC00"/><polygon points="12,5 19,12 12,19 5,12" fill="#FFFFFF"/><polygon points="12,8.5 15.5,12 12,15.5 8.5,12" fill="#1A1A1A"/></svg></span>',
 
-  'RENAULT TRUCKS': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Renault Trucks"><polygon points="11,1 21,11 11,21 1,11" fill="#FFCC00"/><polygon points="11,4 18,11 11,18 4,11" fill="none" stroke="#1a1a1a" stroke-width="1.3"/><polygon points="11,7 15,11 11,15 7,11" fill="#1a1a1a"/></svg>',
+  'RENAULT': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Renault"><polygon points="12,1 23,12 12,23 1,12" fill="#FFCC00"/><polygon points="12,5 19,12 12,19 5,12" fill="#FFFFFF"/><polygon points="12,8.5 15.5,12 12,15.5 8.5,12" fill="#1A1A1A"/></svg></span>',
 
-  'IVECO': '<svg width="38" height="18" viewBox="0 0 38 18" aria-label="Iveco"><rect width="38" height="18" rx="2" fill="#002855"/><rect x="1" y="1" width="36" height="16" rx="1.5" fill="none" stroke="#4a7ab8" stroke-width=".6"/><text x="19" y="12.5" text-anchor="middle" font-size="8.5" font-weight="800" fill="#fff" font-family="Arial,sans-serif" letter-spacing="3">IVECO</text></svg>',
+  'IVECO': '<span class="brand-logo"><svg width="40" height="20" viewBox="0 0 40 20" aria-label="Iveco"><rect width="40" height="20" rx="2" fill="#002855"/><text x="20" y="13.5" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF" font-family="Arial,sans-serif" letter-spacing="3.5">IVECO</text><rect x="1" y="1" width="38" height="18" rx="1.5" fill="none" stroke="#1E4A7A" stroke-width=".6"/></svg></span>',
 
-  'FORD': '<svg width="34" height="20" viewBox="0 0 34 20" aria-label="Ford"><ellipse cx="17" cy="10" rx="16" ry="9" fill="#003478"/><ellipse cx="17" cy="10" rx="13.5" ry="7.5" fill="none" stroke="#5a8fd4" stroke-width=".7"/><text x="17" y="13.5" text-anchor="middle" font-size="10" font-style="italic" font-weight="700" fill="#fff" font-family="Georgia,Times New Roman,serif">Ford</text></svg>',
+  'FORD': '<span class="brand-logo"><svg width="36" height="20" viewBox="0 0 36 20" aria-label="Ford"><ellipse cx="18" cy="10" rx="17" ry="9" fill="#003478"/><ellipse cx="18" cy="10" rx="14" ry="7.2" fill="none" stroke="#6B9BD1" stroke-width=".8"/><text x="18" y="13.8" text-anchor="middle" font-size="11" font-style="italic" font-weight="700" fill="#FFFFFF" font-family="Georgia,Times New Roman,serif">Ford</text></svg></span>',
 
-  'ISUZU': '<svg width="32" height="18" viewBox="0 0 32 18" aria-label="Isuzu"><rect width="32" height="18" rx="2" fill="#C8102E"/><text x="16" y="12.5" text-anchor="middle" font-size="8" font-weight="800" fill="#fff" font-family="Arial,sans-serif" letter-spacing="1.5">ISUZU</text></svg>',
+  'ISUZU': '<span class="brand-logo"><svg width="36" height="18" viewBox="0 0 36 18" aria-label="Isuzu"><rect width="36" height="18" rx="2" fill="#C8102E"/><text x="18" y="12.5" text-anchor="middle" font-size="8.5" font-weight="800" fill="#FFFFFF" font-family="Arial,sans-serif" letter-spacing="2">ISUZU</text></svg></span>',
 
-  'MITSUBISHI': '<svg width="22" height="22" viewBox="0 0 22 22" aria-label="Mitsubishi"><polygon points="11,2 13,7.5 11,7.5" fill="#E60012"/><polygon points="11,7.5 13,7.5 11,13" fill="#E60012"/><polygon points="2.5,13 7,7.5 9.5,13" fill="#E60012"/><polygon points="7,7.5 9.5,7.5 9.5,13" fill="#E60012" opacity=".75"/><polygon points="12.5,13 15,7.5 19.5,13" fill="#E60012"/><polygon points="12.5,7.5 15,7.5 15,13" fill="#E60012" opacity=".75"/></svg>',
+  'MITSUBISHI FUSO': '<span class="brand-logo"><svg width="36" height="22" viewBox="0 0 36 22" aria-label="Fuso"><rect width="36" height="22" rx="2" fill="#FFFFFF" stroke="#E0E0E0" stroke-width=".5"/><polygon points="18,3 21.2,9.5 18,12.5 14.8,9.5" fill="#E60012"/><polygon points="10,14 13.2,20.5 10,23.5 6.8,20.5" transform="translate(0,-3)" fill="#E60012"/><polygon points="26,14 29.2,20.5 26,23.5 22.8,20.5" transform="translate(0,-3)" fill="#E60012"/><text x="18" y="20" text-anchor="middle" font-size="5.5" font-weight="800" fill="#E60012" font-family="Arial,sans-serif" letter-spacing="1">FUSO</text></svg></span>',
 
-  'FIAT': '<svg width="32" height="18" viewBox="0 0 32 18" aria-label="Fiat"><rect width="32" height="18" rx="2" fill="#8B0000"/><rect x="1" y="1" width="30" height="16" rx="1.5" fill="none" stroke="#c44" stroke-width=".5"/><text x="16" y="12.5" text-anchor="middle" font-size="9.5" font-weight="800" fill="#fff" font-family="Arial,sans-serif" letter-spacing="1">FIAT</text></svg>',
+  'FUSO': '<span class="brand-logo"><svg width="36" height="22" viewBox="0 0 36 22" aria-label="Fuso"><rect width="36" height="22" rx="2" fill="#FFFFFF" stroke="#E0E0E0" stroke-width=".5"/><polygon points="18,3 21.2,9.5 18,12.5 14.8,9.5" fill="#E60012"/><polygon points="10,14 13.2,20.5 10,23.5 6.8,20.5" transform="translate(0,-3)" fill="#E60012"/><polygon points="26,14 29.2,20.5 26,23.5 22.8,20.5" transform="translate(0,-3)" fill="#E60012"/><text x="18" y="20" text-anchor="middle" font-size="5.5" font-weight="800" fill="#E60012" font-family="Arial,sans-serif" letter-spacing="1">FUSO</text></svg></span>',
+
+  'MITSUBISHI': '<span class="brand-logo"><svg width="24" height="22" viewBox="0 0 24 22" aria-label="Mitsubishi"><rect width="24" height="22" rx="2" fill="#FFFFFF" stroke="#E8E8E8" stroke-width=".5"/><polygon points="12,2 15,8.5 12,11.5 9,8.5" fill="#E60012"/><polygon points="4.5,13 7.7,19.5 4.5,22.5 1.3,19.5" transform="translate(0,-2)" fill="#E60012"/><polygon points="19.5,13 22.7,19.5 19.5,22.5 16.3,19.5" transform="translate(0,-2)" fill="#E60012"/></svg></span>',
+
+  'FIAT': '<span class="brand-logo"><svg width="34" height="18" viewBox="0 0 34 18" aria-label="Fiat Professional"><rect width="34" height="18" rx="2" fill="#96172E"/><text x="17" y="12.5" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF" font-family="Arial,sans-serif" letter-spacing="1.2">FIAT</text></svg></span>',
+
+  'TOYOTA': '<span class="brand-logo"><svg width="28" height="20" viewBox="0 0 28 20" aria-label="Toyota"><ellipse cx="14" cy="10" rx="13" ry="8.5" fill="#FFFFFF" stroke="#EB0A1E" stroke-width="1.2"/><ellipse cx="14" cy="10" rx="9" ry="6" fill="none" stroke="#EB0A1E" stroke-width="1.4" transform="rotate(-35 14 10)"/><ellipse cx="14" cy="10" rx="9" ry="6" fill="none" stroke="#EB0A1E" stroke-width="1.4" transform="rotate(35 14 10)"/><ellipse cx="14" cy="10" rx="9" ry="6" fill="none" stroke="#EB0A1E" stroke-width="1.4" transform="rotate(90 14 10)"/></svg></span>',
+
+  'NISSAN': '<span class="brand-logo"><svg width="28" height="20" viewBox="0 0 28 20" aria-label="Nissan"><rect width="28" height="20" rx="2" fill="#1A1A1A"/><rect x="2" y="2" width="24" height="16" rx="1" fill="none" stroke="#C0C0C0" stroke-width="1"/><text x="14" y="13.5" text-anchor="middle" font-size="7.5" font-weight="800" fill="#C0C0C0" font-family="Arial,sans-serif" letter-spacing="2">NISSAN</text></svg></span>',
+
+  'DAIMLER': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Daimler"><circle cx="12" cy="12" r="11" fill="#0A0A0A"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="#C0C0C0" stroke-width="1"/><path d="M12 3.2 L12 12 M12 12 L18.1 15.6 M12 12 L5.9 15.6" stroke="#E8E8E8" stroke-width="1.6" stroke-linecap="round"/></svg></span>',
 };
 
 function getBrandLogo(marque) {
   const m = (marque||'').trim().toUpperCase();
-  var _bkeys=Object.keys(BRAND_LOGOS);
-  for(var _bki=0;_bki<_bkeys.length;_bki++){
-    var _bk=_bkeys[_bki];
-    if(m===_bk.toUpperCase()||m.includes(_bk.toUpperCase()))return BRAND_LOGOS[_bk];
+  if(!m) return '<span class="brand-logo"><svg width="20" height="20" viewBox="0 0 20 20" aria-label="?"><rect width="20" height="20" rx="3" fill="#2a3040"/><text x="10" y="14" text-anchor="middle" font-size="10" font-weight="700" fill="#a0a8b8">?</text></svg></span>';
+  var keys=Object.keys(BRAND_LOGOS).sort(function(a,b){return b.length-a.length;});
+  for(var i=0;i<keys.length;i++){
+    var k=keys[i];
+    if(m===k||m.indexOf(k)>=0) return BRAND_LOGOS[k];
   }
-  // Generic truck icon with brand initial
-  const initial = m.charAt(0)||'?';
-  return `<svg width="20" height="20" viewBox="0 0 20 20"><rect width="20" height="20" rx="3" fill="#2a3040"/><text x="10" y="14" text-anchor="middle" font-size="10" font-weight="700" fill="#a0a8b8">${initial}</text></svg>`;
+  const initial = m.charAt(0);
+  return '<span class="brand-logo"><svg width="20" height="20" viewBox="0 0 20 20" aria-label="'+escH(m)+'"><rect width="20" height="20" rx="3" fill="#2a3040"/><text x="10" y="14" text-anchor="middle" font-size="10" font-weight="700" fill="#a0a8b8">'+escH(initial)+'</text></svg></span>';
 }
 
 
@@ -3032,10 +3188,12 @@ function bindEvents(){
       renderTours();
     };
   });
-  safeOn('btn-mask-exclus','click',function(){GF.masquerExclusTours=!GF.masquerExclusTours;renderTours();});
-  safeOn('btn-mask-inactifs','click',function(){GF.masquerInactifsTours=!GF.masquerInactifsTours;renderTours();});
+  safeOn('btn-mask-exclus','click',function(){ensureToursMaskTriState();GF.toursMaskExclus=cycleToursMaskState(GF.toursMaskExclus||'neutral');renderTours();});
+  safeOn('btn-mask-accessible-off','click',function(){ensureToursMaskTriState();GF.toursMaskAccessible=cycleToursMaskState(GF.toursMaskAccessible||'neutral');renderTours();});
+  safeOn('btn-mask-inactifs','click',function(){ensureToursMaskTriState();GF.toursMaskInactifs=cycleToursMaskState(GF.toursMaskInactifs||'neutral');renderTours();});
   safeOn('btn-mask-flotte-nat','click',function(){GF.masquerFlotteNationaleTours=!GF.masquerFlotteNationaleTours;renderTours();});
-  safeOn('btn-mask-projets','click',function(){GF.masquerProjet=!GF.masquerProjet;var bot=$('tog-masq-proj');if(bot)bot.checked=GF.masquerProjet;renderTours();});
+  safeOn('btn-mask-projets','click',function(){ensureToursMaskTriState();GF.toursMaskProjets=cycleToursMaskState(GF.toursMaskProjets||'neutral');var bot=$('tog-masq-proj');if(bot)bot.checked=(GF.toursMaskProjets==='exclude');renderTours();});
+  safeOn('btn-mask-sites-sec','click',function(){ensureToursMaskTriState();GF.toursMaskSitesSec=cycleToursMaskState(GF.toursMaskSitesSec||'neutral');renderTours();});
   safeOn('btn-expand','click',function(){
     const data=buildToursData().filter(passesToursExclusions);
     data.forEach(function(c){toursExp['c_'+(c.canton||'Sans canton')]=true;toursExp['v_'+(c.canton||'Sans canton')+'_'+(c.ville||'Sans ville')]=true;});
@@ -3204,7 +3362,7 @@ function renderGroupsQuality(){
     +'<div id="qualite-groupes-body" class="quality-collapse-body" style="display:none;margin-top:8px;">'+inner+'</div>'
     +'</div>';
 }
-var __oldBindEvents=bindEvents;bindEvents=function(){__oldBindEvents();safeOn('btn-mask-sites-sec','click',function(){GF.masquerSitesSecondaires=!(GF.masquerSitesSecondaires!==false);renderTours();});};
+var __oldBindEvents=bindEvents;bindEvents=function(){__oldBindEvents();};
 
 
 
@@ -3448,7 +3606,9 @@ function _rowFlagsForTours(c,info){
     isUrgent:sites.some(isClientUrgent),
     hasProjet:(info&&info.hasGroup&&info.principal)?_groupProjects(info.group).some(function(p){return ['EN_COURS','FUTUR','PROJET','REPORTÉ','REPORTE'].indexOf(p.status)>=0;}):hasOpenProject(c.tva,c._siteKey||makeSiteKey(c)),
     pasProjet:sites.some(function(x){var xsk=x._siteKey||makeSiteKey(x);return hasPasProjet(x,xsk);}),
-    isExclu:isClientExcluded(c),
+    isExcluManu:sites.some(isClientExcludedMarche),
+    isAccessibleOff:sites.some(function(x){return !isClientAccessible(x);}),
+    isExclu:sites.some(isClientExcludedMarche),
     isInactif:isToursRowInactif(c,info),
     hasTypeVerifier:(info&&info.hasGroup&&info.principal)?getGroupStats(info.group).allVehicles.some(isTypeVerifier):(getSiteVehicles(makeSiteKey(c))||[]).some(isTypeVerifier)
   };
@@ -3461,7 +3621,8 @@ function _toursUrgentForKpi(c){
   return isClientUrgent(c);
 }
 function _toursDataCacheKeyFn(){
-  return [DB.getBase(),DB.getClients().length,DB.getVehicles().length,(DB.getProjects()||[]).length,GF.vendeur||'',GF.pays||'',GF.dept||'',(GF.profils||[]).join('|'),(GF.cbToursProfils||[]).join('|'),(GF.vendeursTours||[]).join('|')].join(':');
+  ensureToursMaskTriState();
+  return [DB.getBase(),DB.getClients().length,DB.getVehicles().length,(DB.getProjects()||[]).length,GF.vendeur||'',GF.pays||'',GF.dept||'',(GF.profils||[]).join('|'),(GF.cbToursProfils||[]).join('|'),(GF.vendeursTours||[]).join('|'),GF.toursMaskExclus||'',GF.toursMaskAccessible||'',GF.toursMaskInactifs||'',GF.toursMaskProjets||'',GF.toursMaskSitesSec||'',GF.masquerFlotteNationaleTours?'1':'0',GF.masquerFlottesTours?'1':'0'].join(':');
 }
 function buildToursData(){
   if(GF.masquerSitesSecondaires===undefined)GF.masquerSitesSecondaires=false;
@@ -3482,23 +3643,64 @@ function buildToursData(){
   return rows;
 }
 function passesToursExclusions(c){
-  if(GF.masquerExclusTours&&c.isExclu)return false;
-  if(GF.masquerInactifsTours&&c.isInactif)return false;
+  ensureToursMaskTriState();
   if(GF.masquerFlotteNationaleTours&&c.isFlotteNationale)return false;
-  if(GF.masquerProjet&&(c.hasProjet||c.pasProjet))return false;
-  if(GF.masquerSitesSecondaires&&c.isSiteSecondaire)return false;
+  if(GF.masquerFlottesTours&&c.isFlotte)return false;
+  var greens=[],oranges=[];
+  TOURS_MASK_DEFS.forEach(function(d){
+    var st=GF[d.key]||'neutral';
+    if(st==='only')greens.push(d.id);
+    else if(st==='exclude')oranges.push(d.id);
+  });
+  if(greens.length){
+    for(var gi=0;gi<greens.length;gi++){if(!toursMaskRowMatch(c,greens[gi]))return false;}
+  }
+  for(var oi=0;oi<oranges.length;oi++){if(toursMaskRowMatch(c,oranges[oi]))return false;}
   return true;
 }
+function _toursMaskLabel(st){return st==='exclude'?'OFF':(st==='only'?'ON':'');}
+function _formatToursMaskStates(){
+  ensureToursMaskTriState();
+  var parts=TOURS_MASK_DEFS.map(function(d){
+    var st=GF[d.key]||'neutral';
+    return d.label+' '+(st==='neutral'?'—':_toursMaskLabel(st));
+  });
+  parts.push('Flotte Nat. '+(GF.masquerFlotteNationaleTours?'ON':'OFF'));
+  parts.push('Flotte OFF '+(GF.masquerFlottesTours?'ON':'OFF'));
+  return parts.join(', ');
+}
+function toursMaskExcludeReasons(row){
+  ensureToursMaskTriState();
+  var reasons=[],greens=[],oranges=[];
+  TOURS_MASK_DEFS.forEach(function(d){
+    var st=GF[d.key]||'neutral';
+    if(st==='only')greens.push(d);
+    else if(st==='exclude')oranges.push(d);
+  });
+  if(greens.length){
+    for(var gi=0;gi<greens.length;gi++){
+      if(!toursMaskRowMatch(row,greens[gi].id))reasons.push('hors cible '+greens[gi].label+' ON');
+    }
+  }
+  for(var oi=0;oi<oranges.length;oi++){
+    if(toursMaskRowMatch(row,oranges[oi].id))reasons.push(oranges[oi].label+' OFF');
+  }
+  if(GF.masquerFlotteNationaleTours&&row.isFlotteNationale)reasons.push('flotte nationale masquée');
+  if(GF.masquerFlottesTours&&row.isFlotte)reasons.push('flotte masquée');
+  return reasons;
+}
 function updateToursMaskButtons(){
-  if(GF.masquerSitesSecondaires===undefined)GF.masquerSitesSecondaires=false;
-  var defs=[
-    ['btn-mask-exclus','Exclus',GF.masquerExclusTours],
-    ['btn-mask-inactifs','Inactifs',GF.masquerInactifsTours],
-    ['btn-mask-flotte-nat','Hors Flotte NAT.',GF.masquerFlotteNationaleTours],
-    ['btn-mask-projets','Projets',GF.masquerProjet],
-    ['btn-mask-sites-sec','Sites sec.',GF.masquerSitesSecondaires]
-  ];
-  defs.forEach(function(d){var el=$(d[0]);if(!el)return;el.textContent=d[1]+' '+(d[2]?'ON':'OFF');el.className='gf-chip'+(d[2]?' on':'');});
+  ensureToursMaskTriState();
+  TOURS_MASK_DEFS.forEach(function(d){
+    var el=$(d.btn);if(!el)return;
+    var st=GF[d.key]||'neutral';
+    el.textContent=d.label+(st==='neutral'?'':(' '+_toursMaskLabel(st)));
+    el.className='gf-chip'+(st==='exclude'?' mask-exclude':(st==='only'?' mask-only':''));
+  });
+  var elNat=$('btn-mask-flotte-nat');
+  if(elNat){elNat.textContent='Hors Flotte NAT. '+(GF.masquerFlotteNationaleTours?'ON':'OFF');elNat.className='gf-chip'+(GF.masquerFlotteNationaleTours?' on':'');}
+  var elFl=$('btn-mask-flottes-all');
+  if(elFl){elFl.textContent='Flotte OFF '+(GF.masquerFlottesTours?'ON':'OFF');elFl.className='gf-chip'+(GF.masquerFlottesTours?' on':'');}
 }
 function _dedupVehiclesFromRows(rows){
   var seen={}, out=[];
@@ -3849,7 +4051,8 @@ function renderClientRow(c){
     if(c.isFlotteRegionale)badges.push('<span class="badge b-flotte">FLOTTE RÉGIO.</span>');
     if(c.isFlotteCoordonnee)badges.push('<span class="badge b-flotte">FLOTTE COORD.</span>');
     if(c.isFlotteNationale)badges.push('<span class="badge b-flotte">FLOTTE NAT.</span>');
-    if(c.isExclu)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">EXCLU</span>');
+    if(c.isExcluManu||c.isExclu)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">EXCLU</span>');
+    if(c.isAccessibleOff)badges.push('<span class="badge" style="background:var(--orange-bg);color:var(--orange);border:1px solid rgba(224,120,48,.3);">ACC. OFF</span>');
     if(c.isInactif)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">INACTIF</span>');
   }
   const sub=isSecondary
@@ -4216,11 +4419,11 @@ function _distinct(arr){var s={};arr.forEach(function(v){v=String(v||'').trim();
 function _qItems(items, mapper, max){
   items=items||[];
   if(!items.length)return '<div class="q-item">Aucun élément</div>';
-  var unlimited=(max===0);
-  if(max==null)max=50;
+  var unlimited=(max===0||max===-1||max===false);
+  if(!unlimited&&(max==null||max===undefined))max=50;
   var slice=unlimited?items:items.slice(0,max);
   var html=slice.map(function(x){return '<div class="q-item">'+mapper(x)+'</div>';}).join('');
-  if(!unlimited&&items.length>max)html+='<div class="q-item" style="color:var(--text3);font-size:10px;">… '+(items.length-max)+' autres non listés (iPhone)</div>';
+  if(!unlimited&&items.length>max)html+='<div class="q-item" style="color:var(--text3);font-size:10px;">… '+(items.length-max)+' autres non listés · compteur = '+items.length+'</div>';
   return html;
 }
 function _qualityBlock(title, items, mapper, level){var id='ql_'+Math.random().toString(36).slice(2);var cls=level==='err'?'d-err':level==='warn'?'d-warn':'d-ok';return '<div class="diag-row"><div style="flex:1;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;"><span class="diag-lbl">'+title+'</span><span class="diag-val '+cls+'">'+items.length+'</span></div><div class="q-list" id="'+id+'">'+_qItems(items,mapper)+'</div></div><button class="btn btn-ghost btn-sm q-toggle" data-qid="'+id+'">Voir</button></div>';}
@@ -4307,7 +4510,7 @@ function renderModeEmploi(){
   <p><strong>Site</strong> : fiche terrain affichée dans TOURNÉES. <strong>Groupe</strong> : plusieurs sites consolidés (AUTO TVA ou manuel). Le nom affiché reprend celui du <strong>site principal</strong>.</p>
   <p><strong>Exclu</strong> (badge / Qualité / toggle fiche) : <strong>EXCLU_MANU = OUI</strong> dans le CRM ou exclusion manuelle via le toggle Exclu. Ce n’est <em>pas</em> la colonne ACCESSIBLE.</p>
   <p><strong>Accessible OFF</strong> : colonne ACCESSIBLE = 0/NON ou toggle Accessible sur la fiche. Liste séparée dans QUALITÉ. Le masque Tournées « Accessible OFF » agit sur ce critère.</p>
-  <p><strong>Masquer exclus</strong> (Tournées) : retire EXCLU_MANU = OUI <strong>et</strong> ACCESSIBLE = 0 de la liste.</p>
+  <p><strong>Masques Tournées (tri-état)</strong> : clic simple Neutre → OFF orange (exclut) → ON vert (n’affiche que) → Neutre. Exclus et Accessible OFF sont séparés · Exclus neutre par défaut · Inactifs/Projets/Sites sec. OFF par défaut. Plusieurs ON = intersection ; OFF orange retire sa cible dans le résultat.</p>
   <p><strong>Inactif</strong> : aucune immat. sur les ${INACTIVE_PURCHASE_YEARS} dernières années calendaires (année courante incluse), ou parc vide.</p>
   <p><strong>KPI Groupes</strong> (Marché et Tournées) : nombre de groupes · clic = filtre · double-clic = modal liste + vue croisée Groupe × indicateurs.</p>
   <p><strong>QUALITÉ</strong> : listes complètes Clients exclus / Accessibles OFF / Inactifs avec compteur exact et toggles synchronisés avec la fiche site.</p>
@@ -4599,7 +4802,8 @@ function _qualityVehicleItem(v){
 function _qualityBlockAction(title, items, mapper, level, listMax){
   var id='ql_'+Math.random().toString(36).slice(2);
   var cls=level==='err'?'d-err':level==='warn'?'d-warn':'d-ok';
-  var max=(listMax===undefined||listMax===null)?50:listMax;
+  var unlimited=(listMax===0||listMax===-1||listMax===false);
+  var max=unlimited?0:((listMax===undefined||listMax===null)?50:listMax);
   var hint='';
   if(title.indexOf('inactifs')>=0)hint='Aucune immat. sur les '+INACTIVE_PURCHASE_YEARS+' dernières années calendaires (année courante incluse), ou parc vide.';
   else if(title.indexOf('exclus')>=0)hint='EXCLU_MANU = OUI dans le CRM ou exclusion manuelle via le toggle Exclu.';
@@ -4728,7 +4932,7 @@ renderModeEmploi = function(){
   html+='<h3>Mode d’emploi complet — DAF_COMMERCE-Box</h3><div class="box warn"><p><strong>Objectif :</strong> cette application sert à piloter un secteur poids lourds : marché, tournées, projets, groupes, sites, qualité de données et sauvegardes. Les fiches affichées dans TOURNÉES sont des <strong>fiches Site</strong>. Les groupes servent à consolider plusieurs sites sous une même logique commerciale.</p></div>';
   html+='<h3>1. Définitions de base</h3><ul><li><strong>Site :</strong> fiche terrain d’un client, dépôt, agence ou établissement. C’est la ligne affichée dans TOURNÉES.</li><li><strong>Groupe :</strong> regroupement de plusieurs sites. Il peut être automatique quand plusieurs sites ont la même TVA, ou manuel quand tu relies plusieurs sociétés qui appartiennent au même ensemble commercial.</li><li><strong>Site principal :</strong> site visible en priorité dans TOURNÉES. Il porte les KPI consolidés du groupe.</li><li><strong>Site secondaire :</strong> site rattaché au groupe, consultable, mais informatif pour les KPI afin d’éviter les doublons.</li><li><strong>KPI :</strong> indicateur chiffré. Exemple : parc total, DAF à renouveler, concurrence à renouveler.</li><li><strong>Badge :</strong> étiquette visuelle indiquant une caractéristique : DAF, Flotte, Urgent, Exclu, Inactif, Groupe, Site principal.</li></ul>';
   html+='<h3>2. Page MARCHÉ</h3><div class="box"><p><strong>Rôle :</strong> analyser le marché global à partir des immatriculations.</p><ul><li><strong>Parc total :</strong> nombre de véhicules retenus dans le périmètre marché.</li><li><strong>DAF :</strong> véhicules dont la marque est reconnue DAF.</li><li><strong>DAF à renouveler :</strong> DAF possédés et dans la fenêtre de renouvellement.</li><li><strong>Hors DAF à renouveler :</strong> véhicules concurrents possédés et renouvelables.</li><li><strong>Hors Flotte NAT. :</strong> activé = les profils Flotte Nationale sont retirés de l’analyse.</li><li><strong>Graphique Marque × Année :</strong> permet de voir les immatriculations par marque et par année. En cliquant une cellule, tu obtiens la liste des véhicules et tu peux ouvrir la fiche client/site rattachée.</li></ul></div>';
-  html+='<h3>3. Page TOURNÉES</h3><div class="box"><p><strong>Rôle :</strong> préparer l’action terrain. La page affiche les fiches Site, classées par Canton puis Ville.</p><ul><li><strong>Tout fermé par défaut :</strong> seuls les cantons apparaissent.</li><li><strong>Clic canton :</strong> affiche les villes.</li><li><strong>Clic ville :</strong> affiche les sites.</li><li><strong>Tout ouvrir :</strong> déplie cantons, villes et sites.</li><li><strong>Tout fermer :</strong> replie toute la liste.</li><li><strong>Tous :</strong> revient à la cible générale sans modifier les exclusions ON/OFF.</li><li><strong>Avec DAF :</strong> affiche les sites possédant au moins un DAF actif.</li><li><strong>Sans DAF :</strong> affiche les sites sans DAF actif.</li><li><strong>Urgents :</strong> affiche les sites avec badge URGENT.</li><li><strong>Flotte :</strong> affiche uniquement les profils contenant Flotte.</li><li><strong>Masquer exclus :</strong> retire EXCLU_MANU=OUI et ACCESSIBLE=0.</li><li><strong>Masquer inactifs :</strong> retire les clients sans achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années.</li><li><strong>Masquer clients avec projet :</strong> retire les sites avec projet ou sans projet renseigné pour l’année.</li><li><strong>Masquer sites secondaires :</strong> ON par défaut. Cache les sites secondaires. Les KPI restent portés par le site principal.</li></ul></div>';
+  html+='<h3>3. Page TOURNÉES</h3><div class="box"><p><strong>Rôle :</strong> préparer l’action terrain. La page affiche les fiches Site, classées par Canton puis Ville.</p><ul><li><strong>Tout fermé par défaut :</strong> seuls les cantons apparaissent.</li><li><strong>Clic canton :</strong> affiche les villes.</li><li><strong>Clic ville :</strong> affiche les sites.</li><li><strong>Tout ouvrir :</strong> déplie cantons, villes et sites.</li><li><strong>Tout fermer :</strong> replie toute la liste.</li><li><strong>Tous :</strong> revient à la cible générale sans modifier les masques tri-état.</li><li><strong>Avec DAF :</strong> affiche les sites possédant au moins un DAF actif.</li><li><strong>Sans DAF :</strong> affiche les sites sans DAF actif.</li><li><strong>Urgents :</strong> affiche les sites avec badge URGENT.</li><li><strong>Flotte :</strong> affiche uniquement les profils contenant Flotte.</li><li><strong>Masques tri-état :</strong> Exclus · Accessible OFF · Inactifs · Projets · Sites sec. — Neutre / OFF orange / ON vert. Exclus neutre par défaut ; Inactifs, Projets et Sites sec. OFF par défaut.</li></ul></div>';
   html+='<h3>4. Règles de renouvellement</h3><ul><li><strong>Tracteur :</strong> renouvelable de 4 à 6 ans inclus.</li><li><strong>Porteur :</strong> renouvelable de 5 à 7 ans inclus.</li><li><strong>DAF et concurrence :</strong> même règle.</li><li><strong>Véhicule trop vieux :</strong> sort de la cible renouvellement.</li><li><strong>Véhicule NON possédé :</strong> reste historique mais ne compte plus dans renouvellement, score ou activité.</li></ul>';
   html+='<h3>5. Fiche Site</h3><div class="box"><p><strong>Rôle :</strong> fiche terrain rapide.</p><ul><li>Affiche nom, ville, adresse, TVA, SIRET, profil commercial, pays, département, vendeur, groupement, état prospection.</li><li><strong>Boutons rapides :</strong> Copier adresse, Copier SIRET, Waze, Voir groupe.</li><li><strong>Contacts :</strong> nom, prénom, téléphone, mail, poste. Informatif uniquement.</li><li><strong>État prospection :</strong> liste déroulante : À prospecter, Prospecté, Ne pas prospecter. Cette valeur est sauvegardée et résistante à l’import.</li><li><strong>Parc véhicules :</strong> replié par défaut pour garder la fiche rapide.</li><li><strong>Projet détecté / Pas de projet :</strong> alimente la page PROJETS et le masquage dans TOURNÉES.</li></ul></div>';
   html+='<h3>6. Fiche Groupe</h3><ul><li><strong>Créer groupe :</strong> depuis QUALITÉ, bouton + Créer groupe.</li><li><strong>Ajouter site :</strong> recherche par nom, ville, TVA ou SIRET, puis Ajouter au groupe.</li><li><strong>Site principal :</strong> un seul site principal possible. Il porte les KPI consolidés du groupe.</li><li><strong>Site secondaire :</strong> consultable, mais ne double pas les KPI.</li><li><strong>Décisionnaire :</strong> informatif uniquement. N’influence aucun KPI, score ou filtre.</li><li><strong>Supprimer groupe :</strong> retire les badges GROUPE / Site principal / Site secondaire des fiches concernées.</li></ul>';
@@ -4840,17 +5044,17 @@ renderModeEmploi = function(){
     html+='<div style="padding:12px;"><h3 style="margin-bottom:8px;">Mode d’emploi complet — DAF_COMMERCE-Box</h3><div style="font-size:11px;color:var(--text3);line-height:1.55;margin-bottom:10px;">Ce guide explique chaque page, bouton, KPI, badge, règle métier et son impact dans l’application.</div>';
     sec('1. Définitions essentielles', '<p><strong>Site</strong> : fiche terrain d’un client, dépôt ou établissement. C’est la ligne affichée dans TOURNÉES.</p><p><strong>Groupe</strong> : regroupement de plusieurs sites. Il peut être automatique si plusieurs sites ont la même TVA, ou manuel si tu relies plusieurs sites qui appartiennent au même ensemble commercial.</p><p><strong>Site principal</strong> : site qui porte le potentiel consolidé du groupe. Un seul site principal par groupe.</p><p><strong>Site secondaire</strong> : site rattaché au groupe, visible si besoin, mais qui ne compte pas directement dans les KPI pour éviter les doublons.</p><p><strong>KPI</strong> : indicateur chiffré. Exemple : parc total, DAF à renouveler, concurrence à renouveler.</p><p><strong>Badge</strong> : étiquette visuelle qui signale une situation : DAF, Flotte, Urgent, Groupe, Site secondaire, etc.</p>');
     sec('2. Page MARCHÉ — rôle et KPI', '<p><strong>Rôle :</strong> analyser le marché global des immatriculations.</p><p><strong>Parc total :</strong> nombre de véhicules visibles selon les règles Marché.</p><p><strong>DAF :</strong> véhicules dont la marque est reconnue DAF.</p><p><strong>PDM DAF :</strong> DAF / parc total.</p><p><strong>DAF à renouveler :</strong> véhicules DAF renouvelables selon âge et type.</p><p><strong>Hors DAF à renouveler :</strong> véhicules concurrents renouvelables.</p><p><strong>Hors Flotte NAT. ON :</strong> exclut du marché les profils strictement Flotte Nationale. OFF : les conserve.</p><p><strong>Graphiques Marque × Année :</strong> affichent désormais toutes les marques détectées. NB IMMAT = volume par marque et année. % PDM = part de chaque marque dans le total annuel.</p><p><strong>Cellules cliquables NB IMMAT :</strong> ouvrent la liste des véhicules correspondants avec accès fiche.</p>');
-    sec('3. Page TOURNÉES — rôle et boutons', '<p><strong>Rôle :</strong> organiser le travail terrain. La page affiche des fiches Site, jamais des fiches Groupe.</p><p><strong>Avec DAF :</strong> affiche les sites possédant au moins un DAF actif.</p><p><strong>Sans DAF :</strong> affiche les sites sans DAF actif.</p><p><strong>Urgents :</strong> affiche les sites marqués urgents. Le badge urgent n’influence pas le score.</p><p><strong>Flotte :</strong> affiche uniquement les profils commerciaux contenant le mot Flotte.</p><p><strong>Hors Flotte NAT. :</strong> si ON, exclut les profils Flotte Nationale, même avec le filtre Flotte.</p><p><strong>Masquer exclus :</strong> retire EXCLU_MANU = OUI et ACCESSIBLE = 0.</p><p><strong>Masquer inactifs :</strong> retire les clients sans achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années.</p><p><strong>Masquer clients avec projet :</strong> retire les sites ayant projet actif/futur ou statut Sans projet sur l’année.</p><p><strong>Masquer sites secondaires :</strong> visuel uniquement. ON masque les sites secondaires. Les KPI ne changent pas car les secondaires sont déjà consolidés dans le site principal.</p><p><strong>Ouvrir :</strong> déplie cantons, villes et clients. <strong>Fermer :</strong> replie tout. <strong>TOUS :</strong> revient à la cible générale sans désactiver les exclusions.</p>');
+    sec('3. Page TOURNÉES — rôle et boutons', '<p><strong>Rôle :</strong> organiser le travail terrain. La page affiche des fiches Site, jamais des fiches Groupe.</p><p><strong>Avec DAF :</strong> affiche les sites possédant au moins un DAF actif.</p><p><strong>Sans DAF :</strong> affiche les sites sans DAF actif.</p><p><strong>Urgents :</strong> affiche les sites marqués urgents. Le badge urgent n’influence pas le score.</p><p><strong>Flotte :</strong> affiche uniquement les profils commerciaux contenant le mot Flotte.</p><p><strong>Hors Flotte NAT. :</strong> si ON, exclut les profils Flotte Nationale, même avec le filtre Flotte.</p><p><strong>Masques tri-état :</strong> clic simple Neutre → OFF orange (exclut la cible) → ON vert (n’affiche que la cible) → Neutre. Plusieurs ON = intersection. OFF orange retire sa cible dans le résultat (même avec un ON vert). Exclus et Accessible OFF séparés · Exclus neutre par défaut · Inactifs, Projets et Sites sec. OFF par défaut.</p><p><strong>Ouvrir :</strong> déplie cantons, villes et clients. <strong>Fermer :</strong> replie tout. <strong>TOUS :</strong> revient à la cible générale sans désactiver les masques.</p>');
     sec('4. KPI TOURNÉES — formules et effet groupes', '<p><strong>Clients/Sites affichés :</strong> nombre de lignes Site visibles.</p><p><strong>Parc :</strong> somme des véhicules des sites seuls + véhicules consolidés dans les sites principaux de groupe.</p><p><strong>DAF à renouveler :</strong> somme des véhicules DAF renouvelables sur le périmètre actif.</p><p><strong>Concurrence à renouveler :</strong> somme des véhicules hors DAF renouvelables.</p><p><strong>Important :</strong> les sites secondaires ne comptent jamais directement dans les KPI. Leur parc remonte dans le site principal du groupe pour éviter tout doublon.</p>');
     sec('5. Règles renouvellement', '<p><strong>Tracteur :</strong> renouvelable de 4 à 5 ans inclus.</p><p><strong>Porteur :</strong> renouvelable de 5 à 6 ans inclus.</p><p><strong>Même poids :</strong> un DAF et un concurrent renouvelable ont la même importance.</p><p><strong>Véhicule trop vieux :</strong> au-delà de la fenêtre, il sort du renouvellement.</p><p><strong>Type à vérifier :</strong> châssis non reconnu comme tracteur/porteur — compté dans le parc Marché, fenêtre tracteur pour le renouvellement, liste détaillée dans ⚙️ Qualité.</p>');
-    sec('6. Badges — définition et critère', '<p><strong>DAF :</strong> au moins un DAF actif.</p><p><strong>DAF RENOUV. :</strong> au moins un DAF renouvelable.</p><p><strong>CONC. RENOUV. :</strong> au moins un véhicule concurrent renouvelable.</p><p><strong>URGENT :</strong> priorité manuelle/information terrain.</p><p><strong>FLOTTE RÉGIO. / COORD. / NAT. :</strong> selon profil commercial.</p><p><strong>EXCLU :</strong> EXCLU_MANU = OUI ou ACCESSIBLE = 0.</p><p><strong>INACTIF :</strong> aucun achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années.</p><p><strong>GROUPE :</strong> site rattaché à un groupe.</p><p><strong>SITE PRINCIPAL / SECONDAIRE :</strong> statut dans le groupe. Influe uniquement sur l’affichage et la consolidation KPI.</p>');
+    sec('6. Badges — définition et critère', '<p><strong>DAF :</strong> au moins un DAF actif.</p><p><strong>DAF RENOUV. :</strong> au moins un DAF renouvelable.</p><p><strong>CONC. RENOUV. :</strong> au moins un véhicule concurrent renouvelable.</p><p><strong>URGENT :</strong> priorité manuelle/information terrain.</p><p><strong>FLOTTE RÉGIO. / COORD. / NAT. :</strong> selon profil commercial.</p><p><strong>EXCLU :</strong> EXCLU_MANU = OUI (pas seul ACCESSIBLE = 0).</p><p><strong>ACC. OFF :</strong> ACCESSIBLE = 0 ou toggle Accessible OFF.</p><p><strong>INACTIF :</strong> aucun achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années.</p><p><strong>GROUPE :</strong> site rattaché à un groupe.</p><p><strong>SITE PRINCIPAL / SECONDAIRE :</strong> statut dans le groupe. Influe uniquement sur l’affichage et la consolidation KPI.</p>');
     sec('7. Fiche Site', '<p><strong>Contenu :</strong> nom, ville, adresse, TVA, SIRET, profil commercial, pays, département, vendeur, groupement, état prospection, contacts, projets, historique et véhicules.</p><p><strong>Boutons rapides :</strong> Copier adresse, Copier SIRET, Waze, Voir groupe.</p><p><strong>État Prospection :</strong> liste déroulante : À prospecter, Prospecté, Ne pas prospecter. Résistant à l’import.</p><p><strong>Contacts :</strong> nom, prénom, téléphone, mail, poste. Informatif uniquement.</p><p><strong>Parc véhicules :</strong> replié par défaut ; les véhicules NON possédés restent visibles mais ne comptent pas dans le potentiel terrain.</p><p><strong>Projet détecté / Pas de projet :</strong> alimente PROJETS et le bouton Masquer clients avec projet.</p>');
     sec('8. Fiche Groupe', '<p><strong>Rôle :</strong> fiche mère consolidée de plusieurs sites.</p><p><strong>Créer groupe :</strong> PLUS → Groupes → + Créer un groupe.</p><p><strong>Ajouter sites :</strong> bouton + Ajouter, recherche par nom/ville/TVA/SIRET, sélection possible de plusieurs sites.</p><p><strong>Site principal :</strong> un seul possible. Il porte le potentiel consolidé dans TOURNÉES.</p><p><strong>Site secondaire :</strong> reste consultable, peut être masqué, mais ne double pas les KPI.</p><p><strong>Décisionnaire :</strong> informatif uniquement, n’agit sur aucun KPI ni filtre.</p><p><strong>Supprimer groupe :</strong> retire les badges Groupe/Principal/Secondaire et les sites redeviennent indépendants.</p>');
     sec('9. Page PROJETS', '<p><strong>Rôle :</strong> suivre les affaires simples.</p><p><strong>Statuts :</strong> PROJET, FUTUR, GAGNÉ, PERDU, REPORTÉ, SANS PROJET.</p><p><strong>REPORTÉ :</strong> considéré comme potentiel futur.</p><p><strong>Champs projet :</strong> statut, nombre de véhicules, type, mois/année, commentaire.</p><p><strong>Export reporting projets :</strong> PLUS → Reporting projets → CSV.</p>');
     sec('10. Page QUALITÉ', '<p><strong>Rôle :</strong> contrôler les données et repérer les erreurs.</p><p>Contrôles : colonnes importées, clients sans vendeur/pays/département/TVA/SIRET/profil/groupement/état prospection, véhicules sans date/marque/type/plaque, doublons, immatriculations sans fiche client, flottes, exclus, inactifs, groupes, sites secondaires.</p><p>Les listes doivent permettre d’ouvrir la fiche Site concernée quand applicable.</p>');
     sec('11. Import filtré', '<p><strong>But :</strong> réduire la taille de la base en important seulement un vendeur, un pays ou un département.</p><p><strong>Aucun filtre obligatoire :</strong> si rien n’est sélectionné, tout le fichier est importé.</p><p><strong>Aperçu avant import :</strong> affiche le nombre de lignes qui seront chargées.</p><p><strong>Diagnostic colonnes :</strong> QUALITÉ indique quelles colonnes ont été reconnues.</p>');
     sec('12. Sauvegarde / iCloud', '<p><strong>Exporter sauvegarde JSON :</strong> crée un fichier de sauvegarde contenant groupes, projets, contacts, commentaires, exclusions, possessions et états prospection.</p><p><strong>Charger sauvegarde JSON :</strong> restaure ces données.</p><p><strong>Sauvegarde nom fixe :</strong> crée toujours DAF_Professional_sauvegarde.json. Limite iPhone : Safari/Chrome ne peuvent pas remplacer silencieusement un fichier iCloud sans validation utilisateur. Il faut donc confirmer l’enregistrement si iOS le demande.</p>');
-    sec('13. Ce qui influence quoi', '<p><strong>Possédé OUI/NON :</strong> influence actifs, renouvellements, score, KPI terrain.</p><p><strong>Exclu :</strong> influence Masquer exclus et KPI si bouton actif.</p><p><strong>Projet/Sans projet :</strong> influence Masquer clients avec projet.</p><p><strong>Flotte Nationale :</strong> influence Hors Flotte NAT.</p><p><strong>Site principal :</strong> influence consolidation groupe et affichage sites secondaires.</p><p><strong>Décisionnaire :</strong> aucune influence, information seulement.</p><p><strong>Groupement et état prospection :</strong> informatifs, visibles dans QUALITÉ.</p></div>');
+    sec('13. Ce qui influence quoi', '<p><strong>Possédé OUI/NON :</strong> influence actifs, renouvellements, score, KPI terrain.</p><p><strong>Exclu / Accessible OFF :</strong> masques tri-état Tournées (Exclus neutre par défaut).</p><p><strong>Projet/Sans projet :</strong> masque Projets Tournées.</p><p><strong>Flotte Nationale :</strong> influence Hors Flotte NAT.</p><p><strong>Site principal :</strong> influence consolidation groupe et affichage sites secondaires.</p><p><strong>Décisionnaire :</strong> aucune influence, information seulement.</p><p><strong>Groupement et état prospection :</strong> informatifs, visibles dans QUALITÉ.</p></div>');
     html+='</div>';
     openModal('📖 Mode d’emploi complet',html,[{label:'Fermer',cls:'btn-primary'}]);
   };
@@ -6030,7 +6234,8 @@ document.addEventListener('DOMContentLoaded',function(){
       if(c.isFlotteRegionale)badges.push('<span class="badge b-flotte">FLOTTE RÉGIO.</span>');
       if(c.isFlotteCoordonnee)badges.push('<span class="badge b-flotte">FLOTTE COORD.</span>');
       if(c.isFlotteNationale)badges.push('<span class="badge b-flotte">FLOTTE NAT.</span>');
-      if(c.isExclu)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">EXCLU</span>');
+      if(c.isExcluManu||c.isExclu)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">EXCLU</span>');
+    if(c.isAccessibleOff)badges.push('<span class="badge" style="background:var(--orange-bg);color:var(--orange);border:1px solid rgba(224,120,48,.3);">ACC. OFF</span>');
       if(c.isInactif)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">INACTIF</span>');
     }
     const sub=isSecondary?`Site secondaire · infos locales · Parc local:${c.parc} · DAF:${c.dafCount}`:`Parc:${c.parc} · DAF:${c.dafCount} · Renouv.:${c.dafRenew+c.horsRenew}${c._isGroupPrincipal?' · consolidé groupe':''}`;
@@ -6611,16 +6816,16 @@ document.addEventListener('DOMContentLoaded',function(){
       ['KPI Sites (clic / double-clic)','Clic simple = filtre la liste (entourage orange). Double-clic = modal détail ou vue croisée.','Clients actifs, Groupes, Fidélisation, Urgents, Inactifs.','Tester chaque KPI : liste filtrée puis modal.'],
       ['KPI Groupes','Nombre de groupes visibles. Clic = sites rattachés à un groupe. Double-clic = modal groupes + vue croisée Groupe × indicateurs (Parc, R.DAF…).','Remplace l’ancien KPI Conquête.','Double-clic KPI Groupes → Ouvrir une fiche Groupe.'],
       ['+ Créer groupe (jaune)','Crée un groupe manuel depuis la barre Tournées.','Même action que PLUS / Qualité > + Créer groupe.','Créer puis vérifier fiche Groupe.'],
-      ['Masques par défaut ON','Inactifs, Projets et Sites secondaires masqués au premier affichage. Profils par défaut : Flotte coordonnée, Régionale, Vente détail (si présents dans le CRM).','Liste Tournées plus ciblée dès l’ouverture.','Désactiver les masques pour voir tout.'],
-      ['Masquer exclus','Retire de la liste : EXCLU_MANU=OUI <strong>et</strong> ACCESSIBLE=0.','Distinct de la liste Qualité « Clients exclus » (EXCLU seul).','Comparer QUALITÉ > Clients exclus vs Accessibles OFF.'],
-      ['Masquer Accessible OFF','Retire les sites non accessibles (CRM ou toggle fiche).','Filtre terrain complémentaire.','Toggle Accessible sur une fiche test.'],
-      ['Masquer inactifs','Sites sans immat. sur '+INACTIVE_PURCHASE_YEARS+' ans calendaires (année courante incluse) ou sans parc.','Évite les clients dormants.','QUALITÉ > Clients inactifs (liste complète).'],
-      ['Masquer sites secondaires','Masque visuellement les sites secondaires de groupe. KPI consolidés sur le site principal.','ON par défaut.','Fiche Groupe : principal vs secondaire.'],
+      ['Masques tri-état (Tournées)','Clic simple : Neutre (gris) → OFF orange (exclut) → ON vert (n’affiche que) → Neutre. Plusieurs ON = intersection. OFF orange retire sa cible dans le résultat (même avec un ON vert actif).','Exclus et Accessible OFF séparés · Inactifs/Projets/Sites sec. OFF par défaut.','Combiner Inactifs ON + Exclus OFF : voir uniquement les inactifs non exclus.'],
+      ['Masque Exclus','Neutre par défaut. OFF = masque EXCLU_MANU=OUI. ON = n’affiche que les exclus manuels.','Distinct de Accessible OFF et de Qualité > Clients exclus.','Neutre au démarrage : rien n’est filtré sur Exclus.'],
+      ['Masque Accessible OFF','Neutre par défaut. OFF = masque ACCESSIBLE=0. ON = n’affiche que les non accessibles.','Filtre terrain complémentaire à Exclus.','Toggle Accessible sur une fiche test.'],
+      ['Masque Inactifs','OFF par défaut (orange). ON = uniquement inactifs ('+INACTIVE_PURCHASE_YEARS+' ans sans immat. ou parc vide).','Évite les clients dormants dès l’ouverture.','QUALITÉ > Clients inactifs (liste complète).'],
+      ['Masque Projets / Sites sec.','OFF par défaut. ON = uniquement sites avec projet (ou sans projet année) / sites secondaires de groupe.','Pipeline et consolidation groupe.','Fiche Groupe : principal vs secondaire.'],
       ['Boutons Avec/Sans DAF, Urgents, Flotte, Protocole','Filtres métier rapides · Tous / KPI Tous réinitialise le filtre actif.','Change la cible commerciale.','Vérifier badge sur chaque fiche listée.']
     ]));
     html+=sec('4. Fiche Site',table([
-      ['Toggle Exclu','EXCLU_MANU=OUI (CRM) ou exclusion manuelle enregistrée dans l’app. Synchronisé avec QUALITÉ > Clients exclus.','Badge EXCLU · liste Qualité exclus · Masquer exclus Tournées si EXCLU ou Accessible=0.','Basculer Exclu ON/OFF : vérifier compteur Qualité.'],
-      ['Toggle Accessible','Colonne ACCESSIBLE ou override manuel (settings). Synchronisé avec QUALITÉ > Clients Accessibles OFF.','Masque Accessible OFF · Masquer exclus Tournées si ACCESSIBLE=0.','Basculer Accessible : site passe d’une liste Qualité à l’autre.'],
+      ['Toggle Exclu','EXCLU_MANU=OUI (CRM) ou exclusion manuelle enregistrée dans l’app. Synchronisé avec QUALITÉ > Clients exclus.','Badge EXCLU · masque Exclus Tournées (OFF ou ON selon état).','Basculer Exclu ON/OFF : vérifier compteur Qualité.'],
+      ['Toggle Accessible','Colonne ACCESSIBLE ou override manuel (settings). Synchronisé avec QUALITÉ > Clients Accessibles OFF.','Masque Accessible OFF Tournées (OFF ou ON selon état).','Basculer Accessible : site passe d’une liste Qualité à l’autre.'],
       ['Voir / modifier le groupe','Ouvre la fiche Groupe mère (encart ou bouton rapide).','Consolidation parc et KPI groupe.','Site rattaché à un groupe AUTO ou manuel.'],
       ['Vérification registre','Contrôle SIRET/adresse vs registre (API). Pastilles ✓/✗ sur fiche.','Aide qualité données · n’influence pas les KPI.','Encart VÉRIFIER sur fiche site.'],
       ['Possédé OUI/NON','Véhicule encore au parc client.','Renouvellement, score, inactif, KPI Tournées.','Mettre NON : sort des opportunités.'],
@@ -6635,7 +6840,7 @@ document.addEventListener('DOMContentLoaded',function(){
     html+=sec('6. Page QUALITÉ — listes Exclusions / activité',table([
       ['Clients exclus','Liste <strong>complète</strong> · compteur = nombre exact. Critère : EXCLU_MANU=OUI ou toggle Exclu ON. Toggle Exclu sur chaque ligne, synchronisé fiche site.','Contrôle exclusions manuelles CRM.','Ne confondre pas avec Accessibles OFF.'],
       ['Clients Accessibles OFF','Liste complète · ACCESSIBLE=0/NON/FALSE ou toggle Accessible OFF. Toggle synchronisé fiche.','Explique les sites masqués par Accessible.','Après import CRM : compter colonne ACCESSIBLE=0.'],
-      ['Clients inactifs','Liste complète · aucune immat. sur '+INACTIVE_PURCHASE_YEARS+' ans calendaires (année courante incluse) ou parc vide.','Lié au masque Masquer inactifs Tournées.','Filtrer Excel dates immat. récentes.'],
+      ['Clients inactifs','Liste complète · aucune immat. sur '+INACTIVE_PURCHASE_YEARS+' ans calendaires (année courante incluse) ou parc vide.','Lié au masque Inactifs Tournées (tri-état).','Filtrer Excel dates immat. récentes.'],
       ['Diagnostic import','Colonnes CRM/immat reconnues (EXCLU, ACCESSIBLE, SIRET…).','Sécurise l’interprétation Excel.','Vérifier colonnes rouges avant de faire confiance aux KPI.'],
       ['Autres contrôles','Sites/véhicules incomplets, doublons, orphelins, flottes, groupes.','Audit données.','Ouvrir fiche depuis chaque ligne.']
     ]));
@@ -6660,10 +6865,11 @@ document.addEventListener('DOMContentLoaded',function(){
     ]));
     html+=sec('9. Badges et distinctions importantes',table([
       ['Badge EXCLU (fiche)','EXCLU_MANU=OUI ou exclusion manuelle toggle. <em>Pas</em> affiché pour seul ACCESSIBLE=0.','Information visuelle.','Site ACCESSIBLE=0 sans EXCLU : pas de badge EXCLU.'],
-      ['Masquer exclus Tournées','EXCLU_MANU=OUI <strong>ou</strong> ACCESSIBLE=0.','Filtre liste terrain.','Deux critères réunis ici, séparés dans Qualité.'],
+      ['Masque Exclus Tournées','Tri-état · critère EXCLU_MANU=OUI uniquement (pas ACCESSIBLE=0). Neutre par défaut.','Filtre liste terrain.','Séparé du masque Accessible OFF et de Qualité > Clients exclus.'],
+      ['Masque Accessible OFF Tournées','Tri-état · critère ACCESSIBLE=0. Neutre par défaut.','Filtre liste terrain.','Qualité > Accessibles OFF pour la liste complète.'],
       ['INACTIF','Aucun achat immat. '+INACTIVE_PURCHASE_YEARS+' ans · année courante incluse.','Masque inactifs · KPI inactifs Qualité.','Ex. en '+YEAR+' : au moins une immat. ≥ '+(YEAR-INACTIVE_PURCHASE_YEARS+1)+'.']
     ]));
-    html+=sec('10. Vérifications manuelles types','<p><strong>Exclus Qualité vs Tournées :</strong> un site ACCESSIBLE=0 apparaît dans Qualité > Accessibles OFF, pas dans Clients exclus. Il disparaît quand Masquer exclus est ON en Tournées.</p><p><strong>Groupes :</strong> double-clic KPI Groupes → modal → Ouvrir → vérifier site principal et parc consolidé.</p><p><strong>Reset complet :</strong> Tout effacer → import CRM → import immat → Qualité : Clients exclus ne doit lister que EXCLU_MANU=OUI (plus les seuls ACCESSIBLE=0).</p><p><strong>Backup :</strong> après une modification manuelle, l’icône 💾 affiche « Non exporté » · ouvrir → Télécharger maintenant → déplacer le JSON dans iCloud Drive / '+BACKUP_FOLDER+'.</p>');
+    html+=sec('10. Vérifications manuelles types','<p><strong>Exclus vs Accessible OFF :</strong> un site ACCESSIBLE=0 apparaît dans Qualité > Accessibles OFF. Il disparaît si le masque Accessible OFF est en OFF orange (ou hors cible si ON vert ailleurs). Exclus reste neutre par défaut.</p><p><strong>Combinaison vert + orange :</strong> Inactifs ON + Exclus OFF → uniquement les inactifs, moins les exclus manuels.</p><p><strong>Groupes :</strong> double-clic KPI Groupes → modal → Ouvrir → vérifier site principal et parc consolidé.</p><p><strong>Reset complet :</strong> Tout effacer → import CRM → import immat → Qualité : Clients exclus ne doit lister que EXCLU_MANU=OUI (plus les seuls ACCESSIBLE=0).</p><p><strong>Backup :</strong> après une modification manuelle, l’icône 💾 affiche « Non exporté » · ouvrir → Télécharger maintenant → déplacer le JSON dans iCloud Drive / '+BACKUP_FOLDER+'.</p>');
     html+='</div>'; openSheet('Mode d’emploi complet',html);
     renderModeEmploi=window.renderModeEmploi;
   };
@@ -8564,7 +8770,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 <script>
-/* DAF_COMMERCE-Box — Build001A-3 : TOURNÉES Accessible/Flotte + Qualité Accessible OFF */
+/* DAF_COMMERCE-Box — Build001A-3 : TOURNÉES Accessible/Flotte */
 (function(){
   'use strict';
   function byId(id){return document.getElementById(id);} 
@@ -8587,20 +8793,12 @@ document.addEventListener('DOMContentLoaded',function(){
     return /(^| )FLOTTES?( |$)/.test(p)||/(^| )REGIONALES?( |$)/.test(p)||/(^| )REGIO( |$)/.test(p)||/(^| )COORDONNEES?( |$)/.test(p)||/(^| )COORD( |$)/.test(p)||/(^| )NATIONALES?( |$)/.test(p)||/(^| )NAT( |$)/.test(p);
   }
   if(typeof GF==='object'){
-    if(typeof GF.masquerAccessibleOffTours==='undefined')GF.masquerAccessibleOffTours=false;
     if(typeof GF.masquerFlottesTours==='undefined')GF.masquerFlottesTours=false;
   }
   function ensureToursButtons(){
     var row=byId('btn-mask-inactifs');
     if(!row)return;
     var parent=row.parentNode;
-    if(parent && !byId('btn-mask-accessible-off')){
-      var b=document.createElement('button');
-      b.className='gf-chip';
-      b.id='btn-mask-accessible-off';
-      b.textContent='Accessible OFF';
-      parent.insertBefore(b,row.nextSibling);
-    }
     if(parent && !byId('btn-mask-flottes-all')){
       var f=document.createElement('button');
       f.className='gf-chip';
@@ -8609,24 +8807,14 @@ document.addEventListener('DOMContentLoaded',function(){
       var after=byId('btn-mask-flotte-nat') || byId('btn-mask-accessible-off') || row;
       parent.insertBefore(f,after.nextSibling);
     }
-    var ba=byId('btn-mask-accessible-off');
-    if(ba){ba.onclick=function(e){e.preventDefault();e.stopPropagation();GF.masquerAccessibleOffTours=!GF.masquerAccessibleOffTours;try{renderTours();}catch(err){console.error(err);}};}
     var bf=byId('btn-mask-flottes-all');
     if(bf){bf.onclick=function(e){e.preventDefault();e.stopPropagation();GF.masquerFlottesTours=!GF.masquerFlottesTours;try{renderTours();}catch(err){console.error(err);}};}
     updateNewToursButtons();
   }
   function updateNewToursButtons(){
-    var ba=byId('btn-mask-accessible-off');
-    if(ba){ba.textContent='Accessible OFF '+(GF.masquerAccessibleOffTours?'ON':'OFF');ba.className='gf-chip'+(GF.masquerAccessibleOffTours?' on':'');}
     var bf=byId('btn-mask-flottes-all');
     if(bf){bf.textContent='Flotte OFF '+(GF.masquerFlottesTours?'ON':'OFF');bf.className='gf-chip'+(GF.masquerFlottesTours?' on':'');}
   }
-  var oldPass=window.passesToursExclusions;
-  window.passesToursExclusions=function(c){
-    if(GF && GF.masquerAccessibleOffTours && !isAccessibleCB(c))return false;
-    if(GF && GF.masquerFlottesTours && isFlotteAnyCB(c))return false;
-    return oldPass?oldPass(c):true;
-  };
   var oldUpdate=window.updateToursMaskButtons;
   window.updateToursMaskButtons=function(){
     if(oldUpdate)oldUpdate();
@@ -8646,126 +8834,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if(name==='tours')setTimeout(ensureToursButtons,80);
     return r;
   };
-
-  function clientsAccessibleOff(){return (DB.getClients()||[]).filter(function(c){return !isAccessibleCB(c);});}
-  function renderAccessibleOffQualityBlock(){
-    var list=clientsAccessibleOff();
-    var html='<div class="card quality-section" id="cb-quality-accessible-off"><div class="card-title">🚫 EXCLUSIONS / ACTIVITÉ / FLOTTES</div>';
-    html+='<div class="diag-row"><span class="diag-lbl">Clients Accessibles OFF</span><span class="diag-val '+(list.length?'d-warn':'d-ok')+'">'+list.length+'</span></div>';
-    if(list.length){
-      html+='<div style="font-size:10px;color:var(--text3);margin:7px 0;line-height:1.35;">Clients/sites non accessibles selon la colonne ACCESSIBLE ou la modification manuelle dans la fiche client.</div>';
-      html+='<div style="max-height:260px;overflow:auto;border-top:1px solid var(--border);">';
-      list.forEach(function(c){var sk=siteKeySafe(c);html+='<div class="base-item cb-open-site-from-quality" data-sk="'+safeTxt(sk)+'" style="cursor:pointer;">'
-        +'<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+safeTxt(c.nom||'Sans nom')+'</div>'
-        +'<div style="font-size:10px;color:var(--text3);">'+safeTxt(c.ville||'')+' · '+safeTxt(c.tva||'')+' · ACCESSIBLE='+safeTxt(c.accessible||'manuel')+'</div></div>'
-        +'<button class="btn btn-secondary btn-sm">Fiche</button></div>';});
-      html+='</div>';
-    }
-    html+='</div>';
-    return html;
-  }
-  function bindAccessibleOffQuality(){
-    qsa('.cb-open-site-from-quality').forEach(function(el){el.onclick=function(){var sk=this.dataset.sk;try{openSiteSheet(sk);}catch(e){console.error(e);}};});
-  }
-  var oldQual=window.renderQualite;
-  window.renderQualite=function(){
-    var r=oldQual?oldQual():undefined;
-    if(document.querySelector('#qualite-exclusions-card .q-tog-accessible'))return r;
-    var cont=byId('more-content');
-    if(cont && !byId('cb-quality-accessible-off')){
-      cont.insertAdjacentHTML('afterbegin',renderAccessibleOffQualityBlock());
-      bindAccessibleOffQuality();
-    }
-    return r;
-  };
-  document.addEventListener('click',function(e){
-    var q=e.target && e.target.closest && e.target.closest('#btn-open-qualite');
-    if(q)setTimeout(function(){try{if(!byId('cb-quality-accessible-off')){var cont=byId('more-content'); if(cont){cont.insertAdjacentHTML('afterbegin',renderAccessibleOffQualityBlock());bindAccessibleOffQuality();}}}catch(err){}},180);
-  },true);
   setTimeout(function(){try{ensureToursButtons();}catch(e){}},400);
-})();
-</script>
-
-
-
-<script>
-/* DAF_COMMERCE-Box — FIX QUALITÉ : Clients Accessibles OFF visible dans EXCLUSIONS / ACTIVITÉ / FLOTTES */
-(function(){
-  'use strict';
-  function $(id){return document.getElementById(id);} 
-  function all(sel,root){return Array.prototype.slice.call((root||document).querySelectorAll(sel));}
-  function html(s){return String(s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
-  function nrm(s){try{return norm(s);}catch(e){return String(s||'').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}}
-  function siteKey(c){try{return makeSiteKey(c);}catch(e){return (c&&c.tva)||'';}}
-  function settings(){try{return DB.getSettings()||{};}catch(e){return {};}}
-  function isAccessible(c){
-    var st=settings(), m=st.accessibleOverrides||{}, sk=siteKey(c);
-    if(Object.prototype.hasOwnProperty.call(m,sk)) return !!m[sk];
-    if(Object.prototype.hasOwnProperty.call(m,(c&&c.tva)||'')) return !!m[(c&&c.tva)||''];
-    var acc=String((c&&c.accessible)||'').trim().toUpperCase();
-    return !(acc==='0'||acc==='NON'||acc==='FALSE'||acc==='FAUX');
-  }
-  function accessibleOffClients(){
-    try{return (DB.getClients()||[]).filter(function(c){return !isAccessible(c);});}
-    catch(e){return [];}
-  }
-  function openClient(sk){try{openSiteSheet(sk);}catch(e){console.error(e);}}
-  window._cbOpenAccessibleOffClient=openClient;
-
-  function buildAccessibleOffHtml(){
-    var list=accessibleOffClients();
-    var h='<div id="cb-quality-accessible-off-row" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">';
-    h+='<div class="diag-row"><span class="diag-lbl">Clients Accessibles OFF</span><span class="diag-val '+(list.length?'d-warn':'d-ok')+'">'+list.length+'</span></div>';
-    h+='<div style="font-size:10px;color:var(--text3);margin:6px 0;line-height:1.35;">Liste des sites masqués par Accessible OFF, utile pour vérifier les erreurs de qualification.</div>';
-    if(list.length){
-      h+='<div style="max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:10px;">';
-      list.forEach(function(c){var sk=siteKey(c);h+='<div class="base-item" style="cursor:pointer;" onclick="window._cbOpenAccessibleOffClient(\''+html(sk).replace(/'/g,'&#39;')+'\')">'
-        +'<div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+html(c.nom||'Sans nom')+'</div>'
-        +'<div style="font-size:10px;color:var(--text3);">'+html(c.ville||'')+' · '+html(c.tva||'')+' · ACCESSIBLE='+html(c.accessible||'manuel')+'</div></div>'
-        +'<button class="btn btn-secondary btn-sm">Fiche</button></div>';});
-      h+='</div>';
-    }
-    h+='</div>';
-    return h;
-  }
-
-  function findExclusionCard(){
-    var cards=all('.card');
-    for(var i=0;i<cards.length;i++){
-      var t=cards[i].querySelector('.card-title');
-      if(t && nrm(t.textContent).indexOf('EXCLUSIONS')>=0 && nrm(t.textContent).indexOf('FLOTTES')>=0) return cards[i];
-    }
-    return null;
-  }
-  function ensureAccessibleOffInQuality(){
-    if(document.querySelector('#qualite-exclusions-card .q-tog-accessible'))return;
-    var cont=$('more-content');
-    if(!cont) return;
-    var old=$('cb-quality-accessible-off');
-    if(old) old.remove();
-    var oldrow=$('cb-quality-accessible-off-row');
-    if(oldrow) oldrow.remove();
-    var card=findExclusionCard();
-    if(card){
-      card.insertAdjacentHTML('beforeend', buildAccessibleOffHtml());
-    }else{
-      cont.insertAdjacentHTML('afterbegin','<div class="card quality-section" id="cb-quality-accessible-off"><div class="card-title">🚫 EXCLUSIONS / ACTIVITÉ / FLOTTES</div>'+buildAccessibleOffHtml()+'</div>');
-    }
-  }
-  window._cbEnsureAccessibleOffQuality=ensureAccessibleOffInQuality;
-
-  var oldQual=window.renderQualite;
-  window.renderQualite=function(){
-    var r=oldQual?oldQual.apply(this,arguments):undefined;
-    setTimeout(ensureAccessibleOffInQuality,0);
-    setTimeout(ensureAccessibleOffInQuality,120);
-    setTimeout(ensureAccessibleOffInQuality,350);
-    return r;
-  };
-  document.addEventListener('click',function(e){
-    var el=e.target&&e.target.closest&&e.target.closest('#btn-open-qualite');
-    if(el){setTimeout(ensureAccessibleOffInQuality,120);setTimeout(ensureAccessibleOffInQuality,400);}
-  },true);
 })();
 </script>
 
@@ -10415,11 +10484,8 @@ document.addEventListener('DOMContentLoaded',function(){
       try{if(typeof clientMatchesGF==='function'&&!clientMatchesGF(c))reasons.push('filtre global client/vendeur/pays/département/profil');}catch(e){}
       try{if(typeof matchesToursVehicle==='function'&&!matchesToursVehicle(v))reasons.push('filtre véhicule Tournées');}catch(e){}
       if(row){
-        if(row.isExclu && GF.masquerExclusTours)reasons.push('site exclu masqué');
-        if(row.isInactif && GF.masquerInactifsTours)reasons.push('site inactif masqué');
-        if(row.isFlotteNationale && GF.masquerFlotteNationaleTours)reasons.push('flotte nationale masquée');
-        if((row.hasProjet||row.pasProjet) && GF.masquerProjet)reasons.push(row.hasProjet?'projet masqué':'pas de projet masqué');
-        if(row.isSiteSecondaire && GF.masquerSitesSecondaires!==false)reasons.push('site secondaire masqué');
+        var maskRs=toursMaskExcludeReasons(row);
+        if(maskRs.length)reasons=reasons.concat(maskRs);
       }
     }
     return reasons.length?reasons.join(' + '):'à contrôler : écart non expliqué automatiquement';
@@ -10476,7 +10542,7 @@ document.addEventListener('DOMContentLoaded',function(){
       ['Hors DAF à renouveler',M.horsRenew,TC.horsRenew,M.horsRenew-TC.horsRenew]
     ];
     var kpiHtml=kpiRows.map(function(r){var cls=r[3]===0?'var(--green)':(Math.abs(r[3])>0?'var(--orange)':'var(--text2)');return '<tr><td>'+h(r[0])+'</td><td>'+r[1]+'</td><td>'+r[2]+'</td><td style="font-weight:900;color:'+cls+';">'+(r[3]>0?'+':'')+r[3]+'</td></tr>';}).join('');
-    var state='<div style="font-size:10px;color:var(--text3);line-height:1.5;">Filtres actuels : type <strong>'+h(GF.marcheTypeFilter||'tous')+'</strong> · vendeurs MARCHÉ <strong>'+h((GF.vendeursMarche&&GF.vendeursMarche.length?GF.vendeursMarche.join(', '):'tous'))+'</strong> · Tournées <strong>'+h(getToursFilter())+'</strong> · masques : exclus '+(GF.masquerExclusTours?'ON':'OFF')+', inactifs '+(GF.masquerInactifsTours?'ON':'OFF')+', accessible OFF '+(GF.masquerAccessibleOffTours?'ON':'OFF')+', flotte nat. '+(GF.masquerFlotteNationaleTours?'ON':'OFF')+', projets '+(GF.masquerProjet?'ON':'OFF')+', sites sec. '+(GF.masquerSitesSecondaires!==false?'ON':'OFF')+' · Marché accessible OFF '+(GF.exclAccessibleOffMarche?'ON':'OFF')+'.</div>';
+    var state='<div style="font-size:10px;color:var(--text3);line-height:1.5;">Filtres actuels : type <strong>'+h(GF.marcheTypeFilter||'tous')+'</strong> · vendeurs MARCHÉ <strong>'+h((GF.vendeursMarche&&GF.vendeursMarche.length?GF.vendeursMarche.join(', '):'tous'))+'</strong> · Tournées <strong>'+h(getToursFilter())+'</strong> · masques : '+h(_formatToursMaskStates())+' · Marché accessible OFF '+(GF.exclAccessibleOffMarche?'ON':'OFF')+'.</div>';
     var html='';
     html+='<div class="card"><div class="card-title">Méthode d’audit</div><div style="font-size:12px;color:var(--text2);line-height:1.5;">Cette page ne corrige rien : elle compare les véhicules comptés par MARCHÉ avec ceux réellement repris par TOURNÉES, puis donne la raison probable de chaque écart.</div>'+state+'<div style="display:flex;gap:6px;margin-top:8px;"><button class="btn btn-primary btn-sm" id="audit-refresh">Recalculer</button><button class="btn btn-secondary btn-sm" id="audit-export">Exporter CSV écarts</button></div></div>';
     html+='<div class="kpi-grid"><div class="kpi-card"><div class="kpi-val">'+allImport.length+'</div><div class="kpi-lbl">Lignes immat importées</div></div><div class="kpi-card"><div class="kpi-val">'+M.parc+'</div><div class="kpi-lbl">Parc Marché (filtres)</div></div><div class="kpi-card c-blue"><div class="kpi-val">'+TC.parc+'</div><div class="kpi-lbl">Parc Tournées actuel</div></div><div class="kpi-card c-orange"><div class="kpi-val">'+missTours.length+'</div><div class="kpi-lbl">Marché absent Tournées</div></div></div>';
