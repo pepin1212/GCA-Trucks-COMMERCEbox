@@ -288,7 +288,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v52';
+const APP_BUILD='2026-05-27-bases-v53';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -3816,7 +3816,7 @@ function _toursVehiclesForSiteRow(c){
 }
 function getToursKpiSites(kind,baseRows){
   baseRows=baseRows||buildToursData().filter(passesToursExclusions);
-  if(kind==='actifs')return baseRows.filter(function(c){return !c.isInactif;});
+  if(kind==='total')return baseRows.slice();
   if(kind==='inactifs')return baseRows.filter(function(c){return c.isInactif;});
   if(kind==='urgents')return baseRows.filter(_toursUrgentForKpi);
   if(kind==='fidelisation')return baseRows.filter(function(c){return c.parc>0&&c.dafCount>0;});
@@ -3892,10 +3892,10 @@ function openToursGroupsModal(baseRows){
     else{$('kpi-modal-view').innerHTML=state.listHtml;bindGroupBtns($('kpi-modal-view'));pbtn.textContent='Vue croisée Groupe × Indicateurs';state.showList=true;}
   };
 }
-var TOURS_KPI_FILTER={actifs:'actifs',groupes:'groupes',fidelisation:'fidelisation',urgents:'urgent',inactifs:'inactifs',parc:'all',hors_daf:'hors_daf',hors_renew:'hors_renew_kpi',daf:'daf_with',daf_renew:'daf_renew_kpi'};
+var TOURS_KPI_FILTER={total:'all',groupes:'groupes',fidelisation:'fidelisation',urgents:'urgent',inactifs:'inactifs',parc:'all',hors_daf:'hors_daf',hors_renew:'hors_renew_kpi',daf:'daf_with',daf_renew:'daf_renew_kpi'};
 var TOURS_KPI_TIP='Clic : filtrer la liste · Double-clic : voir le détail';
 function _toursKpiFilterKey(k){return TOURS_KPI_FILTER[k]||'all';}
-function _toursKpiIsActive(k,f){var fk=_toursKpiFilterKey(k);return k==='parc'?f==='all':f===fk;}
+function _toursKpiIsActive(k,f){var fk=_toursKpiFilterKey(k);return k==='parc'||k==='total'?f==='all':f===fk;}
 function _applyToursKpiFilter(k){
   var nf=_toursKpiFilterKey(k);
   toursF=(nf==='all'||toursF===nf)?'all':nf;
@@ -3908,7 +3908,7 @@ function _toursKpiCardHtml(k,val,lbl,cls,f,extraTip){
   return '<div class="kpi-card '+cls+(active?' active':'')+'" data-tours-kpi="'+k+'" title="'+escH(tip)+'"'+(active?' style="outline:2px solid var(--daf);outline-offset:1px;"':'')+'><div class="kpi-val">'+val+'</div><div class="kpi-lbl">'+lbl+'</div></div>';
 }
 function _bindToursKpiClicks(baseRows){
-  var siteLabels={actifs:'Clients actifs',groupes:'Groupes',fidelisation:'Fidélisation (DAF)',urgents:'Urgents',inactifs:'Clients inactifs'};
+  var siteLabels={total:'Total sites',groupes:'Groupes',fidelisation:'Fidélisation (DAF)',urgents:'Urgents',inactifs:'Clients inactifs'};
   var vehLabels={parc:'Parc total',hors_daf:'Immat. Hors DAF',hors_renew:'Hors DAF renouv.',daf:'Immat. DAF',daf_renew:'DAF à renouveler'};
   var KPI_DBL_MS=280;
   QA('#tours-counters [data-tours-kpi]').forEach(function(el){
@@ -4047,7 +4047,7 @@ function renderTours(){
     }
   });
   updateToursMaskButtons();
-  var kClientsActifs=baseRows.filter(function(c){return !c.isInactif;}).length;
+  var kTotalSites=baseRows.length;
   var kClientsInactifs=baseRows.filter(function(c){return c.isInactif;}).length;
   var kGroupes=getToursGroupsForKpi(baseRows).length;
   var kFidelisation=baseRows.filter(function(c){return c.parc>0&&c.dafCount>0;}).length;
@@ -4057,7 +4057,7 @@ function renderTours(){
   var kpiHtml='<div class="marche-kpi-cols">'
     +'<div><div class="marche-kpi-side-lbl">Sites</div>'
     +'<div class="kpi-grid kpi-col-stack">'
-    +_toursKpiCardHtml('actifs',kClientsActifs,'Clients actifs','c-green',f)
+    +_toursKpiCardHtml('total',kTotalSites,'Total sites','c-green',f,'Tous les sites visibles (masques et profils actifs). '+TOURS_KPI_TIP)
     +_toursKpiCardHtml('groupes',kGroupes,'Groupes','c-blue',f,'Clic : filtrer les sites en groupe · Double-clic : modal groupes + vue croisée')
     +_toursKpiCardHtml('fidelisation',kFidelisation,'Fidélisation (DAF)','c-daf',f)
     +_toursKpiCardHtml('urgents',kUrgent,'Urgents','c-red',f)
@@ -6963,7 +6963,7 @@ document.addEventListener('DOMContentLoaded',function(){
       ['Graphiques Marque × Année','NB IMMAT et % PDM · cellules cliquables → liste véhicules + fiche.','Analyse parts de marché.','TCD Excel Marque × Année.']
     ]));
     html+=sec('3. Page TOURNÉES',table([
-      ['KPI Sites (clic / double-clic)','Clic simple = filtre la liste (entourage orange). Double-clic = modal détail ou vue croisée.','Clients actifs, Groupes, Fidélisation, Urgents, Inactifs.','Tester chaque KPI : liste filtrée puis modal.'],
+      ['KPI Sites (clic / double-clic)','Clic simple = filtre la liste (entourage orange). Double-clic = modal détail ou vue croisée.','Total sites, Groupes, Fidélisation, Urgents, Inactifs.','Tester chaque KPI : liste filtrée puis modal.'],
       ['KPI Groupes','Nombre de groupes visibles. Clic = sites rattachés à un groupe. Double-clic = modal groupes + vue croisée Groupe × indicateurs (Parc, R.DAF…).','Remplace l’ancien KPI Conquête.','Double-clic KPI Groupes → Ouvrir une fiche Groupe.'],
       ['+ Créer groupe (jaune)','Crée un groupe manuel depuis la barre Tournées.','Même action que PLUS / Qualité > + Créer groupe.','Créer puis vérifier fiche Groupe.'],
       ['Masques tri-état (Tournées)','Clic simple : Neutre (gris) → OFF orange (exclut) → ON vert (n’affiche que) → Neutre. Plusieurs ON = intersection. OFF orange retire sa cible dans le résultat (même avec un ON vert actif).','Exclus et Accessible OFF séparés · Inactifs/Projets/Sites sec. OFF par défaut.','Combiner Inactifs ON + Exclus OFF : voir uniquement les inactifs non exclus.'],
