@@ -288,7 +288,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v53';
+const APP_BUILD='2026-05-27-bases-v55';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -2235,9 +2235,8 @@ function renderMarche(){
   var pdmYear=filtVehYear.length>0?Math.round(dafVehYear/filtVehYear.length*100):0;
   var kTypeVerifier=filtVeh.filter(isTypeVerifier).length;
   var urgents=filtered.filter(isClientUrgent);
-  var openProj=DB.getProjects().filter(function(p){return p.status==='EN_COURS'||p.status==='FUTUR';});
-  var camPortefeuille=(typeof getPortfolioVehicules==='function')?getPortfolioVehicules():openProj.reduce(function(a,p){return a+(parseInt(p.camions)||0);},0);
-  var camGagnes=(typeof getWonVehiculesYear==='function')?getWonVehiculesYear(YEAR):DB.getProjects().filter(function(p){return p.status==='GAGNE'&&getYear(p.updated||p.created||p.date)===YEAR;}).reduce(function(a,p){return a+(parseInt(p.camions)||0);},0);
+  var camPortefeuille=(typeof getPortfolioVehicules==='function')?getPortfolioVehicules():0;
+  var camALivrer=(typeof getALivrerVehicules==='function')?getALivrerVehicules():0;
   var dafRenewKpi=filtVeh.filter(isRenewDafMarche).length;
   var horsRenewKpi=filtVeh.filter(isRenewHorsMarche).length;
   var clientsAvecDaf=0;
@@ -2272,7 +2271,7 @@ function renderMarche(){
     +'<div class="obj-track"><div class="obj-fill" style="width:'+Math.min(pdmYear/PDM_GOAL*100,100)+'%;"></div></div>'
     +'<div style="display:flex;justify-content:space-between;margin-top:4px;">'
     +'<span style="font-size:9px;color:var(--text3);">'+dafVehYear+' DAF / '+filtVehYear.length+' immat. en '+YEAR+'</span>'
-    +'<span style="font-size:9px;color:var(--text3);">Portefeuille: <strong style="color:var(--blue);">'+camPortefeuille+'</strong> | Gagnés: <strong style="color:var(--green);">'+camGagnes+'</strong></span>'
+    +'<span style="font-size:9px;color:var(--text3);">Portefeuille: <strong style="color:var(--blue);">'+camPortefeuille+'</strong> | À livrer: <strong style="color:var(--green);">'+camALivrer+'</strong></span>'
     +'</div></div>';
   html+='<div class="obj-bar-wrap" style="margin-top:-4px;">'
     +'<div class="obj-top"><span class="obj-lbl">PDM DAF (parc total)</span><span class="obj-pct">'+pdm+'%</span></div>'
@@ -3727,6 +3726,18 @@ function buildToursData(){
   _toursDataCacheKey=cacheKey;
   return rows;
 }
+function _toursSitesSecMaskState(){
+  ensureToursMaskTriState();
+  return GF.toursMaskSitesSec||'neutral';
+}
+// Sites secondaires : visibilité liste/KPI (5A) — indépendante du site principal et du groupe.
+function _toursSecondaryVisible(c,search){
+  if(!c||!c.isSiteSecondaire)return true;
+  var m=_toursSitesSecMaskState();
+  if(m==='exclude')return false;
+  if(m==='only')return true;
+  return !!String(search||'').trim();
+}
 function passesToursExclusions(c){
   ensureToursMaskTriState();
   if(GF.masquerFlotteNationaleTours&&c.isFlotteNationale)return false;
@@ -4023,12 +4034,13 @@ function renderTours(){
   window._toursRenderGen=(window._toursRenderGen||0)+1;
   var gen=window._toursRenderGen;
   const data=buildToursData();
-  var baseRows=data.filter(passesToursExclusions);
-  var kpiBase=_toursKpiFromRows(baseRows);
   const search=toursSearch.toLowerCase().trim();
+  var baseRows=data.filter(function(c){return passesToursExclusions(c)&&_toursSecondaryVisible(c,'');});
+  var kpiBase=_toursKpiFromRows(baseRows);
   var f=toursF||'all';
   let shown=data.filter(function(c){
     if(!passesToursExclusions(c))return false;
+    if(!_toursSecondaryVisible(c,search))return false;
     if(search){const q=search;if(![c.nom,c.ville,c.canton,c.vendeur,c.profil,c.tva,c.siret,c.groupement].join(' ').toLowerCase().includes(q))return false;}
     switch(f){
       case 'actifs':return !c.isInactif;
@@ -4461,7 +4473,13 @@ function renderCompanyVerificationBox(c,sk){
     var etatCls=(v.etat==='A'?'cb-verify-ok':'cb-verify-warn');
     html+='<div class="cb-verify-row"><strong>'+escH(v.nom||'Entreprise')+'</strong></div>';
     html+='<div class="cb-verify-row"><span class="'+etatCls+'">'+escH(v.etatLabel||'—')+'</span> · SIREN '+escH(v.siren||'—')+'</div>';
-    html+='<div class="cb-verify-row"><strong>Siège registre :</strong> '+escH(v.siegeAdresse||'—')+(v.siret?' · SIRET '+escH(v.siret):'')+'</div>';
+    var siegeAddr=String(v.siegeAdresse||'').trim();
+    html+='<div class="cb-verify-row"><strong>Siège registre :</strong> '+escH(siegeAddr||'—')+(v.siret?' · SIRET '+escH(v.siret):'');
+    if(siegeAddr){
+      var wazeSiege='https://waze.com/ul?q='+encodeURIComponent(siegeAddr)+'&navigate=yes';
+      html+=' <a href="'+escH(wazeSiege)+'" target="_blank" rel="noopener" class="btn btn-blue btn-sm" style="text-decoration:none;display:inline-block;margin-top:4px;">🧭 Waze siège</a>';
+    }
+    html+='</div>';
     var siegeSk=v.siegeSiteKey||findSiteKeyMatchingSiege(c.tva,v);
     if(siegeSk){
       var sc=IDX.cBySite&&IDX.cBySite[siegeSk];
@@ -4816,6 +4834,7 @@ function getToursShownRowsForParc(){
   if(f==='orphan_immat'||f==='non_possessed')f='all';
   return data.filter(function(c){
     if(typeof passesToursExclusions==='function'&&!passesToursExclusions(c))return false;
+    if(typeof _toursSecondaryVisible==='function'&&!_toursSecondaryVisible(c,search))return false;
     if(search&&![c.nom,c.ville,c.canton,c.vendeur,c.profil,c.tva,c.siret,c.groupement].join(' ').toLowerCase().includes(search))return false;
     switch(f){
       case 'actifs':return !c.isInactif;
@@ -5180,11 +5199,9 @@ renderModeEmploi = function(){
     var html='';
     html+='<div class="card"><div class="card-title">👥 Groupes</div><div style="font-size:10px;color:var(--text3);line-height:1.35;margin-bottom:8px;">Gestion directe des groupes sans passer par Qualité. Les groupes ne s’affichent pas dans TOURNÉES ; seuls les sites s’affichent.</div><button class="btn btn-primary" id="btn-create-group-plus" style="width:100%;margin-bottom:6px;">+ Créer un groupe</button><div style="font-size:11px;color:var(--text2);">Groupes détectés/manuels : <strong>'+groups.length+'</strong></div></div>';
     html+='<div class="card"><div class="card-title">📋 Reporting projets</div><button class="btn btn-secondary" id="btn-export-project-report" style="width:100%;">Exporter reporting projets CSV</button><div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.35;">Export lisible dans Excel : client, TVA, site, statut, nombre de véhicules, type, période et commentaire.</div></div>';
-    html+='<div class="card"><div class="card-title">💾 Sauvegarde fixe iCloud</div><button class="btn btn-secondary" id="btn-export-json-fixed" style="width:100%;">Enregistrer sauvegarde nom fixe</button><div style="font-size:10px;color:var(--text3);line-height:1.35;margin-top:6px;">Le fichier s’appelle toujours <strong>DAF_Professional_sauvegarde.json</strong>. Sur iPhone, le navigateur ne peut pas remplacer silencieusement un fichier iCloud : il faudra valider l’enregistrement/remplacement si iOS le demande.</div></div>';
     cont.insertAdjacentHTML('beforeend',html);
     safeOn('btn-create-group-plus','click',createManualGroup);
     safeOn('btn-export-project-report','click',exportProjectsReporting);
-    safeOn('btn-export-json-fixed','click',exportBackupJSONFixed);
   };
 
   // 5) Mode d'emploi ultra détaillé : chaque élément explique définition, critère, action et effet
@@ -5308,7 +5325,7 @@ renderModeEmploi = function(){
 
   // Override renderMore to update label XLSX and add modules if not present
   var _oldMore = window.renderMore;
-  window.renderMore=function(){ if(typeof _oldMore==='function')_oldMore(); var cont=$('more-content'); if(!cont)return; var btn=$('btn-export-project-report'); if(btn)btn.textContent='Exporter reporting projets XLSX'; var cards=cont.innerHTML; if(cards.indexOf('Affaires chaudes / Livraisons')<0){cont.insertAdjacentHTML('beforeend','<div class="card"><div class="card-title">🔥 Affaires chaudes / Livraisons</div><button class="btn btn-secondary" id="btn-open-affaires-plus" style="width:100%;margin-bottom:6px;">Ouvrir Affaires chaudes</button><button class="btn btn-secondary" id="btn-open-livraisons-plus" style="width:100%;">Ouvrir Suivi livraisons</button></div>');safeOn('btn-open-affaires-plus','click',function(){showScreen('affaires');});safeOn('btn-open-livraisons-plus','click',function(){showScreen('livraisons');});} if(typeof renderMoreAdminFooter==='function')renderMoreAdminFooter(); };
+  window.renderMore=function(){ if(typeof _oldMore==='function')_oldMore(); var cont=$('more-content'); if(!cont)return; QA('.card',cont).forEach(function(card){var t=(card.querySelector('.card-title')||{}).textContent||'';if(t.indexOf('Affaires chaudes / Livraisons')>=0||t.indexOf('Sauvegarde fixe iCloud')>=0)card.remove();}); var btn=$('btn-export-project-report'); if(btn)btn.textContent='Exporter reporting projets XLSX'; if(typeof renderMoreAdminFooter==='function')renderMoreAdminFooter(); };
 
   var _oldRenderScreen = window.renderScreen;
   window.renderScreen=function(name){ if(name==='affaires'){renderAffaires();return;} if(name==='livraisons'){renderLivraisons();return;} if(typeof _oldRenderScreen==='function')return _oldRenderScreen(name); };
@@ -5369,11 +5386,24 @@ renderModeEmploi = function(){
   };
 
   window.getPortfolioVehicules=function(){
-    var deals=hotDeals(); var linked={}; deals.forEach(function(d){if(d.projectId)linked[d.projectId]=true;});
-    var total=0;
-    deals.forEach(function(d){ if(dealWon(d)===0 && dealLost(d)===0) total+=dealPlanned(d); else total+=Math.max(0,dealPlanned(d)-dealWon(d)-dealLost(d)); });
-    (DB.getProjects()||[]).forEach(function(p){ if(!linked[p.id] && projectOpenStatus(p.status)) total+=(parseInt(p.camions||p.nb)||0); });
-    return total;
+    function normSt(st){return String(st||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+    function inPortefeuille(st){
+      st=normSt(st);
+      return st==='EN_COURS'||st==='PROJET'||st==='FUTUR'||st==='REPORTE';
+    }
+    return (DB.getProjects()||[]).filter(function(p){return inPortefeuille(p.status);}).reduce(function(a,p){return a+(parseInt(p.camions||p.nb)||0);},0);
+  };
+  window.getALivrerVehicules=function(){
+    var now=new Date(), y=now.getFullYear(), m=now.getMonth();
+    var monthStart=new Date(y,m,1);
+    var deliveries=(typeof getDeliveries==='function'?getDeliveries():[])||[];
+    return deliveries.reduce(function(total,d){
+      var dd=d.deliveryDate||'';
+      if(!dd)return total;
+      var dt=new Date(dd);
+      if(isNaN(dt.getTime())||dt<monthStart)return total;
+      return total+(parseInt(d.qty||1)||1);
+    },0);
   };
   window.getWonVehiculesYear=function(year){
     year=year||YEAR;
@@ -11311,6 +11341,95 @@ document.addEventListener('DOMContentLoaded',function(){
     var btn=e.target&&e.target.closest&&e.target.closest('#btn-open-qualite');
     if(btn){setTimeout(resync,250);setTimeout(resync,600);}
   },true);
+})();
+</script>
+
+<script>
+/* v54 — Activité (navigation finale) + nettoyage PLUS au chargement */
+(function(){
+  'use strict';
+  function byId(id){return document.getElementById(id);}
+  function qsa(sel,r){return Array.prototype.slice.call((r||document).querySelectorAll(sel));}
+  function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+  function actionLabel(t){return {PAS_PROJET_CREATE:'Création Sans projet',PROJET_CREATE:'Création projet',DEAL_CREATE:'Création affaire'}[t]||t;}
+  function dshort(v){if(!v)return '—';var d=new Date(v);if(isNaN(d))return String(v).slice(0,16);return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}
+  function mergeActivityStorage(){
+    var merged=[], seen={};
+    function pull(key){try{JSON.parse(localStorage.getItem(key)||'[]').forEach(function(e){var id=e.id||JSON.stringify(e);if(seen[id])return;seen[id]=1;merged.push(e);});}catch(e){}}
+    pull('daf_commercebox_activity'); pull('daf_activity_log');
+    merged.sort(function(a,b){return String(b.date||'').localeCompare(String(a.date||''));});
+    try{localStorage.setItem('daf_commercebox_activity',JSON.stringify(merged.slice(0,2000)));}catch(e){}
+  }
+  function getAL(){try{return JSON.parse(localStorage.getItem('daf_commercebox_activity')||'[]')||[];}catch(e){return[];}}
+  function ensureActiviteScreen(){
+    if(!byId('screen-activite')){
+      var anchor=byId('screen-more')||byId('app'); if(!anchor)return;
+      var div=document.createElement('div'); div.className='screen'; div.id='screen-activite';
+      div.innerHTML='<div class="screen-header"><div class="screen-title">📋 Activité</div></div><div class="search-bar" style="position:sticky;top:0;z-index:10;margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;"><span>🔍</span><input type="text" id="activite-search" placeholder="Client, action…"></div><div id="activite-content" style="padding-top:6px;"></div>';
+      anchor.parentNode.insertBefore(div,anchor);
+    }
+    var nav=byId('nav'); if(!nav)return;
+    qsa('.nav-item[data-screen="activite"]').slice(1).forEach(function(n){n.remove();});
+    if(!nav.querySelector('[data-screen="activite"]')){
+      var item=document.createElement('div'); item.className='nav-item'; item.dataset.screen='activite';
+      item.innerHTML='<span class="nav-icon">📋</span><span class="nav-label">Activité</span>';
+      var ref=nav.querySelector('[data-screen="more"]'); nav.insertBefore(item,ref||null);
+    }
+  }
+  function renderActivitePage(){
+    ensureActiviteScreen(); mergeActivityStorage();
+    var cont=byId('activite-content'); if(!cont)return;
+    var q=String((byId('activite-search')||{}).value||'').toLowerCase().trim();
+    var rows=getAL().filter(function(e){return ['PAS_PROJET_CREATE','PROJET_CREATE','DEAL_CREATE'].indexOf(e.type)>=0;}).filter(function(e){
+      if(!q)return true;
+      return (String(e.clientNom||'')+' '+actionLabel(e.type)+' '+String(e.status||'')+' '+String(e.description||'')).toLowerCase().indexOf(q)>=0;
+    });
+    var html='<div style="padding:8px 12px;"><div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;"><button class="btn btn-secondary btn-sm" id="cb-act-export-v54" style="font-size:10px;">📥 Exporter activité XLSX</button><span style="font-size:10px;color:var(--text3);">'+rows.length+' ligne(s)</span></div>';
+    if(!rows.length)html+='<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Aucune activité</div><div class="empty-sub">Créations Sans projet, Projet ou Affaire apparaissent ici.</div></div>';
+    rows.forEach(function(e){html+='<div class="card" style="margin:0 0 7px;"><div style="display:flex;justify-content:space-between;gap:8px;"><div style="min-width:0;"><div style="font-size:12px;font-weight:800;">'+esc(e.clientNom||'—')+'</div><div style="font-size:11px;color:var(--text2);">'+esc(actionLabel(e.type))+(e.status?' · '+esc(e.status):'')+'</div><div style="font-size:10px;color:var(--text3);">'+esc(e.description||'')+'</div></div><div style="font-size:9px;color:var(--text3);white-space:nowrap;">'+esc(dshort(e.date))+'</div></div></div>';});
+    html+='</div>'; cont.innerHTML=html;
+    var si=byId('activite-search'); if(si&&!si._v54Bound){si._v54Bound=true;si.oninput=renderActivitePage;}
+    var ex=byId('cb-act-export-v54'); if(ex)ex.onclick=function(){
+      if(typeof XLSX==='undefined'){try{toast('xlsx.full.min.js requis');}catch(e){}return;}
+      var data=[['Date','Client','TVA','Action','Statut','Description']];
+      rows.forEach(function(e){data.push([(e.date||'').slice(0,10),e.clientNom||'',e.tva||'',actionLabel(e.type),e.status||'',e.description||'']);});
+      var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),'Activité');
+      XLSX.writeFile(wb,'DAF_Activite_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    };
+  }
+  function purgePlusCards(){
+    var cont=byId('more-content'); if(!cont)return;
+    qsa('.card',cont).forEach(function(card){
+      var t=(card.querySelector('.card-title')||{}).textContent||'';
+      if(t.indexOf('Affaires chaudes / Livraisons')>=0||t.indexOf('Sauvegarde fixe iCloud')>=0)card.remove();
+    });
+  }
+  var prevShow=window.showScreen;
+  window.showScreen=function(name){
+    if(name==='activite'){
+      qsa('.screen').forEach(function(s){s.classList.remove('active');});
+      qsa('.nav-item').forEach(function(n){n.classList.toggle('active',n.dataset.screen==='activite');});
+      ensureActiviteScreen();
+      var sc=byId('screen-activite'); if(sc)sc.classList.add('active');
+      try{window.currentScreen='activite';}catch(e){}
+      renderActivitePage();
+      return;
+    }
+    if(name==='more')setTimeout(purgePlusCards,0);
+    return prevShow?prevShow.apply(this,arguments):undefined;
+  };
+  var prevRS=window.renderScreen;
+  window.renderScreen=function(name){
+    if(name==='activite'){renderActivitePage();return;}
+    if(name==='more'){var r=prevRS?prevRS.apply(this,arguments):undefined;setTimeout(purgePlusCards,0);return r;}
+    return prevRS?prevRS.apply(this,arguments):undefined;
+  };
+  document.addEventListener('click',function(e){
+    var n=e.target.closest&&e.target.closest('.nav-item[data-screen="activite"]');
+    if(n){e.preventDefault();e.stopPropagation();showScreen('activite');}
+  },true);
+  mergeActivityStorage();
+  setTimeout(function(){ensureActiviteScreen();purgePlusCards();},200);
 })();
 </script>
 </body>
