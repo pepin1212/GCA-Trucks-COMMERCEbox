@@ -204,7 +204,7 @@ input[type=file]{display:none}
     <div class="fpill" data-f="daf_with">Avec DAF</div>
     <div class="fpill" data-f="no_daf">Sans DAF</div>
     <div class="fpill" data-f="urgent">Urgents</div>
-    <div class="fpill fpill-alert" data-f="orphan_immat" title="Immatriculations sans fiche client CRM">⚠ Sans fiche</div>
+    <div class="fpill" data-f="protocole">Protocole</div>
     <div class="fpill" data-f="flotte">Flotte</div>
   </div>
   <div id="tours-mask-bar" style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:6px 12px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:40px;z-index:200;overflow:visible;">
@@ -214,6 +214,10 @@ input[type=file]{display:none}
     <button class="gf-chip" id="btn-mask-flotte-nat">Flotte Nat. OFF</button>
     <button class="gf-chip mask-exclude" id="btn-mask-projets">Projets OFF</button>
     <button class="gf-chip mask-exclude" id="btn-mask-sites-sec">Sites sec. OFF</button>
+    <button class="gf-chip" id="btn-mask-sans-fiche">Sans fiche</button>
+    <button class="gf-btn" id="btn-tours-type-tous" style="font-size:10px;padding:4px 10px;">Tous types</button>
+    <button class="gf-btn" id="btn-tours-type-trac" style="font-size:10px;padding:4px 10px;">Tracteurs</button>
+    <button class="gf-btn" id="btn-tours-type-port" style="font-size:10px;padding:4px 10px;">Porteurs</button>
     <select class="form-input" id="tours-sort-sel" style="font-size:10px;padding:4px 7px;min-width:110px;">
       <option value="score">Score &#9660;</option>
       <option value="parc_desc">Parc total &#9660;</option>
@@ -288,7 +292,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v55';
+const APP_BUILD='2026-05-27-bases-v57';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -706,6 +710,11 @@ const GF = {
   toursMaskInactifs: 'exclude',
   toursMaskProjets: 'exclude',
   toursMaskSitesSec: 'exclude',
+  toursMaskSansFiche: 'neutral',
+  marcheMaskSitesSec: 'exclude',
+  marcheMaskSansFiche: 'neutral',
+  marcheF: 'all',
+  toursTypeFilter: 'tous',
   // legacy booléens (migration uniquement)
   masquerExclusTours: false,
   masquerInactifsTours: true,
@@ -735,8 +744,71 @@ var TOURS_MASK_DEFS=[
   {id:'accessible',btn:'btn-mask-accessible-off',label:'Accessible OFF',key:'toursMaskAccessible'},
   {id:'inactifs',btn:'btn-mask-inactifs',label:'Inactifs',key:'toursMaskInactifs'},
   {id:'projets',btn:'btn-mask-projets',label:'Projets',key:'toursMaskProjets'},
-  {id:'sitesSec',btn:'btn-mask-sites-sec',label:'Sites sec.',key:'toursMaskSitesSec'}
+  {id:'sitesSec',btn:'btn-mask-sites-sec',label:'Sites sec.',key:'toursMaskSitesSec'},
+  {id:'sansFiche',btn:'btn-mask-sans-fiche',label:'Sans fiche',key:'toursMaskSansFiche'}
 ];
+function ensureMarcheMaskTriState(){
+  if(GF._marcheMaskTriState)return;
+  if(GF.marcheMaskSitesSec==null||GF.marcheMaskSitesSec===undefined)GF.marcheMaskSitesSec='exclude';
+  if(GF.marcheMaskSansFiche==null||GF.marcheMaskSansFiche===undefined)GF.marcheMaskSansFiche='neutral';
+  if(!GF.marcheF)GF.marcheF='all';
+  GF._marcheMaskTriState=true;
+}
+function _marcheClientIsSecondary(c){
+  if(!c)return false;
+  var sk=c._siteKey||makeSiteKey(c);
+  var info=getSitePrincipalInfo(sk);
+  return !!(info&&info.hasGroup&&!info.principal);
+}
+function passesMarcheSitesSecMask(c){
+  ensureMarcheMaskTriState();
+  var m=GF.marcheMaskSitesSec||'neutral';
+  var sec=_marcheClientIsSecondary(c);
+  if(m==='only')return sec;
+  if(sec&&m==='exclude')return false;
+  return true;
+}
+function _marcheClientParc(c){
+  var sk=c._siteKey||makeSiteKey(c);
+  return (IDX.vBySite[sk]||[]).filter(matchesMarcheVehicle).length;
+}
+function _marcheClientDafCount(c){
+  var sk=c._siteKey||makeSiteKey(c);
+  return (IDX.vBySite[sk]||[]).filter(matchesMarcheVehicle).filter(isDaf).length;
+}
+function passesMarcheFpill(c){
+  var f=GF.marcheF||'all';
+  if(f==='all')return true;
+  switch(f){
+    case 'daf_with':return _marcheClientDafCount(c)>0;
+    case 'no_daf':return _marcheClientParc(c)>0&&_marcheClientDafCount(c)===0;
+    case 'urgent':return isClientUrgent(c);
+    case 'protocole':return !!String(c.groupement||'').trim();
+    default:return true;
+  }
+}
+function updateMarcheMaskButtons(){
+  ensureMarcheMaskTriState();
+  [{id:'btn-marche-mask-sites-sec',key:'marcheMaskSitesSec',label:'Sites sec.'},{id:'btn-marche-mask-sans-fiche',key:'marcheMaskSansFiche',label:'Sans fiche'}].forEach(function(d){
+    var el=$(d.id);if(!el)return;
+    var st=GF[d.key]||'neutral';
+    el.textContent=d.label+(st==='neutral'?'':(' '+_toursMaskLabel(st)));
+    el.className='gf-chip'+(st==='exclude'?' mask-exclude':(st==='only'?' mask-only':''));
+  });
+}
+function _renderMarcheOrphanPanel(){
+  var orphans=getOrphanVehicles();
+  var html=renderXlsxStatus(typeof XLSX!=='undefined');
+  html+='<div class="card"><div class="card-title">⚠ Immatriculations sans fiche client</div><div style="font-size:11px;color:var(--text2);line-height:1.5;margin-bottom:8px;">Filtre <strong>Sans fiche ON</strong> — immat. non rattachées à un site CRM (SIRET/TVA).</div>';
+  if(!orphans.length)html+='<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucune immat. orpheline.</div>';
+  else{
+    html+='<div style="font-size:11px;font-weight:700;margin-bottom:6px;">'+orphans.length+' véhicule'+(orphans.length>1?'s':'')+'</div>';
+    orphans.slice(0,300).forEach(function(v){html+='<div class="tours-orphan-row">'+_qualityVehicleItem(v)+'</div>';});
+    if(orphans.length>300)html+='<div style="font-size:10px;color:var(--text3);padding:6px 0;">Liste limitée à 300.</div>';
+  }
+  html+='</div>';
+  return html;
+}
 function ensureToursMaskTriState(){
   if(GF._toursMaskTriState)return;
   var mig=[
@@ -751,6 +823,7 @@ function ensureToursMaskTriState(){
       GF[m[0]]=(typeof GF[m[1]]==='boolean')?(GF[m[1]]?'exclude':'neutral'):m[2];
     }
   });
+  if(GF.toursMaskSansFiche==null||GF.toursMaskSansFiche===undefined)GF.toursMaskSansFiche='neutral';
   GF._toursMaskTriState=true;
 }
 function cycleToursMaskState(s){
@@ -1383,7 +1456,9 @@ function isToursRowInactif(c,info){
 // matchesToursVehicle : filtre véhicule pour Tournées — sans les exclusions Marché
 // Les exclusions Tournées se gèrent au niveau client via passesToursExclusions
 function matchesToursVehicle(v){
-  // Filtres MARCHÉ (type, vendeur, etc.) n'impactent jamais TOURNÉES
+  var tf=GF.toursTypeFilter||'tous';
+  if(tf==='tracteur'&&!isTracteur(v))return false;
+  if(tf==='porteur'&&!isPorteur(v))return false;
   return true;
 }
 function matchesMarcheClient(c){
@@ -1391,6 +1466,8 @@ function matchesMarcheClient(c){
   if(GF.exclExclusionMarche&&isClientExcludedMarche(c))return false;
   if(GF.exclInactifsMarche&&isInactiveClientMarche(c.tva,c._siteKey||makeSiteKey(c)))return false;
   if(GF.exclAccessibleOffMarche&&!isClientAccessible(c))return false;
+  if(!passesMarcheSitesSecMask(c))return false;
+  if(!passesMarcheFpill(c))return false;
   return true;
 }
 function isVehicleRenewable(v){
@@ -2218,6 +2295,14 @@ function renderMarche(){
     return;
   }
 
+  ensureMarcheMaskTriState();
+  var kTypeVerifierAll=vehicles.filter(isTypeVerifier).length;
+  if((GF.marcheMaskSansFiche||'neutral')==='only'){
+    $('marche-content').innerHTML=_renderMarcheFilterBars(kTypeVerifierAll)+_renderMarcheOrphanPanel();
+    _bindMarcheCoreControls();
+    return;
+  }
+
   var filtered=clients.filter(matchesMarcheClient);
   var filtVeh=vehicles.filter(matchesMarcheVehicle);
   var kClientsActifs=filtered.filter(function(c){var sk=c._siteKey||makeSiteKey(c);return !isInactiveClientMarche(c.tva,sk);}).length;
@@ -2250,20 +2335,7 @@ function renderMarche(){
 
   // === BUILD HTML (KPI immédiats — graphiques en différé) ===
   var html='';
-  var _exclM=GF.exclExclusionMarche;
-  var _inactM=GF.exclInactifsMarche;
-  var _accM=GF.exclAccessibleOffMarche;
-  var _flotteM=GF.exclFlotteNationaleMarche;
-  html+='<div id="marche-sticky-bar" style="display:flex;gap:5px;padding:5px 12px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:10;flex-wrap:wrap;">'
-    +'<button class="gf-btn'+(GF.marcheTypeFilter==='tous'?' gf-on':'')+'" data-mtype="tous">Tous</button>'
-    +'<button class="gf-btn'+(GF.marcheTypeFilter==='tracteur'?' gf-on':'')+'" data-mtype="tracteur">Tracteurs</button>'
-    +'<button class="gf-btn'+(GF.marcheTypeFilter==='porteur'?' gf-on':'')+'" data-mtype="porteur">Porteurs</button>'
-    +'<button class="gf-btn'+(_exclM?' gf-on':'')+'" id="btn-excl-marche" style="margin-left:auto;">'+(_exclM?'⛔ Exclusion ON':'⛔ Exclusion OFF')+'</button>'
-    +'<button class="gf-btn'+(_inactM?' gf-on':'')+'" id="btn-inactifs-marche">'+(_inactM?'💤 Inactifs ON':'💤 Inactifs OFF')+'</button>'
-    +'<button class="gf-btn'+(_accM?' gf-on':'')+'" id="btn-accessible-marche">'+(_accM?'🚫 Accessible OFF ON':'🚫 Accessible OFF OFF')+'</button>'
-    +'<button class="gf-btn'+(_flotteM?' gf-on':'')+'" id="btn-flotte-marche">'+(_flotteM?'Hors Flotte NAT. ON':'Hors Flotte NAT. OFF')+'</button>'
-    +'<span style="width:100%;flex-basis:100%;font-size:9px;color:var(--text3);padding:2px 0 0;">Type à vérifier : <strong style="color:var(--orange);">'+kTypeVerifier+'</strong> immat. (châssis non classé tracteur/porteur) — détail dans ⚙️ Qualité</span>'
-    +'</div>';
+  html+=_renderMarcheFilterBars(kTypeVerifier);
   html+=renderXlsxStatus(xlsxOk);
   // PDM bars
   html+='<div class="obj-bar-wrap">'
@@ -2324,6 +2396,25 @@ function _bindMarcheCoreControls(){
   var _bam=$('btn-accessible-marche');if(_bam)_bam.onclick=function(){GF.exclAccessibleOffMarche=!GF.exclAccessibleOffMarche;invalidateCache();renderMarche();};
   var _bfm=$('btn-flotte-marche');if(_bfm)_bfm.onclick=function(){GF.exclFlotteNationaleMarche=!GF.exclFlotteNationaleMarche;invalidateCache();renderMarche();};
   QA('[data-mtype]').forEach(function(b){b.onclick=function(){setType(this.dataset.mtype);};});
+  QA('#marche-fpills .fpill').forEach(function(el){
+    el.onclick=function(){
+      GF.marcheF=el.dataset.mf||'all';
+      invalidateCache();
+      renderMarche();
+    };
+  });
+  safeOn('btn-marche-mask-sites-sec','click',function(){
+    ensureMarcheMaskTriState();
+    GF.marcheMaskSitesSec=cycleToursMaskState(GF.marcheMaskSitesSec||'neutral');
+    invalidateCache();
+    renderMarche();
+  });
+  safeOn('btn-marche-mask-sans-fiche','click',function(){
+    ensureMarcheMaskTriState();
+    GF.marcheMaskSansFiche=cycleToursMaskState(GF.marcheMaskSansFiche||'neutral');
+    invalidateCache();
+    renderMarche();
+  });
 }
 
 function _renderMarcheDeferred(ctx){
@@ -3278,6 +3369,15 @@ function bindEvents(){
   safeOn('btn-mask-flotte-nat','click',function(){GF.masquerFlotteNationaleTours=!GF.masquerFlotteNationaleTours;renderTours();});
   safeOn('btn-mask-projets','click',function(){ensureToursMaskTriState();GF.toursMaskProjets=cycleToursMaskState(GF.toursMaskProjets||'neutral');var bot=$('tog-masq-proj');if(bot)bot.checked=(GF.toursMaskProjets==='exclude');renderTours();});
   safeOn('btn-mask-sites-sec','click',function(){ensureToursMaskTriState();GF.toursMaskSitesSec=cycleToursMaskState(GF.toursMaskSitesSec||'neutral');renderTours();});
+  safeOn('btn-mask-sans-fiche','click',function(){
+    ensureToursMaskTriState();
+    GF.toursMaskSansFiche=cycleToursMaskState(GF.toursMaskSansFiche||'neutral');
+    if(GF.toursMaskSansFiche!=='only'&&toursF==='orphan_immat')toursF='all';
+    renderTours();
+  });
+  safeOn('btn-tours-type-tous','click',function(){GF.toursTypeFilter='tous';invalidateCache();renderTours();});
+  safeOn('btn-tours-type-trac','click',function(){GF.toursTypeFilter=GF.toursTypeFilter==='tracteur'?'tous':'tracteur';invalidateCache();renderTours();});
+  safeOn('btn-tours-type-port','click',function(){GF.toursTypeFilter=GF.toursTypeFilter==='porteur'?'tous':'porteur';invalidateCache();renderTours();});
   safeOn('btn-expand','click',function(){
     const data=buildToursData().filter(passesToursExclusions);
     data.forEach(function(c){toursExp['c_'+(c.canton||'Sans canton')]=true;toursExp['v_'+(c.canton||'Sans canton')+'_'+(c.ville||'Sans ville')]=true;});
@@ -3706,7 +3806,7 @@ function _toursUrgentForKpi(c){
 }
 function _toursDataCacheKeyFn(){
   ensureToursMaskTriState();
-  return [DB.getBase(),DB.getClients().length,DB.getVehicles().length,(DB.getProjects()||[]).length,GF.vendeur||'',GF.pays||'',GF.dept||'',(GF.profils||[]).join('|'),(GF.cbToursProfils||[]).join('|'),(GF.vendeursTours||[]).join('|'),GF.toursMaskExclus||'',GF.toursMaskAccessible||'',GF.toursMaskInactifs||'',GF.toursMaskProjets||'',GF.toursMaskSitesSec||'',GF.masquerFlotteNationaleTours?'1':'0',GF.masquerFlottesTours?'1':'0'].join(':');
+  return [DB.getBase(),DB.getClients().length,DB.getVehicles().length,(DB.getProjects()||[]).length,GF.vendeur||'',GF.pays||'',GF.dept||'',(GF.profils||[]).join('|'),(GF.cbToursProfils||[]).join('|'),(GF.vendeursTours||[]).join('|'),GF.toursMaskExclus||'',GF.toursMaskAccessible||'',GF.toursMaskInactifs||'',GF.toursMaskProjets||'',GF.toursMaskSitesSec||'',GF.toursMaskSansFiche||'',GF.toursTypeFilter||'tous',GF.masquerFlotteNationaleTours?'1':'0',GF.masquerFlottesTours?'1':'0'].join(':');
 }
 function buildToursData(){
   if(GF.masquerSitesSecondaires===undefined)GF.masquerSitesSecondaires=false;
@@ -3730,13 +3830,17 @@ function _toursSitesSecMaskState(){
   ensureToursMaskTriState();
   return GF.toursMaskSitesSec||'neutral';
 }
-// Sites secondaires : visibilité liste/KPI (5A) — indépendante du site principal et du groupe.
+// Sites secondaires : visibilité liste + KPI Total sites (5A).
 function _toursSecondaryVisible(c,search){
   if(!c||!c.isSiteSecondaire)return true;
   var m=_toursSitesSecMaskState();
   if(m==='exclude')return false;
-  if(m==='only')return true;
-  return !!String(search||'').trim();
+  return true;
+}
+// KPI immatriculations : exclure les secondaires en neutre/OFF (évite double comptage groupe).
+function _toursRowForImmatKpi(c){
+  if(!c||!c.isSiteSecondaire)return true;
+  return _toursSitesSecMaskState()==='only';
 }
 function passesToursExclusions(c){
   ensureToursMaskTriState();
@@ -3744,6 +3848,7 @@ function passesToursExclusions(c){
   if(GF.masquerFlottesTours&&c.isFlotte)return false;
   var greens=[],oranges=[];
   TOURS_MASK_DEFS.forEach(function(d){
+    if(d.id==='sansFiche')return;
     var st=GF[d.key]||'neutral';
     if(st==='only')greens.push(d.id);
     else if(st==='exclude')oranges.push(d.id);
@@ -3797,6 +3902,37 @@ function updateToursMaskButtons(){
   if(elNat){elNat.textContent='Hors Flotte NAT. '+(GF.masquerFlotteNationaleTours?'ON':'OFF');elNat.className='gf-chip'+(GF.masquerFlotteNationaleTours?' on':'');}
   var elFl=$('btn-mask-flottes-all');
   if(elFl){elFl.textContent='Flotte OFF '+(GF.masquerFlottesTours?'ON':'OFF');elFl.className='gf-chip'+(GF.masquerFlottesTours?' on':'');}
+  var tf=GF.toursTypeFilter||'tous';
+  var elTT=$('btn-tours-type-tous');if(elTT)elTT.className='gf-btn'+(tf==='tous'?' gf-on':'');
+  var elTr=$('btn-tours-type-trac');if(elTr)elTr.className='gf-btn'+(tf==='tracteur'?' gf-on':'');
+  var elTp=$('btn-tours-type-port');if(elTp)elTp.className='gf-btn'+(tf==='porteur'?' gf-on':'');
+}
+function _marcheFpillHtml(f,label){
+  var active=(GF.marcheF||'all')===f;
+  return '<div class="fpill'+(active?' active':'')+'" data-mf="'+f+'">'+label+'</div>';
+}
+function _renderMarcheFilterBars(kTypeVerifier){
+  ensureMarcheMaskTriState();
+  var _exclM=GF.exclExclusionMarche,_inactM=GF.exclInactifsMarche,_accM=GF.exclAccessibleOffMarche,_flotteM=GF.exclFlotteNationaleMarche;
+  var _ss=GF.marcheMaskSitesSec||'exclude',_sf=GF.marcheMaskSansFiche||'neutral';
+  var html='<div id="marche-sticky-bar" style="display:flex;gap:5px;padding:5px 12px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:10;flex-wrap:wrap;">'
+    +'<button class="gf-btn'+(GF.marcheTypeFilter==='tous'?' gf-on':'')+'" data-mtype="tous">Tous</button>'
+    +'<button class="gf-btn'+(GF.marcheTypeFilter==='tracteur'?' gf-on':'')+'" data-mtype="tracteur">Tracteurs</button>'
+    +'<button class="gf-btn'+(GF.marcheTypeFilter==='porteur'?' gf-on':'')+'" data-mtype="porteur">Porteurs</button>'
+    +'<button class="gf-btn'+(_exclM?' gf-on':'')+'" id="btn-excl-marche" style="margin-left:auto;">'+(_exclM?'⛔ Exclusion ON':'⛔ Exclusion OFF')+'</button>'
+    +'<button class="gf-btn'+(_inactM?' gf-on':'')+'" id="btn-inactifs-marche">'+(_inactM?'💤 Inactifs ON':'💤 Inactifs OFF')+'</button>'
+    +'<button class="gf-btn'+(_accM?' gf-on':'')+'" id="btn-accessible-marche">'+(_accM?'🚫 Accessible OFF ON':'🚫 Accessible OFF OFF')+'</button>'
+    +'<button class="gf-btn'+(_flotteM?' gf-on':'')+'" id="btn-flotte-marche">'+(_flotteM?'Hors Flotte NAT. ON':'Hors Flotte NAT. OFF')+'</button>'
+    +'<span style="width:100%;flex-basis:100%;font-size:9px;color:var(--text3);padding:2px 0 0;">Type à vérifier : <strong style="color:var(--orange);">'+(kTypeVerifier||0)+'</strong> immat. (châssis non classé tracteur/porteur) — détail dans ⚙️ Qualité</span>'
+    +'</div>';
+  html+='<div id="marche-fpills" class="filter-row" style="padding:4px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;">'
+    +_marcheFpillHtml('all','Tous')+_marcheFpillHtml('daf_with','Avec DAF')+_marcheFpillHtml('no_daf','Sans DAF')
+    +_marcheFpillHtml('urgent','Urgents')+_marcheFpillHtml('protocole','Protocole')+'</div>';
+  html+='<div id="marche-mask-bar" style="display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;background:var(--bg2);border-bottom:1px solid var(--border);">'
+    +'<button class="gf-chip'+(_ss==='exclude'?' mask-exclude':(_ss==='only'?' mask-only':''))+'" id="btn-marche-mask-sites-sec">Sites sec.'+(_ss==='neutral'?'':(' '+_toursMaskLabel(_ss)))+'</button>'
+    +'<button class="gf-chip'+(_sf==='exclude'?' mask-exclude':(_sf==='only'?' mask-only':''))+'" id="btn-marche-mask-sans-fiche">Sans fiche'+(_sf==='neutral'?'':(' '+_toursMaskLabel(_sf)))+'</button>'
+    +'</div>';
+  return html;
 }
 function _dedupVehiclesFromRows(rows){
   var seen={}, out=[];
@@ -3826,7 +3962,7 @@ function _toursVehiclesForSiteRow(c){
   return (getSiteVehicles(c._siteKey)||[]).filter(matchesToursVehicle);
 }
 function getToursKpiSites(kind,baseRows){
-  baseRows=baseRows||buildToursData().filter(passesToursExclusions);
+  baseRows=baseRows||buildToursData().filter(function(c){return passesToursExclusions(c)&&_toursSecondaryVisible(c,'');});
   if(kind==='total')return baseRows.slice();
   if(kind==='inactifs')return baseRows.filter(function(c){return c.isInactif;});
   if(kind==='urgents')return baseRows.filter(_toursUrgentForKpi);
@@ -3835,7 +3971,7 @@ function getToursKpiSites(kind,baseRows){
   return [];
 }
 function getToursKpiVehiclesList(kind,baseRows){
-  var veh=_dedupVehiclesFromRows(baseRows||buildToursData().filter(passesToursExclusions)).filter(matchesToursVehicle);
+  var veh=_dedupVehiclesFromRows(baseRows||buildToursData().filter(function(c){return passesToursExclusions(c)&&_toursRowForImmatKpi(c);})).filter(matchesToursVehicle);
   if(kind==='parc')return veh;
   if(kind==='hors_daf')return veh.filter(function(v){return !isDaf(v);});
   if(kind==='daf')return veh.filter(isDaf);
@@ -3918,7 +4054,8 @@ function _toursKpiCardHtml(k,val,lbl,cls,f,extraTip){
   var tip=extraTip||TOURS_KPI_TIP;
   return '<div class="kpi-card '+cls+(active?' active':'')+'" data-tours-kpi="'+k+'" title="'+escH(tip)+'"'+(active?' style="outline:2px solid var(--daf);outline-offset:1px;"':'')+'><div class="kpi-val">'+val+'</div><div class="kpi-lbl">'+lbl+'</div></div>';
 }
-function _bindToursKpiClicks(baseRows){
+function _bindToursKpiClicks(baseRows,immatRows){
+  immatRows=immatRows||baseRows;
   var siteLabels={total:'Total sites',groupes:'Groupes',fidelisation:'Fidélisation (DAF)',urgents:'Urgents',inactifs:'Clients inactifs'};
   var vehLabels={parc:'Parc total',hors_daf:'Immat. Hors DAF',hors_renew:'Hors DAF renouv.',daf:'Immat. DAF',daf_renew:'DAF à renouveler'};
   var KPI_DBL_MS=280;
@@ -3937,7 +4074,7 @@ function _bindToursKpiClicks(baseRows){
       if(this._kpiClickTimer){clearTimeout(this._kpiClickTimer);this._kpiClickTimer=null;}
       if(k==='groupes')openToursGroupsModal(baseRows);
       else if(siteLabels[k])openToursSiteSelectionModal(siteLabels[k],getToursKpiSites(k,baseRows));
-      else if(vehLabels[k])openMarcheVehicleSelectionModal(vehLabels[k],getToursKpiVehiclesList(k,baseRows));
+      else if(vehLabels[k])openMarcheVehicleSelectionModal(vehLabels[k],getToursKpiVehiclesList(k,immatRows));
     };
   });
 }
@@ -3988,7 +4125,7 @@ function _bindToursListEvents(){
   QA('#tours-list .sec-hdr[data-ck],#tours-list .subsec-hdr[data-ck]').forEach(function(el){el.onclick=function(){const k=el.dataset.ck;toursExp[k]=!el.classList.contains('sec-open');renderTours();};});
   QA('#tours-list .client-row[data-sk]').forEach(function(el){el.onclick=function(){openSiteSheet(el.dataset.sk);};});
   var ob=$('tours-orphan-banner');
-  if(ob){ob.onclick=function(){toursF='orphan_immat';try{window.toursF='orphan_immat';}catch(e){}renderTours();};}
+  if(ob){ob.onclick=function(){ensureToursMaskTriState();GF.toursMaskSansFiche='only';if(toursF==='orphan_immat')toursF='all';renderTours();};}
 }
 function _renderToursListHtml(shown,search,toursSort){
   if(search){
@@ -4013,8 +4150,9 @@ function _renderToursListHtml(shown,search,toursSort){
     html+='<div class="card" style="margin:8px 12px;padding:10px;font-size:11px;color:var(--text3);text-align:center;">'+shown.length+' sites · cliquez un canton ▶ pour déplier</div>';
   }
   var orphanN=getOrphanVehicles().length;
-  if(orphanN>0){
-    html='<div class="tours-orphan-banner" role="button" tabindex="0" id="tours-orphan-banner" style="cursor:pointer;"><div style="font-size:11px;font-weight:800;color:var(--red);">⚠ '+orphanN+' immat. sans fiche client rattachée</div><div style="font-size:10px;color:var(--text2);margin-top:3px;">Cible prioritaire qualité données — cliquez pour afficher la liste</div></div>'+html;
+  var sfMode=GF.toursMaskSansFiche||'neutral';
+  if(orphanN>0&&sfMode!=='exclude'){
+    html='<div class="tours-orphan-banner" role="button" tabindex="0" id="tours-orphan-banner" style="cursor:pointer;"><div style="font-size:11px;font-weight:800;color:var(--red);">⚠ '+orphanN+' immat. sans fiche client rattachée</div><div style="font-size:10px;color:var(--text2);margin-top:3px;">Cible prioritaire qualité données — cliquez pour afficher la liste (Sans fiche ON)</div></div>'+html;
   }
   return html;
 }
@@ -4035,8 +4173,9 @@ function renderTours(){
   var gen=window._toursRenderGen;
   const data=buildToursData();
   const search=toursSearch.toLowerCase().trim();
-  var baseRows=data.filter(function(c){return passesToursExclusions(c)&&_toursSecondaryVisible(c,'');});
-  var kpiBase=_toursKpiFromRows(baseRows);
+  var baseRowsSites=data.filter(function(c){return passesToursExclusions(c)&&_toursSecondaryVisible(c,'');});
+  var baseRowsImmat=data.filter(function(c){return passesToursExclusions(c)&&_toursRowForImmatKpi(c);});
+  var kpiBase=_toursKpiFromRows(baseRowsImmat);
   var f=toursF||'all';
   let shown=data.filter(function(c){
     if(!passesToursExclusions(c))return false;
@@ -4059,12 +4198,12 @@ function renderTours(){
     }
   });
   updateToursMaskButtons();
-  var kTotalSites=baseRows.length;
-  var kClientsInactifs=baseRows.filter(function(c){return c.isInactif;}).length;
-  var kGroupes=getToursGroupsForKpi(baseRows).length;
-  var kFidelisation=baseRows.filter(function(c){return c.parc>0&&c.dafCount>0;}).length;
-  var kUrgent=baseRows.filter(_toursUrgentForKpi).length;
-  var kParc=kpiBase.kParc,kDafVeh=getToursKpiVehiclesList('daf',baseRows).length,kHorsVeh=kParc-kDafVeh,kDafRenew=kpiBase.kDafRenew,kHorsRenew=kpiBase.kHorsRenew;
+  var kTotalSites=baseRowsSites.length;
+  var kClientsInactifs=baseRowsImmat.filter(function(c){return c.isInactif;}).length;
+  var kGroupes=getToursGroupsForKpi(baseRowsImmat).length;
+  var kFidelisation=baseRowsImmat.filter(function(c){return c.parc>0&&c.dafCount>0;}).length;
+  var kUrgent=baseRowsImmat.filter(_toursUrgentForKpi).length;
+  var kParc=kpiBase.kParc,kDafVeh=getToursKpiVehiclesList('daf',baseRowsImmat).length,kHorsVeh=kParc-kDafVeh,kDafRenew=kpiBase.kDafRenew,kHorsRenew=kpiBase.kHorsRenew;
   var parcTip='Toutes immat. rattachées SIRET sur les sites visibles (aligné sur Marché si masques OFF). '+TOURS_KPI_TIP;
   var kpiHtml='<div class="marche-kpi-cols">'
     +'<div><div class="marche-kpi-side-lbl">Sites</div>'
@@ -4084,9 +4223,11 @@ function renderTours(){
     +_toursKpiCardHtml('daf_renew',kDafRenew,'DAF à renouveler','c-orange',f)
     +'</div></div></div>';
   $('tours-counters').innerHTML=kpiHtml;
-  _bindToursKpiClicks(baseRows);
+  _bindToursKpiClicks(baseRowsSites,baseRowsImmat);
   QA('#tours-fpills .fpill').forEach(function(p){p.classList.toggle('active',p.dataset.f===f||(f==='all'&&p.dataset.f==='all'));});
-  if(f==='orphan_immat'){
+  ensureToursMaskTriState();
+  if(f==='orphan_immat'||(GF.toursMaskSansFiche||'neutral')==='only'){
+    if(f==='orphan_immat'){GF.toursMaskSansFiche='only';toursF='all';}
     var listElOr=$('tours-list');
     if(listElOr){listElOr.innerHTML=_renderOrphanVehiclesList(search);_bindOrphanListEvents();}
     _restoreToursScroll(scrollSave);
@@ -4834,7 +4975,7 @@ function getToursShownRowsForParc(){
   if(f==='orphan_immat'||f==='non_possessed')f='all';
   return data.filter(function(c){
     if(typeof passesToursExclusions==='function'&&!passesToursExclusions(c))return false;
-    if(typeof _toursSecondaryVisible==='function'&&!_toursSecondaryVisible(c,search))return false;
+    if(typeof _toursRowForImmatKpi==='function'&&!_toursRowForImmatKpi(c))return false;
     if(search&&![c.nom,c.ville,c.canton,c.vendeur,c.profil,c.tva,c.siret,c.groupement].join(' ').toLowerCase().includes(search))return false;
     switch(f){
       case 'actifs':return !c.isInactif;
