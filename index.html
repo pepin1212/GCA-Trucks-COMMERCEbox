@@ -61,6 +61,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .search-bar{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:9px 13px;margin:7px 12px}
 .search-bar input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:15px}
 .search-bar input::placeholder{color:var(--text3)}
+#marche-search-wrap{position:relative;z-index:20}
+#marche-search-dd{position:absolute;left:0;right:0;top:calc(100% - 1px);max-height:65vh;overflow:auto;background:var(--bg2);border:1px solid var(--border);border-radius:0 0 var(--radius) var(--radius);box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:60}
+.marche-search-item{display:block;width:100%;text-align:left;padding:9px 12px;border:none;border-bottom:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer}
+.marche-search-item:hover,.marche-search-item:focus{background:var(--bg3)}
+.marche-search-item-sub{font-size:10px;color:var(--text3);margin-top:2px}
+.marche-filter-dimmed{opacity:.42;pointer-events:none;filter:grayscale(.15)}
+#marche-focus-scope .gf-chip.on{background:var(--daf-bg);border-color:var(--daf-border);color:var(--daf)}
 .btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:700;border:none;cursor:pointer;transition:all .15s;gap:5px}
 .btn:active{transform:scale(.96)}
 .btn-primary{background:var(--daf);color:#000}.btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border2)}.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}.btn-green{background:var(--green);color:#fff}.btn-red{background:var(--red);color:#fff}.btn-blue{background:var(--blue);color:#fff}.btn-orange{background:var(--orange);color:#fff}
@@ -191,6 +198,19 @@ input[type=file]{display:none}
       </div>
     </div>
   </div>
+  <div id="marche-search-wrap" style="position:sticky;top:0;z-index:12;background:var(--bg2);border-bottom:1px solid var(--border);">
+    <div class="search-bar" id="marche-search-bar" style="margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;border-bottom:none;">
+      <span>🔍</span>
+      <input type="text" id="marche-search" placeholder="Client, ville, TVA, immatriculation…" autocomplete="off">
+      <button type="button" class="btn btn-ghost btn-sm" id="marche-search-clear" title="Effacer la recherche" style="min-width:30px;height:30px;padding:0;border-radius:50%;font-size:13px;line-height:1;">✕</button>
+    </div>
+    <div id="marche-search-dd" style="display:none;"></div>
+    <div id="marche-focus-scope" style="display:flex;gap:5px;padding:0 12px 6px;flex-wrap:wrap;align-items:center;">
+      <span style="font-size:9px;color:var(--text3);margin-right:2px;">Périmètre :</span>
+      <button type="button" class="gf-chip on" id="marche-scope-site">Site seul</button>
+      <button type="button" class="gf-chip" id="marche-scope-group">Tout le groupe</button>
+    </div>
+  </div>
   <div id="marche-content" style="padding-top:6px;"></div>
 </div>
 
@@ -256,6 +276,19 @@ input[type=file]{display:none}
   <div id="livraisons-content" style="padding-top:6px;"></div>
 </div>
 
+<div class="screen" id="screen-activite">
+  <div class="screen-header">
+    <div class="screen-title">📋 Activité</div>
+    <div style="font-size:10px;color:var(--text3);padding-top:2px;">Sans projet · Projet · Affaire</div>
+  </div>
+  <div class="search-bar" id="activite-search-bar" style="position:sticky;top:0;z-index:11;margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;">
+    <span>🔍</span><input type="text" id="activite-search" placeholder="Client, action, statut…">
+    <button type="button" class="btn btn-ghost btn-sm" id="activite-search-clear" title="Effacer la recherche" style="min-width:30px;height:30px;padding:0;border-radius:50%;font-size:13px;line-height:1;">✕</button>
+  </div>
+  <div id="activite-filters" style="padding:4px 12px 6px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:48px;z-index:10;"></div>
+  <div id="activite-content" style="padding-top:4px;"></div>
+</div>
+
 <div class="screen" id="screen-more">
   <div class="screen-header"><div class="screen-title">⚙️ Plus</div></div>
   <div id="more-content" style="padding-top:6px;"></div>
@@ -266,6 +299,7 @@ input[type=file]{display:none}
   <div class="nav-item" data-screen="tours"><span class="nav-icon">&#128506;</span><span class="nav-label">Tourn&#233;es</span></div>
   <div class="nav-item" data-screen="affaires"><span class="nav-icon">🔥</span><span class="nav-label">Affaires</span></div>
   <div class="nav-item" data-screen="livraisons"><span class="nav-icon">🚚</span><span class="nav-label">Livraisons</span></div>
+  <div class="nav-item" data-screen="activite"><span class="nav-icon">📋</span><span class="nav-label">Activité</span></div>
 
   <div class="nav-item" id="nav-save-btn"><span class="nav-icon" id="nav-save-icon">&#128190;</span><span class="nav-label" id="nav-save-lbl">Backup</span></div>
   <div class="nav-item" data-screen="more"><span class="nav-icon">&#9881;&#65039;</span><span class="nav-label">Plus</span></div>
@@ -292,7 +326,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v60';
+const APP_BUILD='2026-05-27-bases-v63';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -765,8 +799,8 @@ const GF = {
   exclAccessibleOffMarche: false,
   exclFlotteNationaleMarche: false,
   // TOURNÉES : masques tri-état (neutral | exclude=OFF orange | only=ON vert)
-  toursMaskExclus: 'neutral',
-  toursMaskAccessible: 'neutral',
+  toursMaskExclus: 'exclude',
+  toursMaskAccessible: 'exclude',
   toursMaskInactifs: 'exclude',
   toursMaskProjets: 'exclude',
   toursMaskSitesSec: 'exclude',
@@ -776,17 +810,154 @@ const GF = {
   marcheF: 'all',
   toursTypeFilter: 'tous',
   // legacy booléens (migration uniquement)
-  masquerExclusTours: false,
+  masquerExclusTours: true,
   masquerInactifsTours: true,
   masquerFlotteNationaleTours: false,
   masquerProjet: true,
   masquerSitesSecondaires: true,
-  masquerAccessibleOffTours: false,
+  masquerAccessibleOffTours: true,
   cbToursProfils: null,
   marcheTypeFilter: 'tous',
+  marcheFocus: {active:false,siteKey:null,scope:'site',label:'',query:''},
 };
+function isMarcheFocusActive(){return !!(GF.marcheFocus&&GF.marcheFocus.active&&GF.marcheFocus.siteKey);}
+function marcheFocusHasGroup(sk){
+  if(!sk)return false;
+  var g=typeof getGroupForSiteKey==='function'?getGroupForSiteKey(sk):null;
+  return !!(g&&g.siteKeys&&g.siteKeys.length>1);
+}
+function marcheFocusSiteKeys(){
+  var f=GF.marcheFocus||{};
+  if(!f.active||!f.siteKey)return new Set();
+  if(f.scope==='group'&&marcheFocusHasGroup(f.siteKey)){
+    var g=getGroupForSiteKey(f.siteKey);
+    return new Set((g.siteKeys||[]).slice());
+  }
+  return new Set([f.siteKey]);
+}
+function normPlateForSearch(s){return String(s||'').toUpperCase().replace(/[\s.\-_/]/g,'');}
+function matchPlateQuery(plate,q){
+  var p=normPlateForSearch(plate),qq=normPlateForSearch(q);
+  if(!qq||!p)return false;
+  return p.indexOf(qq)>=0;
+}
+function searchMarcheSuggestions(q){
+  var qq=String(q||'').trim();
+  if(!qq)return [];
+  var ql=qq.toLowerCase(), seen={}, out=[];
+  var clients=DB.getClients()||[], vehicles=DB.getVehicles()||[];
+  clients.forEach(function(c){
+    var sk=c._siteKey||makeSiteKey(c);
+    var hay=[c.nom,c.ville,c.tva,c.siret,c.vendeur,c.canton,c.profil,c.groupement].join(' ').toLowerCase();
+    if(hay.indexOf(ql)<0)return;
+    if(seen[sk])return;
+    seen[sk]=true;
+    out.push({sk:sk,nom:c.nom||'—',ville:c.ville||'',via:'client',plaque:''});
+  });
+  vehicles.forEach(function(v){
+    if(!matchPlateQuery(v.plaque,qq))return;
+    var c=typeof _marcheClientForVehicle==='function'?_marcheClientForVehicle(v):null;
+    if(!c)return;
+    var sk=c._siteKey||makeSiteKey(c);
+    if(seen[sk]){
+      var ex=out.find(function(r){return r.sk===sk;});
+      if(ex&&ex.plaque.indexOf(v.plaque||'')<0)ex.plaque+=(ex.plaque?', ':'')+(v.plaque||'');
+      return;
+    }
+    seen[sk]=true;
+    out.push({sk:sk,nom:c.nom||'—',ville:c.ville||'',via:'immat',plaque:v.plaque||''});
+  });
+  out.sort(function(a,b){return String(a.nom||'').localeCompare(String(b.nom||''),'fr');});
+  return out;
+}
+function updateMarcheScopeButtons(){
+  var f=GF.marcheFocus||{}, site=$('marche-scope-site'), grp=$('marche-scope-group');
+  var scope=f.scope||'site', hasGrp=isMarcheFocusActive()?marcheFocusHasGroup(f.siteKey):true;
+  if(site)site.classList.toggle('on',scope!=='group');
+  if(grp){
+    grp.classList.toggle('on',scope==='group');
+    grp.disabled=isMarcheFocusActive()&&!marcheFocusHasGroup(f.siteKey);
+    grp.title=isMarcheFocusActive()&&!marcheFocusHasGroup(f.siteKey)?'Aucun groupe pour ce site':'';
+  }
+}
+function renderMarcheSearchDropdown(items){
+  var dd=$('marche-search-dd');if(!dd)return;
+  if(!items||!items.length){dd.style.display='none';dd.innerHTML='';return;}
+  var html='';
+  items.forEach(function(it,i){
+    var sub=it.ville?escH(it.ville):'';
+    if(it.via==='immat'&&it.plaque)sub+=(sub?' · ':'')+'🚗 '+escH(it.plaque);
+    if(marcheFocusHasGroup(it.sk))sub+=(sub?' · ':'')+'👥 Groupe disponible';
+    html+='<button type="button" class="marche-search-item" data-marche-pick="'+i+'"><div style="font-size:12px;font-weight:700;">'+escH(it.nom)+'</div>'+(sub?'<div class="marche-search-item-sub">'+sub+'</div>':'')+'</button>';
+  });
+  dd.innerHTML=html;
+  dd.style.display='block';
+  dd._items=items;
+  QA('#marche-search-dd .marche-search-item').forEach(function(btn){
+    btn.onclick=function(){
+      var idx=parseInt(this.dataset.marchePick,10), row=dd._items&&dd._items[idx];
+      if(!row)return;
+      setMarcheClientFocus(row.sk,GF.marcheFocus.scope||'site',row.nom);
+      dd.style.display='none';
+    };
+  });
+}
+function setMarcheClientFocus(sk,scope,label){
+  if(!sk)return;
+  var sc=GF.marcheFocus.scope||'site';
+  if(scope)sc=scope;
+  if(sc==='group'&&!marcheFocusHasGroup(sk))sc='site';
+  GF.marcheFocus={active:true,siteKey:sk,scope:sc,label:label||'',query:label||''};
+  var inp=$('marche-search');if(inp)inp.value=GF.marcheFocus.label;
+  updateMarcheScopeButtons();
+  try{invalidateCache();}catch(e){}
+  if(currentScreen==='marche')renderMarche();
+}
+function clearMarcheClientFocus(doRender){
+  GF.marcheFocus={active:false,siteKey:null,scope:'site',label:'',query:''};
+  var inp=$('marche-search');if(inp)inp.value='';
+  var dd=$('marche-search-dd');if(dd){dd.style.display='none';dd.innerHTML='';}
+  updateMarcheScopeButtons();
+  if(doRender!==false&&currentScreen==='marche'){try{invalidateCache();}catch(e){}renderMarche();}
+}
+window.setMarcheClientFocus=setMarcheClientFocus;
+window.clearMarcheClientFocus=clearMarcheClientFocus;
+window.isMarcheFocusActive=isMarcheFocusActive;
+window.marcheFocusSiteKeys=marcheFocusSiteKeys;
+var _marcheSearchTimer=null;
+function onMarcheSearchInput(){
+  var inp=$('marche-search');if(!inp)return;
+  var q=inp.value;
+  GF.marcheFocus.query=q;
+  if(isMarcheFocusActive()&&(q||'').trim()!==(GF.marcheFocus.label||'').trim()){
+    GF.marcheFocus.active=false;
+    GF.marcheFocus.siteKey=null;
+    updateMarcheScopeButtons();
+    try{invalidateCache();}catch(e){}
+    if(currentScreen==='marche')renderMarche();
+  }
+  clearTimeout(_marcheSearchTimer);
+  _marcheSearchTimer=setTimeout(function(){
+    renderMarcheSearchDropdown(searchMarcheSuggestions(q));
+  },120);
+}
+function bindMarcheSearchEvents(){
+  var inp=$('marche-search'), clr=$('marche-search-clear'), site=$('marche-scope-site'), grp=$('marche-scope-group');
+  if(inp&&!inp._marcheBound){inp._marcheBound=true;inp.oninput=onMarcheSearchInput;inp.onfocus=function(){if((inp.value||'').trim())renderMarcheSearchDropdown(searchMarcheSuggestions(inp.value));};}
+  if(clr&&!clr._marcheBound){clr._marcheBound=true;clr.onclick=function(){clearMarcheClientFocus(true);};}
+  if(site&&!site._marcheBound){site._marcheBound=true;site.onclick=function(){GF.marcheFocus.scope='site';updateMarcheScopeButtons();if(isMarcheFocusActive()){invalidateCache();renderMarche();}};}
+  if(grp&&!grp._marcheBound){grp._marcheBound=true;grp.onclick=function(){if(isMarcheFocusActive()&&!marcheFocusHasGroup(GF.marcheFocus.siteKey))return;GF.marcheFocus.scope='group';updateMarcheScopeButtons();if(isMarcheFocusActive()){invalidateCache();renderMarche();}};}
+  if(!window._marcheSearchDocBound){
+    window._marcheSearchDocBound=true;
+    document.addEventListener('click',function(e){
+      var w=$('marche-search-wrap');
+      if(w&&e.target&&!w.contains(e.target)){var dd=$('marche-search-dd');if(dd)dd.style.display='none';}
+    });
+  }
+  updateMarcheScopeButtons();
+}
 function resolveDefaultToursProfils(){
-  var patterns=[/coordonn/i,/r[eé]gion/i,/vente.*d[eé]tail|d[eé]tail/i];
+  var patterns=[/flotte\s*coordonn/i,/flotte\s*r[eé]gion/i,/vente\s*d[eé]tail/i];
   var profiles=(typeof getDistinctProfils==='function'?getDistinctProfils():[]);
   var out=[];
   patterns.forEach(function(re){
@@ -872,8 +1043,8 @@ function _renderMarcheOrphanPanel(){
 function ensureToursMaskTriState(){
   if(GF._toursMaskTriState)return;
   var mig=[
-    ['toursMaskExclus','masquerExclusTours','neutral'],
-    ['toursMaskAccessible','masquerAccessibleOffTours','neutral'],
+    ['toursMaskExclus','masquerExclusTours','exclude'],
+    ['toursMaskAccessible','masquerAccessibleOffTours','exclude'],
     ['toursMaskInactifs','masquerInactifsTours','exclude'],
     ['toursMaskProjets','masquerProjet','exclude'],
     ['toursMaskSitesSec','masquerSitesSecondaires','exclude']
@@ -1782,6 +1953,8 @@ function getDistinctCarrosseries(){const s=new Set();DB.getVehicles().forEach(v=
 // ===== NAVIGATION =====
 var currentScreen='marche';
 function showScreen(name){
+  if(currentScreen==='marche'&&name!=='marche')clearMarcheClientFocus(false);
+  if(name==='activite'&&typeof window.openActiviteScreen==='function'){window.openActiviteScreen();return;}
   QA('.screen').forEach(s=>s.classList.remove('active'));
   QA('.nav-item').forEach(n=>n.classList.remove('active'));
   const sc=$('screen-'+name);
@@ -2356,8 +2529,9 @@ function renderMarche(){
   }
 
   ensureMarcheMaskTriState();
+  syncMarcheSearchUi();
   var kTypeVerifierAll=vehicles.filter(isTypeVerifier).length;
-  if((GF.marcheMaskSansFiche||'neutral')==='only'){
+  if((GF.marcheMaskSansFiche||'neutral')==='only'&&!isMarcheFocusActive()){
     $('marche-content').innerHTML=_renderMarcheFilterBars(kTypeVerifierAll)+_renderMarcheOrphanPanel();
     _bindMarcheCoreControls();
     return;
@@ -2396,6 +2570,12 @@ function renderMarche(){
   // === BUILD HTML (KPI immédiats — graphiques en différé) ===
   var html='';
   html+=_renderMarcheFilterBars(kTypeVerifier);
+  if(isMarcheFocusActive()){
+    var _fScope=GF.marcheFocus.scope==='group'&&marcheFocusHasGroup(GF.marcheFocus.siteKey)?'Tout le groupe':'Site seul';
+    html+='<div class="card" style="margin:6px 12px 0;padding:8px 12px;border-color:var(--daf-border);background:var(--daf-bg);">'
+      +'<div style="font-size:12px;font-weight:800;color:var(--daf);">🎯 Vue client — '+escH(GF.marcheFocus.label||'—')+' <span style="font-weight:600;font-size:10px;color:var(--text2);">('+escH(_fScope)+')</span></div>'
+      +'<div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4;">Filtres Marché neutralisés pour ce client · ✕ dans la barre de recherche pour revenir au marché global · changez de page pour réactiver les filtres</div></div>';
+  }
   html+=renderXlsxStatus(xlsxOk);
   // PDM bars
   html+='<div class="obj-bar-wrap">'
@@ -3459,6 +3639,7 @@ function bindEvents(){
   window.addEventListener('beforeunload',function(e){if(_unsavedChanges&&DB.getClients().length>0){e.preventDefault();e.returnValue='Des données non exportées existent.';}});
   scheduleAutoBackup();
   initToursDefaultFilters();
+  bindMarcheSearchEvents();
   // Enregistrement du service worker pour le mode hors-ligne (PWA).
   if('serviceWorker' in navigator){
     navigator.serviceWorker.register('./service-worker.js?v='+encodeURIComponent(APP_BUILD)).then(function(reg){
@@ -3505,6 +3686,7 @@ function renderQuickActions(c,group){var adresseStr=[c.adresse,c.ville,c.dept,c.
   ${adresseStr?`<button class="btn btn-secondary btn-sm" id="btn-copy-site-addr">📋 Copier adresse</button>`:''}
   ${c.siret?`<button class="btn btn-secondary btn-sm" id="btn-copy-site-siret">📋 Copier SIRET</button><a href="https://www.google.com/search?q=${encodeURIComponent(c.siret)}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">🔎 SIRET Safari</a>`:''}
   <a href="${wazeUrl}" target="_blank" class="btn btn-blue btn-sm" style="text-decoration:none;">🧭 Waze</a>
+  <button class="btn btn-primary btn-sm" id="btn-show-in-marche">📊 Afficher dans Marché</button>
   ${group?`<button class="btn btn-secondary btn-sm btn-open-group-sheet" data-gid="${escH(group.id)}">👥 Voir groupe</button>`:''}
 </div>`;}
 function renderContactsBlock(sk){var st=getAppSettings();var contacts=(st.siteContacts&&st.siteContacts[sk])||[];var html=contacts.map(function(ct,i){return `<div class="diag-row"><div><div style="font-size:11px;font-weight:700;color:var(--text);">${escH((ct.prenom||'')+' '+(ct.nom||''))}</div><div style="font-size:10px;color:var(--text3);">${escH(ct.poste||'')} ${ct.tel?' · '+escH(ct.tel):''} ${ct.mail?' · '+escH(ct.mail):''}</div></div><button class="hist-del contact-del" data-i="${i}">✕</button></div>`;}).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun contact renseigné</div>';return `<div class="card" style="margin:0 0 9px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="card-title" style="margin:0;">👤 Contacts</div><button class="btn btn-secondary btn-sm" id="btn-add-contact">+ Contact</button></div><div style="margin-top:8px;">${html}</div></div>`;}
@@ -3709,6 +3891,7 @@ function openSiteSheet(sk){
     <div><div class="card-title" style="margin-bottom:5px;">📝 Historique CRM</div><div style="background:var(--bg3);border-radius:var(--radius);overflow:hidden;">${histHtml}</div></div>
   </div>`;
   openSheet(c.nom||'Fiche site',html);
+  safeOn('btn-show-in-marche','click',function(){setMarcheClientFocus(sk,'site',c.nom||'');showScreen('marche');});
   safeOn('btn-copy-site-addr','click',function(){if(navigator.clipboard)navigator.clipboard.writeText(adresseStr).then(function(){toast('Adresse copiée');});});
   safeOn('btn-copy-site-siret','click',function(){if(navigator.clipboard)navigator.clipboard.writeText(c.siret||'').then(function(){toast('SIRET copié');});});safeOn('btn-add-site-address','click',function(){openExtraAddressModal(sk);});QA('#sheet-body .extra-address-del').forEach(function(b){b.onclick=function(){deleteExtraAddress(sk,parseInt(this.dataset.i));};});QA('#sheet-body .extra-address-copy').forEach(function(b){b.onclick=function(){var a=getExtraAddresses(sk)[parseInt(this.dataset.i)];if(a&&navigator.clipboard)navigator.clipboard.writeText(a.address||'').then(function(){toast('Adresse copiée');});};});
   QA('#sheet-body .btn-open-group-sheet').forEach(function(b){b.onclick=function(){var gid=this.dataset.gid;if(gid)openGroupSheet(gid);};});
@@ -3972,11 +4155,18 @@ function _marcheFpillHtml(f,label){
   var active=(GF.marcheF||'all')===f;
   return '<div class="fpill'+(active?' active':'')+'" data-mf="'+f+'">'+label+'</div>';
 }
+function syncMarcheSearchUi(){
+  var inp=$('marche-search');
+  if(inp&&isMarcheFocusActive())inp.value=GF.marcheFocus.label||'';
+  else if(inp&&!isMarcheFocusActive()&&!(GF.marcheFocus.query||'').trim())inp.value='';
+  updateMarcheScopeButtons();
+}
 function _renderMarcheFilterBars(kTypeVerifier){
   ensureMarcheMaskTriState();
+  var _dim=isMarcheFocusActive()?' marche-filter-dimmed':'';
   var _exclM=GF.exclExclusionMarche,_inactM=GF.exclInactifsMarche,_accM=GF.exclAccessibleOffMarche,_flotteM=GF.exclFlotteNationaleMarche;
   var _ss=GF.marcheMaskSitesSec||'exclude',_sf=GF.marcheMaskSansFiche||'neutral';
-  var html='<div id="marche-sticky-bar" style="display:flex;gap:5px;padding:5px 12px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:10;flex-wrap:wrap;">'
+  var html='<div id="marche-sticky-bar" class="'+_dim+'" style="display:flex;gap:5px;padding:5px 12px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:10;flex-wrap:wrap;">'
     +'<button class="gf-btn'+(GF.marcheTypeFilter==='tous'?' gf-on':'')+'" data-mtype="tous">Tous</button>'
     +'<button class="gf-btn'+(GF.marcheTypeFilter==='tracteur'?' gf-on':'')+'" data-mtype="tracteur">Tracteurs</button>'
     +'<button class="gf-btn'+(GF.marcheTypeFilter==='porteur'?' gf-on':'')+'" data-mtype="porteur">Porteurs</button>'
@@ -3986,10 +4176,10 @@ function _renderMarcheFilterBars(kTypeVerifier){
     +'<button class="gf-btn'+(_flotteM?' gf-on':'')+'" id="btn-flotte-marche">'+(_flotteM?'Hors Flotte NAT. ON':'Hors Flotte NAT. OFF')+'</button>'
     +'<span style="width:100%;flex-basis:100%;font-size:9px;color:var(--text3);padding:2px 0 0;">Type à vérifier : <strong style="color:var(--orange);">'+(kTypeVerifier||0)+'</strong> immat. (châssis non classé tracteur/porteur) — détail dans ⚙️ Qualité</span>'
     +'</div>';
-  html+='<div id="marche-fpills" class="filter-row" style="padding:4px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;">'
+  html+='<div id="marche-fpills" class="filter-row'+_dim+'" style="padding:4px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;">'
     +_marcheFpillHtml('all','Tous')+_marcheFpillHtml('daf_with','Avec DAF')+_marcheFpillHtml('no_daf','Sans DAF')
     +_marcheFpillHtml('urgent','Urgents')+_marcheFpillHtml('protocole','Protocole')+'</div>';
-  html+='<div id="marche-mask-bar" style="display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;background:var(--bg2);border-bottom:1px solid var(--border);">'
+  html+='<div id="marche-mask-bar" class="'+_dim+'" style="display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;background:var(--bg2);border-bottom:1px solid var(--border);">'
     +'<button class="gf-chip'+(_ss==='exclude'?' mask-exclude':(_ss==='only'?' mask-only':''))+'" id="btn-marche-mask-sites-sec">Sites sec.'+(_ss==='neutral'?'':(' '+_toursMaskLabel(_ss)))+'</button>'
     +'<button class="gf-chip'+(_sf==='exclude'?' mask-exclude':(_sf==='only'?' mask-only':''))+'" id="btn-marche-mask-sans-fiche">Sans fiche'+(_sf==='neutral'?'':(' '+_toursMaskLabel(_sf)))+'</button>'
     +'</div>';
@@ -8825,9 +9015,9 @@ document.addEventListener('DOMContentLoaded',function(){
 
   // Hook renderScreen and showScreen
   var _oldRS=window.renderScreen;
-  window.renderScreen=function(name){if(name==='activite'){renderActivite();return;}return _oldRS?_oldRS(name):undefined;};
+  window.renderScreen=function(name){if(name==='activite'){if(typeof window.openActiviteScreen==='function'){window.openActiviteScreen();return;}renderActivite();return;}return _oldRS?_oldRS(name):undefined;};
   var _oldShow=window.showScreen;
-  window.showScreen=function(name){injectActiviteScreen();var r=_oldShow?_oldShow(name):undefined;if(name==='activite'){setTimeout(renderActivite,30);}return r;};
+  window.showScreen=function(name){if(name==='activite'&&typeof window.openActiviteScreen==='function'){window.openActiviteScreen();return;}injectActiviteScreen();var r=_oldShow?_oldShow(name):undefined;if(name==='activite'){setTimeout(renderActivite,30);}return r;};
 
   // Retour visuel apres creation projet
   var _origRA3=window.renderAffaires;
@@ -9218,7 +9408,8 @@ document.addEventListener('DOMContentLoaded',function(){
   function ensureProfileState(){
     if(typeof GF!=='object')return;
     if(!Array.isArray(GF.cbMarcheProfils))GF.cbMarcheProfils=[];
-    if(!Array.isArray(GF.cbToursProfils))GF.cbToursProfils=[];
+    if(GF.cbToursProfils===null||GF.cbToursProfils===undefined)GF.cbToursProfils=typeof resolveDefaultToursProfils==='function'?resolveDefaultToursProfils():[];
+    else if(!Array.isArray(GF.cbToursProfils))GF.cbToursProfils=[];
     // Les anciens boutons Flotte sont remplacés par le filtre profil commercial.
     GF.exclFlotteNationaleMarche=false;
     GF.marcheFlotteRegionale=false;
@@ -9352,7 +9543,8 @@ document.addEventListener('DOMContentLoaded',function(){
   function initState(){
     if(typeof GF!=='object')window.GF={};
     if(!Array.isArray(GF.cbMarcheProfils))GF.cbMarcheProfils=[];
-    if(!Array.isArray(GF.cbToursProfils))GF.cbToursProfils=[];
+    if(GF.cbToursProfils===null||GF.cbToursProfils===undefined)GF.cbToursProfils=typeof resolveDefaultToursProfils==='function'?resolveDefaultToursProfils():[];
+    else if(!Array.isArray(GF.cbToursProfils))GF.cbToursProfils=[];
     GF.exclFlotteNationaleMarche=false;
     GF.marcheFlotteRegionale=false;
     GF.masquerFlotteNationaleTours=false;
@@ -9572,8 +9764,8 @@ document.addEventListener('DOMContentLoaded',function(){
 
   // ===== Hooks =====
   wrapSheetFn('openSiteSheet');wrapSheetFn('openClientSheet');wrapPasProjet();
-  var oldShow=window.showScreen;window.showScreen=function(name){ensureActivityScreen();var r=oldShow?oldShow.apply(this,arguments):undefined;if(name==='activite')setTimeout(renderActiviteClean,50);if(name==='affaires')setTimeout(injectAffairesTools,120);return r;};
-  var oldRS=window.renderScreen;window.renderScreen=function(name){if(name==='activite'){renderActiviteClean();return;}var r=oldRS?oldRS.apply(this,arguments):undefined;if(name==='affaires')setTimeout(injectAffairesTools,120);return r;};
+  var oldShow=window.showScreen;window.showScreen=function(name){if(name==='activite'&&typeof window.openActiviteScreen==='function'){window.openActiviteScreen();return;}ensureActivityScreen();var r=oldShow?oldShow.apply(this,arguments):undefined;if(name==='activite')setTimeout(renderActiviteClean,50);if(name==='affaires')setTimeout(injectAffairesTools,120);return r;};
+  var oldRS=window.renderScreen;window.renderScreen=function(name){if(name==='activite'){if(typeof window.renderActivitePage==='function'){window.renderActivitePage();return;}renderActiviteClean();return;}var r=oldRS?oldRS.apply(this,arguments):undefined;if(name==='affaires')setTimeout(injectAffairesTools,120);return r;};
   var oldRA=window.renderAffaires;if(typeof oldRA==='function'){window.renderAffaires=function(){var r=oldRA.apply(this,arguments);setTimeout(injectAffairesTools,80);return r;};}
   // Créer affaire : si un nouveau hotDeal est sauvegardé, journalise création affaire une seule fois.
   var oldSaveHD=window.saveHotDeals; if(typeof oldSaveHD==='function'&&!oldSaveHD._cbWrapped){var seen={};try{(window.getHotDeals?window.getHotDeals():[]).forEach(function(d){seen[d.id]=1;});}catch(e){};var sh=function(list){(list||[]).forEach(function(d){if(d&&d.id&&!seen[d.id]){seen[d.id]=1;window.cbLogActivity({type:'DEAL_CREATE',clientNom:d.client||'',tva:d.tva||'',status:d.status||'',dealId:d.id,description:'Affaire créée'});}});return oldSaveHD.apply(this,arguments);};sh._cbWrapped=true;window.saveHotDeals=sh;}
@@ -9687,10 +9879,10 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   // ---------- Hooks robustes ----------
-  var oldShow=window.showScreen; window.showScreen=function(name){ensureActivityScreen(); if(name==='activite'){qsa('.screen').forEach(function(s){s.classList.remove('active')}); qsa('.nav-item').forEach(function(n){n.classList.toggle('active',n.dataset.screen==='activite')}); byId('screen-activite').classList.add('active'); window.currentScreen='activite'; renderActivity(); return;} var r=oldShow?oldShow.apply(this,arguments):undefined; if(name==='affaires')setTimeout(injectAffairesDateControls,120); if(name==='livraisons'){syncWonDealsToDeliveries();} return r };
-  var oldRenderScreen=window.renderScreen; window.renderScreen=function(name){if(name==='activite'){renderActivity();return} var r=oldRenderScreen?oldRenderScreen.apply(this,arguments):undefined; if(name==='affaires')setTimeout(injectAffairesDateControls,120); if(name==='livraisons')syncWonDealsToDeliveries(); return r};
+  var oldShow=window.showScreen; window.showScreen=function(name){if(name==='activite'&&typeof window.openActiviteScreen==='function'){window.openActiviteScreen();return;}ensureActivityScreen(); if(name==='activite'){qsa('.screen').forEach(function(s){s.classList.remove('active')}); qsa('.nav-item').forEach(function(n){n.classList.toggle('active',n.dataset.screen==='activite')}); var sc=byId('screen-activite'); if(sc)sc.classList.add('active'); window.currentScreen='activite'; renderActivity(); return;} var r=oldShow?oldShow.apply(this,arguments):undefined; if(name==='affaires')setTimeout(injectAffairesDateControls,120); if(name==='livraisons'){syncWonDealsToDeliveries();} return r };
+  var oldRenderScreen=window.renderScreen; window.renderScreen=function(name){if(name==='activite'){if(typeof window.renderActivitePage==='function'){window.renderActivitePage();return;}renderActivity();return} var r=oldRenderScreen?oldRenderScreen.apply(this,arguments):undefined; if(name==='affaires')setTimeout(injectAffairesDateControls,120); if(name==='livraisons')syncWonDealsToDeliveries(); return r};
   var oldRenderAffaires=window.renderAffaires; if(typeof oldRenderAffaires==='function'){window.renderAffaires=function(){var r=oldRenderAffaires.apply(this,arguments); setTimeout(injectAffairesDateControls,80); return r}};
-  document.addEventListener('click',function(e){var nav=e.target.closest('.nav-item[data-screen="activite"]'); if(nav){e.preventDefault(); e.stopPropagation(); showScreen('activite')}},true);
+  document.addEventListener('click',function(e){var nav=e.target.closest('.nav-item[data-screen="activite"]'); if(nav){e.preventDefault(); e.stopPropagation(); if(typeof window.openActiviteScreen==='function')window.openActiviteScreen(); else showScreen('activite');}},true);
   document.addEventListener('DOMContentLoaded',function(){setTimeout(function(){ensureActivityScreen(); if(window.currentScreen==='affaires')injectAffairesDateControls()},300)});
   setTimeout(function(){ensureActivityScreen();},500);
 })();
@@ -10457,6 +10649,7 @@ document.addEventListener('DOMContentLoaded',function(){
   window.renderCommissions=renderCommissionsFinal;
   window.renderLivraisons=renderCommissionsFinal;
   window.renderScreen=function(name){
+    if(name==='activite'&&typeof window.renderActivitePage==='function'){window.renderActivitePage();return;}
     if(name==='livraisons'||name==='commissions'){renderCommissionsFinal();return}
     var r=prevRenderScreen?prevRenderScreen(name):undefined;
     if(name==='affaires'||name==='projets')setTimeout(cleanupAffairesReminders,0);
@@ -10465,6 +10658,8 @@ document.addEventListener('DOMContentLoaded',function(){
 
   // showScreen final : ne rappelle plus les vieux wrappers avec setTimeout COMMISSIONS, ce qui supprimait le sursaut.
   window.showScreen=function(name){
+    if(window.currentScreen==='marche'&&name!=='marche'&&typeof clearMarcheClientFocus==='function')clearMarcheClientFocus(false);
+    if(name==='activite'&&typeof window.openActiviteScreen==='function'){window.openActiviteScreen();return;}
     qsa('.screen').forEach(s=>s.classList.remove('active'));
     qsa('.nav-item').forEach(n=>n.classList.remove('active'));
     var sc=byId('screen-'+name);if(sc)sc.classList.add('active');
@@ -11569,24 +11764,7 @@ document.addEventListener('DOMContentLoaded',function(){
   }
   function getAL(){mergeActivityStorage();try{return JSON.parse(localStorage.getItem('daf_commercebox_activity')||'[]')||[];}catch(e){return[];}}
   function ensureActiviteScreen(){
-    if(!byId('screen-activite')){
-      var anchor=byId('screen-more')||byId('app'); if(!anchor)return;
-      var div=document.createElement('div'); div.className='screen'; div.id='screen-activite';
-      div.innerHTML='<div class="screen-header"><div class="screen-title">📋 Activité</div><div style="font-size:10px;color:var(--text3);padding:0 12px 8px;">Sans projet · Projet · Affaire</div></div>'
-        +'<div class="search-bar" id="activite-search-bar" style="position:sticky;top:0;z-index:11;margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;">'
-        +'<span>🔍</span><input type="text" id="activite-search" placeholder="Client, action, statut…">'
-        +'<button type="button" class="btn btn-ghost btn-sm" id="activite-search-clear" title="Effacer la recherche" style="min-width:30px;height:30px;padding:0;border-radius:50%;font-size:13px;line-height:1;">✕</button></div>'
-        +'<div id="activite-filters" style="padding:4px 12px 6px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:48px;z-index:10;"></div>'
-        +'<div id="activite-content" style="padding-top:4px;"></div>';
-      anchor.parentNode.insertBefore(div,anchor);
-    }
-    var nav=byId('nav'); if(!nav)return;
     qsa('.nav-item[data-screen="activite"]').slice(1).forEach(function(n){n.remove();});
-    if(!nav.querySelector('[data-screen="activite"]')){
-      var item=document.createElement('div'); item.className='nav-item'; item.dataset.screen='activite';
-      item.innerHTML='<span class="nav-icon">📋</span><span class="nav-label">Activité</span>';
-      var ref=nav.querySelector('[data-screen="more"]'); nav.insertBefore(item,ref||null);
-    }
     var clr=byId('activite-search-clear');
     if(clr&&!clr._actClrBound){
       clr._actClrBound=true;
@@ -11595,6 +11773,8 @@ document.addEventListener('DOMContentLoaded',function(){
         renderActivitePage();
       };
     }
+    var si=byId('activite-search');
+    if(si&&!si._v60Bound){si._v60Bound=true;si.oninput=renderActivitePage;}
   }
   function groupRowsByYearMonth(rows){
     var byYear={};
@@ -11738,15 +11918,21 @@ document.addEventListener('DOMContentLoaded',function(){
     });
   }
   function openActiviteScreen(){
-    qsa('.screen').forEach(function(s){s.classList.remove('active');});
-    qsa('.nav-item').forEach(function(n){n.classList.toggle('active',n.dataset.screen==='activite');});
     ensureActiviteScreen();
+    qsa('.screen').forEach(function(s){s.classList.remove('active');});
+    qsa('.nav-item').forEach(function(n){n.classList.remove('active');});
     var sc=byId('screen-activite'); if(sc)sc.classList.add('active');
-    try{window.currentScreen='activite';}catch(e){}
-    renderActivitePage();
+    var ni=document.querySelector('.nav-item[data-screen="activite"]'); if(ni)ni.classList.add('active');
+    try{window.currentScreen='activite';currentScreen='activite';}catch(e){}
+    try{renderActivitePage();}catch(err){
+      console.error('renderActivitePage',err);
+      var cont=byId('activite-content');
+      if(cont)cont.innerHTML='<div class="card" style="margin:12px;padding:12px;font-size:11px;color:var(--orange);">Erreur affichage Activité — '+esc(String(err&&err.message||err))+'</div>';
+    }
   }
   window.renderActivitePage=renderActivitePage;
   window.ensureActiviteScreen=ensureActiviteScreen;
+  window.openActiviteScreen=openActiviteScreen;
   var prevShow=window.showScreen;
   window.showScreen=function(name){
     if(name==='activite'){openActiviteScreen();return;}
@@ -11765,6 +11951,29 @@ document.addEventListener('DOMContentLoaded',function(){
   },true);
   mergeActivityStorage();
   setTimeout(function(){ensureActiviteScreen();purgePlusCards();},200);
+})();
+</script>
+
+<script>
+/* v63 — Marché : focus client / groupe (filtres neutralisés) */
+(function(){
+  var omc=window.matchesMarcheClient;
+  window.matchesMarcheClient=function(c){
+    if(typeof isMarcheFocusActive==='function'&&isMarcheFocusActive()){
+      if(!c)return false;
+      return marcheFocusSiteKeys().has(c._siteKey||makeSiteKey(c));
+    }
+    return omc?omc.apply(this,arguments):true;
+  };
+  var omv=window.matchesMarcheVehicle;
+  window.matchesMarcheVehicle=function(v){
+    if(typeof isMarcheFocusActive==='function'&&isMarcheFocusActive()){
+      var co=typeof _marcheClientForVehicle==='function'?_marcheClientForVehicle(v):null;
+      if(!co)return false;
+      return marcheFocusSiteKeys().has(co._siteKey||makeSiteKey(co));
+    }
+    return omv?omv.apply(this,arguments):true;
+  };
 })();
 </script>
 </body>
