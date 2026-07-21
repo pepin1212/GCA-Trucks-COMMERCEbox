@@ -279,7 +279,7 @@ input[type=file]{display:none}
 <div class="screen" id="screen-activite">
   <div class="screen-header">
     <div class="screen-title">📋 Activité</div>
-    <div style="font-size:10px;color:var(--text3);padding-top:2px;">Sans projet · Projet · Affaire</div>
+    <div style="font-size:10px;color:var(--text3);padding-top:2px;">Journal de toutes les modifications</div>
   </div>
   <div class="search-bar" id="activite-search-bar" style="position:sticky;top:0;z-index:11;margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;">
     <span>🔍</span><input type="text" id="activite-search" placeholder="Client, action, statut…">
@@ -326,7 +326,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v63';
+const APP_BUILD='2026-05-27-bases-v65';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -2491,13 +2491,28 @@ function getMarcheKpiVehiclesList(kind,filtVeh){
 }
 function openMarcheVehicleSelectionModal(title,matched){_openKpiVehicleModal(title,matched,'marque');}
 function openMarcheSiteSelectionModal(title,clients){_openKpiSiteModal(title,clients,matchesMarcheVehicle);}
-function openMarcheGroupsModal(){
-  var groups=getAllGroups();
+function getVisibleMarcheGroups(filtered){
+  var seen={}, out=[];
+  (filtered||[]).forEach(function(c){
+    var sk=c._siteKey||makeSiteKey(c);
+    var g=getGroupForSiteKey(sk);
+    if(!g||seen[g.id])return;
+    seen[g.id]=true;
+    out.push(g);
+  });
+  return out;
+}
+function openMarcheGroupsModal(filtered){
+  var groups=getVisibleMarcheGroups(filtered);
+  var visibleMap={};
+  (filtered||[]).forEach(function(c){ visibleMap[c._siteKey||makeSiteKey(c)]=c; });
   var inner=groups.map(function(g){
-    var sites=_groupSites(g);
-    var st=getGroupStats(g);
-    return '<div class="diag-row" style="align-items:flex-start;"><div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:800;color:var(--text);">'+escH(getGroupDisplayName(g))+' '+(g.auto?'<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);font-size:8px;">AUTO</span>':'')+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">'+sites.length+' site(s) · Parc '+st.parc+' · R.DAF '+st.dafRenew+' · R.Conc '+st.horsRenew+'</div></div><button class="btn btn-secondary btn-sm marche-open-group" data-gid="'+escH(g.id)+'">Ouvrir</button></div>';
-  }).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun groupe (AUTO TVA ou manuel).</div>';
+    var sites=_groupSites(g).filter(function(c){ return !!visibleMap[c._siteKey||makeSiteKey(c)]; });
+    var veh=_vehiclesForClientRows(sites,matchesMarcheVehicle);
+    var dafRenew=veh.filter(isRenewDafMarche).length;
+    var horsRenew=veh.filter(isRenewHorsMarche).length;
+    return '<div class="diag-row" style="align-items:flex-start;"><div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:800;color:var(--text);">'+escH(getGroupDisplayName(g))+' '+(g.auto?'<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);font-size:8px;">AUTO</span>':'')+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">'+sites.length+' site(s) · Parc '+veh.length+' · R.DAF '+dafRenew+' · R.Conc '+horsRenew+'</div></div><button class="btn btn-secondary btn-sm marche-open-group" data-gid="'+escH(g.id)+'">Ouvrir</button></div>';
+  }).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun groupe visible avec les filtres actifs.</div>';
   openModal('👥 Groupes ('+groups.length+')','<div style="max-height:55vh;overflow:auto;">'+inner+'</div>',[{label:'Fermer',cls:'btn-primary'}]);
   QA('#modal-body .marche-open-group').forEach(function(b){b.onclick=function(){closeModal();openGroupSheet(this.dataset.gid);};});
 }
@@ -2507,7 +2522,7 @@ function _bindMarcheKpiClicks(filtered,filtVeh){
   QA('#marche-content [data-marche-kpi]').forEach(function(el){
     el.onclick=function(){
       var k=this.dataset.marcheKpi;
-      if(k==='groupes')openMarcheGroupsModal();
+      if(k==='groupes')openMarcheGroupsModal(filtered);
       else if(siteLabels[k])openMarcheSiteSelectionModal(siteLabels[k],getMarcheKpiSites(k,filtered));
       else if(vehLabels[k])openMarcheVehicleSelectionModal(vehLabels[k],getMarcheKpiVehiclesList(k,filtVeh));
     };
@@ -2538,7 +2553,7 @@ function renderMarche(){
   }
 
   var filtered=clients.filter(matchesMarcheClient);
-  var filtVeh=vehicles.filter(matchesMarcheVehicle);
+  var filtVeh=_vehiclesForClientRows(filtered,matchesMarcheVehicle);
   var kTotalSites=filtered.length;
   var kClientsInactifs=filtered.filter(function(c){var sk=c._siteKey||makeSiteKey(c);return isInactiveClientMarche(c.tva,sk);}).length;
   var activeRowsMarche=filtered.filter(function(c){var sk=c._siteKey||makeSiteKey(c);return !isInactiveClientMarche(c.tva,sk);});
@@ -2565,7 +2580,7 @@ function renderMarche(){
     if(!vehSite.length)return;
     if(vehSite.some(isDaf))clientsAvecDaf++;
   });
-  var kGroupes=(typeof getAllGroups==='function'?getAllGroups():[]).length;
+  var kGroupes=getVisibleMarcheGroups(filtered).length;
 
   // === BUILD HTML (KPI immédiats — graphiques en différé) ===
   var html='';
@@ -2715,7 +2730,7 @@ function _bindMarcheDeferredInteractions(filtVeh){
     QA('.mat-cell').forEach(function(cell){
       cell.onclick=function(){
         var brand=this.dataset.matbrand,year=this.dataset.matyear;
-        var allVeh=DB.getVehicles().filter(matchesMarcheVehicle);
+        var allVeh=(filtVeh||[]).slice();
         var allClients2=DB.getClients();
         var matched2=allVeh;var title2='';
         if(brand==='all'&&year==='all'){matched2=allVeh;title2='Toutes marques — Toutes années';}
@@ -11745,11 +11760,14 @@ document.addEventListener('DOMContentLoaded',function(){
 (function(){
   'use strict';
   var MOIS_FR=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
-  var ACT_TYPES=['PAS_PROJET_CREATE','PROJET_CREATE','DEAL_CREATE'];
   function byId(id){return document.getElementById(id);}
   function qsa(sel,r){return Array.prototype.slice.call((r||document).querySelectorAll(sel));}
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-  function actionLabel(t){return {PAS_PROJET_CREATE:'Création Sans projet',PROJET_CREATE:'Création projet',DEAL_CREATE:'Création affaire'}[t]||t;}
+  function actionLabel(t){if(typeof window.getActivityLabel==='function')return window.getActivityLabel(t);return t||'Action';}
+  function actIcon(t){
+    var m={PAS_PROJET_CREATE:'🚫',PROJET_CREATE:'🟢',PROJET_UPDATE:'✏️',PROJET_DELETE:'🗑',DEAL_CREATE:'🔥',DEAL_UPDATE:'✏️',LINE_UPDATE:'📋',CLIENT_EXCLU:'⛔',CLIENT_URGENT:'🔴',CLIENT_ACCESSIBLE:'🔓',PROSPECTION:'📌',POSSESSION:'🚛',GROUPE:'👥',CONTACT:'👤',IMPORT:'📥',LIVRAISON:'🚚',SAUVEGARDE:'💾',RESTORE:'📂',CRM:'📝',EVENT:'📌'};
+    return m[t]||'📌';
+  }
   function dshort(v){if(!v)return '—';var d=new Date(v);if(isNaN(d))return String(v).slice(0,16);return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}
   function actUi(){if(!window._actUi)window._actUi={filterYear:null,filterMonth:null,exp:{}};return window._actUi;}
   function eventYear(e){var d=new Date(e.date);return isNaN(d)?'Sans date':String(d.getFullYear());}
@@ -11789,7 +11807,7 @@ document.addEventListener('DOMContentLoaded',function(){
   function renderActEventRow(e){
     var dealBtn=e.dealId?('<button type="button" class="btn btn-ghost btn-sm act-open-deal" data-deal-id="'+esc(e.dealId)+'" style="font-size:9px;margin-top:4px;">→ Affaire</button>'):'';
     return '<div class="card" style="margin:0 0 6px 12px;"><div style="display:flex;justify-content:space-between;gap:8px;"><div style="min-width:0;flex:1;">'
-      +'<div style="font-size:12px;font-weight:800;">'+esc(e.clientNom||'—')+'</div>'
+      +'<div style="font-size:12px;font-weight:800;">'+actIcon(e.type)+' '+esc(e.clientNom||'—')+'</div>'
       +'<div style="font-size:11px;color:var(--text2);">'+esc(actionLabel(e.type))+(e.status?' · '+esc(e.status):'')+'</div>'
       +'<div style="font-size:10px;color:var(--text3);line-height:1.35;">'+esc(e.description||'')+'</div>'
       +dealBtn+'</div><div style="font-size:9px;color:var(--text3);white-space:nowrap;">'+esc(dshort(e.date))+'</div></div></div>';
@@ -11849,9 +11867,9 @@ document.addEventListener('DOMContentLoaded',function(){
     var cont=byId('activite-content'); if(!cont)return;
     var ui=actUi();
     var q=String((byId('activite-search')||{}).value||'').toLowerCase().trim();
-    var rows=getAL().filter(function(e){return ACT_TYPES.indexOf(e.type)>=0;}).filter(function(e){
+    var rows=getAL().filter(function(e){
       if(!q)return true;
-      return (String(e.clientNom||'')+' '+actionLabel(e.type)+' '+String(e.status||'')+' '+String(e.description||'')).toLowerCase().indexOf(q)>=0;
+      return (String(e.clientNom||'')+' '+actionLabel(e.type)+' '+String(e.status||'')+' '+String(e.description||'')+' '+String(e.type||'')).toLowerCase().indexOf(q)>=0;
     });
     var byYear=groupRowsByYearMonth(rows);
     renderActiviteFilters(byYear,rows);
@@ -11865,10 +11883,11 @@ document.addEventListener('DOMContentLoaded',function(){
     }
     var html='<div style="padding:4px 0 8px;"><div style="display:flex;gap:6px;align-items:center;padding:0 12px 8px;flex-wrap:wrap;">'
       +'<button type="button" class="btn btn-secondary btn-sm" id="cb-act-export-v60" style="font-size:10px;">📥 Exporter XLSX</button>'
+      +'<button type="button" class="btn btn-red btn-sm" id="cb-act-clear-v64" style="font-size:10px;">🗑 Supprimer</button>'
       +'<span style="font-size:10px;color:var(--text3);">'+rows.length+' événement'+(rows.length>1?'s':'')+'</span></div>';
     if(!rows.length){
       html+='<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Aucune activité</div>'
-        +'<div class="empty-sub">Les créations Sans projet, Projet ou Affaire s\'affichent ici.</div></div>';
+        +'<div class="empty-sub">Toutes les modifications (projets, affaires, fiches client, imports…) s\'affichent ici.</div></div>';
     }else{
       years.forEach(function(y){
         var months=Object.keys(byYear[y]||{}).sort(function(a,b){return b.localeCompare(a);});
@@ -11908,6 +11927,12 @@ document.addEventListener('DOMContentLoaded',function(){
       rows.forEach(function(e){var d=new Date(e.date);data.push([isNaN(d)?'':d.toISOString().slice(0,10),isNaN(d)?'':d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),e.clientNom||'',e.tva||'',actionLabel(e.type),e.status||'',e.description||'']);});
       var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(data),'Activité');
       XLSX.writeFile(wb,'DAF_Activite_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    };
+    var clr=byId('cb-act-clear-v64'); if(clr)clr.onclick=function(){
+      openModal('Supprimer le journal d\'activité','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Effacer <strong>tous</strong> les événements enregistrés ?<br><br>Cette action libère de l\'espace et accélère l\'application. Elle est irréversible (exportez avant si besoin).</p>',[
+        {label:'Annuler',cls:'btn-ghost'},
+        {label:'🗑 Supprimer tout',cls:'btn-red',action:function(){if(typeof window.clearActivityLog==='function')window.clearActivityLog();else{try{localStorage.setItem('daf_commercebox_activity','[]');localStorage.removeItem('daf_activity_log');}catch(e){}renderActivitePage();}try{toast('Journal d\'activité effacé');}catch(e){}}}
+      ]);
     };
   }
   function purgePlusCards(){
@@ -11974,6 +11999,161 @@ document.addEventListener('DOMContentLoaded',function(){
     }
     return omv?omv.apply(this,arguments):true;
   };
+})();
+</script>
+
+<script>
+/* v64 — Activité : journal complet + bouton supprimer */
+(function(){
+  'use strict';
+  var MAX=2000;
+  var LABELS={
+    PAS_PROJET_CREATE:'Sans projet',PROJET_CREATE:'Création projet',PROJET_UPDATE:'Modification projet',PROJET_DELETE:'Suppression projet',
+    DEAL_CREATE:'Création affaire',DEAL_UPDATE:'Modification affaire',LINE_UPDATE:'Ligne affaire',
+    CLIENT_EXCLU:'Exclusion client',CLIENT_URGENT:'Client urgent',CLIENT_ACCESSIBLE:'Accessible',
+    PROSPECTION:'État prospection',POSSESSION:'Possession véhicule',GROUPE:'Groupement',CONTACT:'Contact',
+    IMPORT:'Import données',LIVRAISON:'Livraison / commission',SAUVEGARDE:'Sauvegarde',RESTORE:'Restauration',CRM:'Fiche CRM',EVENT:'Action'
+  };
+  var _dedupeKey='',_dedupeTs=0;
+  function clientNomFrom(cOrTva,sk){
+    if(cOrTva&&typeof cOrTva==='object')return cOrTva.nom||cOrTva.tva||'';
+    var c=(sk&&IDX.cBySite&&IDX.cBySite[sk])||(cOrTva&&IDX.cByTva&&IDX.cByTva[cOrTva]);
+    return (c&&c.nom)||String(cOrTva||'')||'';
+  }
+  function getAL(){try{return JSON.parse(localStorage.getItem('daf_commercebox_activity')||'[]')||[];}catch(e){return[];}}
+  function saveAL(v){try{localStorage.setItem('daf_commercebox_activity',JSON.stringify((v||[]).slice(0,MAX)));}catch(e){}}
+  function cbLogActivity(ev){
+    ev=ev||{};
+    var key=(ev.type||'')+'|'+(ev.tva||'')+'|'+(ev.dealId||'')+'|'+(ev.projectId||'')+'|'+String(ev.description||'').slice(0,100);
+    var now=Date.now();
+    if(key===_dedupeKey&&now-_dedupeTs<1200)return;
+    _dedupeKey=key;_dedupeTs=now;
+    var log=getAL();
+    log.unshift({id:ev.id||('act_'+now+'_'+Math.floor(Math.random()*9999)),date:ev.date||new Date().toISOString(),type:ev.type||'EVENT',clientNom:ev.clientNom||ev.nom||'',tva:ev.tva||'',siteKey:ev.siteKey||'',status:ev.status||'',description:ev.description||'',dealId:ev.dealId||'',projectId:ev.projectId||''});
+    saveAL(log);
+  }
+  window.cbLogActivity=cbLogActivity;
+  window._logActivity=function(ev){cbLogActivity(ev);};
+  window.getActivityLabel=function(t){return LABELS[t]||t||'Action';};
+  window.clearActivityLog=function(){
+    try{localStorage.setItem('daf_commercebox_activity','[]');localStorage.removeItem('daf_activity_log');}catch(e){}
+    _dealSnap={};_projSnap={};_livSnap='';
+    if(typeof renderActivitePage==='function')renderActivitePage();
+  };
+  function wrapFn(name,after){
+    var old=window[name];
+    if(typeof old!=='function'||old._actV64)return;
+    var fn=function(){var args=arguments;var r=old.apply(this,args);try{after.apply(this,args);}catch(e){}return r;};
+    fn._actV64=true;window[name]=fn;
+  }
+  wrapFn('setClientExcludedState',function(c,excluded,sk){
+    cbLogActivity({type:'CLIENT_EXCLU',clientNom:clientNomFrom(c,sk),tva:c&&c.tva,siteKey:sk,status:excluded?'EXCLU':'RÉINTÉGRÉ',description:excluded?'Client exclu du marché':'Client réintégré au marché'});
+  });
+  wrapFn('setClientAccessibleState',function(c,accessible,sk){
+    cbLogActivity({type:'CLIENT_ACCESSIBLE',clientNom:clientNomFrom(c,sk),tva:c&&c.tva,siteKey:sk,status:accessible?'ACCESSIBLE':'NON ACCESSIBLE',description:accessible?'Site marqué accessible':'Site marqué non accessible'});
+  });
+  wrapFn('setSiteEtatProspection',function(sk,val){
+    var c=IDX.cBySite&&IDX.cBySite[sk];
+    cbLogActivity({type:'PROSPECTION',clientNom:c&&c.nom,tva:c&&c.tva,siteKey:sk,status:val||'',description:'État prospection : '+String(val||'—')});
+  });
+  wrapFn('updateProjet',function(pid,status,tva){
+    var p=(DB.getProjects()||[]).find(function(x){return x.id===pid;});
+    cbLogActivity({type:'PROJET_UPDATE',clientNom:p&&(p.nom||p.client),tva:p&&p.tva,projectId:pid,status:status,description:'Projet → '+status});
+  });
+  wrapFn('saveExclusionRec',function(cOrTva,updates,sk){
+    if(!updates||updates.urgent===undefined)return;
+    cbLogActivity({type:'CLIENT_URGENT',clientNom:clientNomFrom(cOrTva,sk),tva:typeof cOrTva==='object'?cOrTva.tva:cOrTva,siteKey:sk,status:updates.urgent?'URGENT':'NORMAL',description:updates.urgent?'Client marqué urgent':'Urgence retirée'});
+  });
+  wrapFn('saveManualGroups',function(groups){
+    cbLogActivity({type:'GROUPE',description:'Groupes manuels mis à jour · '+(groups||[]).length+' groupe(s)'});
+  });
+  if(typeof DB==='object'&&DB.savePossession&&!DB.savePossession._actV64){
+    var _osp=DB.savePossession.bind(DB);
+    DB.savePossession=function(p){
+      var r=_osp(p);
+      cbLogActivity({type:'POSSESSION',description:'Possession véhicule modifiée'});
+      return r;
+    };
+    DB.savePossession._actV64=true;
+  }
+  var _projSnap={};
+  function initProjSnap(){(DB.getProjects()||[]).forEach(function(p){if(p&&p.id)_projSnap[p.id]=JSON.stringify(p);});}
+  if(typeof DB==='object'&&DB.saveProjects&&!DB.saveProjects._actV64){
+    initProjSnap();
+    var _ospr=DB.saveProjects.bind(DB);
+    DB.saveProjects=function(projects){
+      projects=projects||[];
+      var before={};
+      (DB.getProjects()||[]).forEach(function(p){if(p&&p.id)before[p.id]=p;});
+      var r=_ospr(projects);
+      projects.forEach(function(p){
+        if(!p||!p.id)return;
+        var s=JSON.stringify(p);
+        if(!_projSnap[p.id])cbLogActivity({type:'PROJET_CREATE',clientNom:p.nom||p.client,tva:p.tva,projectId:p.id,siteKey:p.siteKey,status:p.status,description:'Projet '+String(p.status||'')+' · '+(p.camions||p.qty||'?')+' camion(s)'+(p.commentaire?' · '+p.commentaire:'')});
+        else if(_projSnap[p.id]!==s)cbLogActivity({type:'PROJET_UPDATE',clientNom:p.nom||p.client,tva:p.tva,projectId:p.id,status:p.status,description:'Projet modifié · '+String(p.status||'')});
+        _projSnap[p.id]=s;
+      });
+      Object.keys(before).forEach(function(id){
+        if(!projects.some(function(p){return p&&p.id===id;})){
+          var p=before[id];
+          cbLogActivity({type:'PROJET_DELETE',clientNom:p&&p.nom,tva:p&&p.tva,projectId:id,description:'Projet supprimé'});
+          delete _projSnap[id];
+        }
+      });
+      return r;
+    };
+    DB.saveProjects._actV64=true;
+  }
+  var _dealSnap={};
+  function initDealSnap(){try{(window.getHotDeals?window.getHotDeals():[]).forEach(function(d){if(d&&d.id)_dealSnap[d.id]=JSON.stringify(d);});}catch(e){}}
+  initDealSnap();
+  if(typeof window.saveHotDeals==='function'&&!window.saveHotDeals._actV64Full){
+    var _oshd=window.saveHotDeals;
+    window.saveHotDeals=function(list){
+      list=list||[];
+      var r=_oshd.apply(this,arguments);
+      list.forEach(function(d){
+        if(!d||!d.id)return;
+        var s=JSON.stringify(d);
+        if(!_dealSnap[d.id])cbLogActivity({type:'DEAL_CREATE',clientNom:d.client,tva:d.tva,dealId:d.id,status:d.status,description:'Affaire créée · '+String(d.status||'')});
+        else if(_dealSnap[d.id]!==s)cbLogActivity({type:'DEAL_UPDATE',clientNom:d.client,tva:d.tva,dealId:d.id,status:d.status,description:'Affaire modifiée · '+String(d.status||'')});
+        _dealSnap[d.id]=s;
+      });
+      return r;
+    };
+    window.saveHotDeals._actV64Full=true;
+  }
+  var _livSnap='';
+  function wrapDeliveries(){
+    var old=window.saveDeliveries;
+    if(typeof old!=='function'||old._actV64Liv)return;
+    window.saveDeliveries=function(v){
+      var s=JSON.stringify(v||[]);
+      var r=old.apply(this,arguments);
+      if(s!==_livSnap){_livSnap=s;cbLogActivity({type:'LIVRAISON',description:'Livraisons / commissions mises à jour · '+(v||[]).length+' ligne(s)'});}
+      return r;
+    };
+    window.saveDeliveries._actV64Liv=true;
+  }
+  wrapDeliveries();
+  setTimeout(wrapDeliveries,800);
+  function wrapGlobalFn(fname,after){
+    var old=window[fname];
+    if(typeof old!=='function'||old._actV64)return;
+    window[fname]=function(){
+      var args=arguments,r=old.apply(this,args);
+      try{after(r,args);}catch(e){}
+      return r;
+    };
+    window[fname]._actV64=true;
+  }
+  wrapGlobalFn('importCRM',function(r){cbLogActivity({type:'IMPORT',description:'Import CRM · '+(r&&r.clients?r.clients.length:0)+' client(s)'});});
+  wrapGlobalFn('importVehicles',function(r){cbLogActivity({type:'IMPORT',description:'Import immatriculations · '+(r&&r.vehicles?r.vehicles.length:0)+' véhicule(s)'});});
+  wrapFn('appendHistoryEntry',function(cOrTva,entry,sk){
+    var t=entry&&entry.type?String(entry.type):'';
+    if(/PAS DE PROJET/i.test(t))return;
+    cbLogActivity({type:'CRM',clientNom:clientNomFrom(cOrTva,sk),tva:typeof cOrTva==='object'?cOrTva.tva:cOrTva,siteKey:sk,status:t,description:entry&&entry.text?String(entry.text).slice(0,200):t});
+  });
 })();
 </script>
 </body>
