@@ -326,7 +326,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v65';
+const APP_BUILD='2026-05-27-bases-v66';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -807,6 +807,7 @@ const GF = {
   toursMaskSansFiche: 'neutral',
   marcheMaskSitesSec: 'exclude',
   marcheMaskSansFiche: 'neutral',
+  marcheMaskDaf3Ans: 'neutral',
   marcheF: 'all',
   toursTypeFilter: 'tous',
   // legacy booléens (migration uniquement)
@@ -979,11 +980,41 @@ var TOURS_MASK_DEFS=[
   {id:'sansFiche',btn:'btn-mask-sans-fiche',label:'Sans fiche',key:'toursMaskSansFiche'}
 ];
 function ensureMarcheMaskTriState(){
+  if(GF.marcheMaskDaf3Ans==null||GF.marcheMaskDaf3Ans===undefined)GF.marcheMaskDaf3Ans='neutral';
   if(GF._marcheMaskTriState)return;
   if(GF.marcheMaskSitesSec==null||GF.marcheMaskSitesSec===undefined)GF.marcheMaskSitesSec='exclude';
   if(GF.marcheMaskSansFiche==null||GF.marcheMaskSansFiche===undefined)GF.marcheMaskSansFiche='neutral';
   if(!GF.marcheF)GF.marcheF='all';
   GF._marcheMaskTriState=true;
+}
+function _marcheDaf3AnsCutoff(){
+  var d=new Date();
+  d.setMonth(d.getMonth()-36);
+  d.setHours(0,0,0,0);
+  return d;
+}
+function clientHasDafInLast36Months(c){
+  if(!c)return false;
+  var sk=c._siteKey||makeSiteKey(c);
+  var cutoff=_marcheDaf3AnsCutoff();
+  var veh=(IDX.vBySite&&IDX.vBySite[sk])||[];
+  for(var i=0;i<veh.length;i++){
+    var v=veh[i];
+    if(!isDaf(v))continue;
+    var dt=v.date?new Date(v.date):null;
+    if(!dt||isNaN(dt.getTime()))continue;
+    if(dt>=cutoff)return true;
+  }
+  return false;
+}
+function passesMarcheDaf3AnsMask(c){
+  ensureMarcheMaskTriState();
+  var m=GF.marcheMaskDaf3Ans||'neutral';
+  if(m==='neutral')return true;
+  var hit=clientHasDafInLast36Months(c);
+  if(m==='only')return hit;
+  if(m==='exclude')return !hit;
+  return true;
 }
 function _marcheClientIsSecondary(c){
   if(!c)return false;
@@ -1020,11 +1051,12 @@ function passesMarcheFpill(c){
 }
 function updateMarcheMaskButtons(){
   ensureMarcheMaskTriState();
-  [{id:'btn-marche-mask-sites-sec',key:'marcheMaskSitesSec',label:'Sites sec.'},{id:'btn-marche-mask-sans-fiche',key:'marcheMaskSansFiche',label:'Sans fiche'}].forEach(function(d){
+  [{id:'btn-marche-mask-sites-sec',key:'marcheMaskSitesSec',label:'Sites sec.'},{id:'btn-marche-mask-sans-fiche',key:'marcheMaskSansFiche',label:'Sans fiche'},{id:'btn-marche-mask-daf-3ans',key:'marcheMaskDaf3Ans',label:'DAF 3 ans'}].forEach(function(d){
     var el=$(d.id);if(!el)return;
     var st=GF[d.key]||'neutral';
     el.textContent=d.label+(st==='neutral'?'':(' '+_toursMaskLabel(st)));
     el.className='gf-chip'+(st==='exclude'?' mask-exclude':(st==='only'?' mask-only':''));
+    if(d.id==='btn-marche-mask-daf-3ans')el.title='Client ayant immatriculé ≥1 DAF sur les 36 derniers mois';
   });
 }
 function _renderMarcheOrphanPanel(){
@@ -1698,6 +1730,7 @@ function matchesMarcheClient(c){
   if(GF.exclInactifsMarche&&isInactiveClientMarche(c.tva,c._siteKey||makeSiteKey(c)))return false;
   if(GF.exclAccessibleOffMarche&&!isClientAccessible(c))return false;
   if(!passesMarcheSitesSecMask(c))return false;
+  if(!passesMarcheDaf3AnsMask(c))return false;
   if(!passesMarcheFpill(c))return false;
   return true;
 }
@@ -2667,6 +2700,12 @@ function _bindMarcheCoreControls(){
   safeOn('btn-marche-mask-sans-fiche','click',function(){
     ensureMarcheMaskTriState();
     GF.marcheMaskSansFiche=cycleToursMaskState(GF.marcheMaskSansFiche||'neutral');
+    invalidateCache();
+    renderMarche();
+  });
+  safeOn('btn-marche-mask-daf-3ans','click',function(){
+    ensureMarcheMaskTriState();
+    GF.marcheMaskDaf3Ans=cycleToursMaskState(GF.marcheMaskDaf3Ans||'neutral');
     invalidateCache();
     renderMarche();
   });
@@ -4180,7 +4219,7 @@ function _renderMarcheFilterBars(kTypeVerifier){
   ensureMarcheMaskTriState();
   var _dim=isMarcheFocusActive()?' marche-filter-dimmed':'';
   var _exclM=GF.exclExclusionMarche,_inactM=GF.exclInactifsMarche,_accM=GF.exclAccessibleOffMarche,_flotteM=GF.exclFlotteNationaleMarche;
-  var _ss=GF.marcheMaskSitesSec||'exclude',_sf=GF.marcheMaskSansFiche||'neutral';
+  var _ss=GF.marcheMaskSitesSec||'exclude',_sf=GF.marcheMaskSansFiche||'neutral',_d3=GF.marcheMaskDaf3Ans||'neutral';
   var html='<div id="marche-sticky-bar" class="'+_dim+'" style="display:flex;gap:5px;padding:5px 12px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:10;flex-wrap:wrap;">'
     +'<button class="gf-btn'+(GF.marcheTypeFilter==='tous'?' gf-on':'')+'" data-mtype="tous">Tous</button>'
     +'<button class="gf-btn'+(GF.marcheTypeFilter==='tracteur'?' gf-on':'')+'" data-mtype="tracteur">Tracteurs</button>'
@@ -4197,6 +4236,7 @@ function _renderMarcheFilterBars(kTypeVerifier){
   html+='<div id="marche-mask-bar" class="'+_dim+'" style="display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;background:var(--bg2);border-bottom:1px solid var(--border);">'
     +'<button class="gf-chip'+(_ss==='exclude'?' mask-exclude':(_ss==='only'?' mask-only':''))+'" id="btn-marche-mask-sites-sec">Sites sec.'+(_ss==='neutral'?'':(' '+_toursMaskLabel(_ss)))+'</button>'
     +'<button class="gf-chip'+(_sf==='exclude'?' mask-exclude':(_sf==='only'?' mask-only':''))+'" id="btn-marche-mask-sans-fiche">Sans fiche'+(_sf==='neutral'?'':(' '+_toursMaskLabel(_sf)))+'</button>'
+    +'<button class="gf-chip'+(_d3==='exclude'?' mask-exclude':(_d3==='only'?' mask-only':''))+'" id="btn-marche-mask-daf-3ans" title="Client ayant immatriculé ≥1 DAF sur les 36 derniers mois">DAF 3 ans'+(_d3==='neutral'?'':(' '+_toursMaskLabel(_d3)))+'</button>'
     +'</div>';
   return html;
 }
