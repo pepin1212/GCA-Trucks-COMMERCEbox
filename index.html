@@ -326,7 +326,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v67';
+const APP_BUILD='2026-05-27-bases-v69';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -995,7 +995,15 @@ function _marcheDaf3AnsCutoff(){
 }
 function _vehicleDateObj(d){
   if(d==null||d==='')return null;
+  if(Object.prototype.toString.call(d)==='[object Date]')return isNaN(d.getTime())?null:d;
   if(typeof d==='number')return new Date(Math.round((d-25569)*86400000));
+  if(typeof d==='string'){
+    var s=d.trim();
+    if(/^\d+(\.\d+)?$/.test(s)){
+      var n=Number(s);
+      if(n>20000&&n<80000)return new Date(Math.round((n-25569)*86400000));
+    }
+  }
   var iso=typeof parseDate==='function'?parseDate(d):null;
   if(iso){
     var dt=new Date(iso+'T12:00:00');
@@ -1004,15 +1012,22 @@ function _vehicleDateObj(d){
   var dt2=new Date(d);
   return isNaN(dt2.getTime())?null:dt2;
 }
+function _vehicleImmatInLast36Months(dateVal){
+  var cutoff=_marcheDaf3AnsCutoff();
+  var dt=_vehicleDateObj(dateVal);
+  if(dt&&!isNaN(dt.getTime()))return dt>=cutoff;
+  // Fallback aligné sur l'affichage matrice (getYear) si la date précise échoue
+  var y=typeof getYear==='function'?getYear(dateVal):null;
+  if(!y)return false;
+  return new Date(y,11,31,23,59,59)>=cutoff;
+}
 function siteHasDafInLast36Months(sk){
   if(!sk)return false;
-  var cutoff=_marcheDaf3AnsCutoff();
   var veh=(IDX.vBySite&&IDX.vBySite[sk])||[];
   for(var i=0;i<veh.length;i++){
     var v=veh[i];
     if(!isDaf(v))continue;
-    var dt=_vehicleDateObj(v.date);
-    if(dt&&dt>=cutoff)return true;
+    if(_vehicleImmatInLast36Months(v.date))return true;
   }
   return false;
 }
@@ -1720,6 +1735,12 @@ function matchesMarcheVehicle(v){
   if(GF.exclExclusionMarche&&clientObj&&isClientExcludedMarche(clientObj))return false;
   if(GF.exclInactifsMarche&&clientObj&&isInactiveClientMarche(clientObj.tva,clientObj._siteKey||makeSiteKey(clientObj)))return false;
   if(GF.exclAccessibleOffMarche&&clientObj&&!isClientAccessible(clientObj))return false;
+  // Masques client (Sites sec. / DAF 3 ans) : mêmes règles que matchesMarcheClient,
+  // sans appeler matchesMarcheClient (évite récursion via fpills / parc).
+  if(clientObj){
+    if(typeof passesMarcheSitesSecMask==='function'&&!passesMarcheSitesSecMask(clientObj))return false;
+    if(typeof passesMarcheDaf3AnsMask==='function'&&!passesMarcheDaf3AnsMask(clientObj))return false;
+  }
   return true;
 }
 // isInactiveClientTours : version Tournées (véhicules possédés uniquement)
@@ -2611,6 +2632,7 @@ function renderMarche(){
 
   var filtered=clients.filter(matchesMarcheClient);
   var filtVeh=_vehiclesForClientRows(filtered,matchesMarcheVehicle);
+  try{GF._marcheLastFiltVeh=filtVeh;GF._marcheLastFiltered=filtered;}catch(e){}
   var kTotalSites=filtered.length;
   var kClientsInactifs=filtered.filter(function(c){var sk=c._siteKey||makeSiteKey(c);return isInactiveClientMarche(c.tva,sk);}).length;
   var activeRowsMarche=filtered.filter(function(c){var sk=c._siteKey||makeSiteKey(c);return !isInactiveClientMarche(c.tva,sk);});
@@ -3144,19 +3166,19 @@ let toursF='all', toursSearch='', toursExp={};
 const BRAND_LOGOS = {
   'DAF': '<span class="brand-logo"><svg width="42" height="22" viewBox="0 0 42 22" aria-label="DAF"><rect width="42" height="22" rx="2" fill="#00338D"/><text x="21" y="13.5" text-anchor="middle" font-size="11" font-weight="900" fill="#FFFFFF" font-family="Arial Black,Arial,sans-serif" letter-spacing="3.2">DAF</text><path d="M0 16.5 Q21 12.5 42 16.5 L42 22 L0 22 Z" fill="#D22630"/></svg></span>',
 
-  'VOLVO': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Volvo"><circle cx="12" cy="12" r="11" fill="#003057"/><circle cx="12" cy="12" r="9.2" fill="none" stroke="#FFFFFF" stroke-width="1.2"/><path d="M12 3.5 L12 12 M12 12 L18.2 15.8 M12 12 L5.8 15.8" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="3.5" r="1.1" fill="#FFFFFF"/><circle cx="18.2" cy="15.8" r="1.1" fill="#FFFFFF"/><circle cx="5.8" cy="15.8" r="1.1" fill="#FFFFFF"/><line x1="5.5" y1="12" x2="18.5" y2="12" stroke="#FFFFFF" stroke-width="1.3" stroke-linecap="round"/></svg></span>',
+  'VOLVO': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Volvo"><circle cx="12" cy="12" r="11.2" fill="#003057"/><circle cx="12" cy="12" r="9" fill="none" stroke="#FFFFFF" stroke-width="1.5"/><path d="M5.4 18.6 L18.6 5.4" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/><path d="M18.6 5.4 L13.5 6.1 L17.9 10.5 Z" fill="#FFFFFF"/><circle cx="5.7" cy="18.3" r="1.35" fill="#FFFFFF"/></svg></span>',
 
   'MERCEDES-BENZ': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Mercedes-Benz"><circle cx="12" cy="12" r="11" fill="#0A0A0A"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="#C0C0C0" stroke-width="1"/><path d="M12 3.2 L12 12 M12 12 L18.1 15.6 M12 12 L5.9 15.6" stroke="#E8E8E8" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="3.2" r=".9" fill="#E8E8E8"/><circle cx="18.1" cy="15.6" r=".9" fill="#E8E8E8"/><circle cx="5.9" cy="15.6" r=".9" fill="#E8E8E8"/></svg></span>',
 
   'MERCEDES': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Mercedes"><circle cx="12" cy="12" r="11" fill="#0A0A0A"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="#C0C0C0" stroke-width="1"/><path d="M12 3.2 L12 12 M12 12 L18.1 15.6 M12 12 L5.9 15.6" stroke="#E8E8E8" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="3.2" r=".9" fill="#E8E8E8"/><circle cx="18.1" cy="15.6" r=".9" fill="#E8E8E8"/><circle cx="5.9" cy="15.6" r=".9" fill="#E8E8E8"/></svg></span>',
 
-  'SCANIA': '<span class="brand-logo"><svg width="26" height="30" viewBox="0 0 26 30" aria-label="Scania"><rect width="26" height="30" rx="2" fill="#041E42"/><path fill="#C8A84B" d="M13 5C9.2 5 6.5 8 6.5 11.8c0 2 .5 3.8 1.4 5.3L5.5 25h17L18.1 17.1c.9-1.5 1.4-3.3 1.4-5.3C19.5 8 16.8 5 13 5z"/><circle cx="10.5" cy="11.5" r="1.3" fill="#041E42"/><path fill="#041E42" d="M16.5 10.5L22 7.5l-1.8 4.8z"/><path fill="#C8A84B" d="M9 6.5l1-2.2 1 2.2M12.5 5.5l1-2.2 1 2.2M16 6.5l1-2.2 1 2.2"/></svg></span>',
+  'SCANIA': '<span class="brand-logo"><svg width="26" height="30" viewBox="0 0 26 30" aria-label="Scania"><rect width="26" height="30" rx="2" fill="#041E42"/><path fill="#D4AF37" d="M7.8 9.2c.9-2.6 3.2-4.4 5.8-4.4 1.4 0 2.6.4 3.6 1.2l1.1-1.8 1.2 2.3c.8.4 1.4.9 1.8 1.6l2-.5-.5 2c.4.7.6 1.5.6 2.4 0 2.9-1.9 5.2-4.2 6.6L16.4 25H9.6l-1.7-5.8C5.8 17.6 4.6 15 4.6 12.1c0-1.1.2-2.1.7-3l-1.3-1 2.2-.6z"/><ellipse cx="11.3" cy="11.4" rx="1.55" ry="1.7" fill="#041E42"/><path fill="#D4AF37" d="M15.6 9.2l5.6-3.1-1.5 4.5z"/><path fill="#041E42" d="M9.8 17.2h6.4l-.6 2.1H10.4z"/><path fill="#D4AF37" d="M9.2 6l.9-2 .9 2M12.5 5l1-2.2 1 2.2M16 5.9l.9-2 .9 2"/></svg></span>',
 
-  'MAN': '<span class="brand-logo"><svg width="26" height="26" viewBox="0 0 26 26" aria-label="MAN"><rect width="26" height="26" rx="2" fill="#E2001A"/><circle cx="13" cy="10" r="6.5" fill="none" stroke="#FFFFFF" stroke-width="1.2"/><path fill="#FFFFFF" d="M13 5.5c-2.2 0-4 1.8-4 4 0 1.1.4 2.1 1.1 2.9-.7.9-1.1 2-1.1 3.1 0 .7.6 1.3 1.3 1.3h5.4c.7 0 1.3-.6 1.3-1.3 0-1.1-.4-2.2-1.1-3.1.7-.8 1.1-1.8 1.1-2.9 0-2.2-1.8-4-4-4z"/><text x="13" y="23.5" text-anchor="middle" font-size="6.5" font-weight="900" fill="#FFFFFF" font-family="Arial Black,Arial,sans-serif" letter-spacing="1">MAN</text></svg></span>',
+  'MAN': '<span class="brand-logo"><svg width="26" height="26" viewBox="0 0 26 26" aria-label="MAN"><rect width="26" height="26" rx="2" fill="#E2001A"/><g fill="#FFFFFF"><path d="M12.8 3.8c1.9 0 3.4 1.1 3.9 2.6l1.6-.7.7 1.6-1.4.8c.3.6.4 1.3.4 2 0 .5-.1 1-.2 1.4l1.5.7-.6 1.5-1.5-.4c-.6 1.3-1.8 2.2-3.3 2.6v1.9h-2.2v-1.8c-1.7-.3-3-1.2-3.7-2.5l-1.5.5-.6-1.6 1.3-.6c-.2-.5-.3-1-.3-1.6 0-.6.1-1.1.4-1.6l-1.2-.8.7-1.5 1.3.6c.7-1.4 2.1-2.4 3.9-2.7zm.1 3.6c-1.5 0-2.6 1.2-2.6 2.9s1.1 2.9 2.6 2.9 2.6-1.2 2.6-2.9-1.1-2.9-2.6-2.9z"/><path d="M8.2 17.8c1.1.9 2.6 1.4 4.6 1.4s3.5-.5 4.6-1.4l.8 1.5c-1.4 1-3.2 1.5-5.4 1.5s-4-.5-5.4-1.5z"/></g><text x="13" y="24.3" text-anchor="middle" font-size="5.6" font-weight="900" fill="#FFFFFF" font-family="Arial Black,Arial,sans-serif" letter-spacing="1.1">MAN</text></svg></span>',
 
-  'RENAULT TRUCKS': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Renault Trucks"><polygon points="12,1 23,12 12,23 1,12" fill="#FFCC00"/><polygon points="12,5 19,12 12,19 5,12" fill="#FFFFFF"/><polygon points="12,8.5 15.5,12 12,15.5 8.5,12" fill="#1A1A1A"/></svg></span>',
+  'RENAULT TRUCKS': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Renault Trucks"><polygon points="12,1.2 22.8,12 12,22.8 1.2,12" fill="#FFCC00"/><polygon points="12,1.2 22.8,12 12,22.8 1.2,12" fill="none" stroke="#1A1A1A" stroke-width="1.15"/><polygon points="12,4.1 19.9,12 12,19.9 4.1,12" fill="#FFFFFF"/><polygon points="12,4.1 19.9,12 12,19.9 4.1,12" fill="none" stroke="#1A1A1A" stroke-width=".75"/><polygon points="12,7.5 16.5,12 12,16.5 7.5,12" fill="#1A1A1A"/></svg></span>',
 
-  'RENAULT': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Renault"><polygon points="12,1 23,12 12,23 1,12" fill="#FFCC00"/><polygon points="12,5 19,12 12,19 5,12" fill="#FFFFFF"/><polygon points="12,8.5 15.5,12 12,15.5 8.5,12" fill="#1A1A1A"/></svg></span>',
+  'RENAULT': '<span class="brand-logo"><svg width="24" height="24" viewBox="0 0 24 24" aria-label="Renault"><polygon points="12,1.2 22.8,12 12,22.8 1.2,12" fill="#FFCC00"/><polygon points="12,1.2 22.8,12 12,22.8 1.2,12" fill="none" stroke="#1A1A1A" stroke-width="1.15"/><polygon points="12,4.1 19.9,12 12,19.9 4.1,12" fill="#FFFFFF"/><polygon points="12,4.1 19.9,12 12,19.9 4.1,12" fill="none" stroke="#1A1A1A" stroke-width=".75"/><polygon points="12,7.5 16.5,12 12,16.5 7.5,12" fill="#1A1A1A"/></svg></span>',
 
   'IVECO': '<span class="brand-logo"><svg width="40" height="20" viewBox="0 0 40 20" aria-label="Iveco"><rect width="40" height="20" rx="2" fill="#002855"/><text x="20" y="13.5" text-anchor="middle" font-size="9" font-weight="800" fill="#FFFFFF" font-family="Arial,sans-serif" letter-spacing="3.5">IVECO</text><rect x="1" y="1" width="38" height="18" rx="1.5" fill="none" stroke="#1E4A7A" stroke-width=".6"/></svg></span>',
 
@@ -9688,7 +9710,13 @@ document.addEventListener('DOMContentLoaded',function(){
   }
   function renderMatrixDetailFinal(cell){
     var brand=cell.dataset.matbrand, year=cell.dataset.matyear;
-    var allVeh=(DB.getVehicles()||[]).filter(function(v){try{return matchesMarcheVehicle(v);}catch(e){return true;}});
+    // Toujours partir du dernier parc Marché filtré (clients + DAF 3 ans / Sites sec.),
+    // pas de DB.getVehicles() brut — sinon OFF DAF 3 ans était contourné au clic cellule.
+    var allVeh=[];
+    try{
+      if(GF&&GF._marcheLastFiltVeh&&GF._marcheLastFiltVeh.length)allVeh=GF._marcheLastFiltVeh.slice();
+      else allVeh=(DB.getVehicles()||[]).filter(function(v){try{return matchesMarcheVehicle(v);}catch(e){return true;}});
+    }catch(e){allVeh=(DB.getVehicles()||[]).filter(function(v){try{return matchesMarcheVehicle(v);}catch(e2){return true;}});}
     var matched=allVeh, title='Sélection';
     if(brand==='all'&&year==='all'){title='Toutes marques — Toutes années';}
     else if(brand==='all'&&year!=='all'){matched=matched.filter(function(v){return String(marketYearKey(v))===String(year);});title='Toutes marques — '+year;}
