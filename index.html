@@ -326,7 +326,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-05-27-bases-v66';
+const APP_BUILD='2026-05-27-bases-v67';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -946,8 +946,8 @@ function bindMarcheSearchEvents(){
   var inp=$('marche-search'), clr=$('marche-search-clear'), site=$('marche-scope-site'), grp=$('marche-scope-group');
   if(inp&&!inp._marcheBound){inp._marcheBound=true;inp.oninput=onMarcheSearchInput;inp.onfocus=function(){if((inp.value||'').trim())renderMarcheSearchDropdown(searchMarcheSuggestions(inp.value));};}
   if(clr&&!clr._marcheBound){clr._marcheBound=true;clr.onclick=function(){clearMarcheClientFocus(true);};}
-  if(site&&!site._marcheBound){site._marcheBound=true;site.onclick=function(){GF.marcheFocus.scope='site';updateMarcheScopeButtons();if(isMarcheFocusActive()){invalidateCache();renderMarche();}};}
-  if(grp&&!grp._marcheBound){grp._marcheBound=true;grp.onclick=function(){if(isMarcheFocusActive()&&!marcheFocusHasGroup(GF.marcheFocus.siteKey))return;GF.marcheFocus.scope='group';updateMarcheScopeButtons();if(isMarcheFocusActive()){invalidateCache();renderMarche();}};}
+  if(site&&!site._marcheBound){site._marcheBound=true;site.onclick=function(){GF.marcheFocus.scope='site';updateMarcheScopeButtons();try{invalidateCache();}catch(e){}if(typeof renderMarche==='function')renderMarche();};}
+  if(grp&&!grp._marcheBound){grp._marcheBound=true;grp.onclick=function(){if(isMarcheFocusActive()&&!marcheFocusHasGroup(GF.marcheFocus.siteKey))return;GF.marcheFocus.scope='group';updateMarcheScopeButtons();try{invalidateCache();}catch(e){}if(typeof renderMarche==='function')renderMarche();};}
   if(!window._marcheSearchDocBound){
     window._marcheSearchDocBound=true;
     document.addEventListener('click',function(e){
@@ -993,19 +993,43 @@ function _marcheDaf3AnsCutoff(){
   d.setHours(0,0,0,0);
   return d;
 }
-function clientHasDafInLast36Months(c){
-  if(!c)return false;
-  var sk=c._siteKey||makeSiteKey(c);
+function _vehicleDateObj(d){
+  if(d==null||d==='')return null;
+  if(typeof d==='number')return new Date(Math.round((d-25569)*86400000));
+  var iso=typeof parseDate==='function'?parseDate(d):null;
+  if(iso){
+    var dt=new Date(iso+'T12:00:00');
+    if(!isNaN(dt.getTime()))return dt;
+  }
+  var dt2=new Date(d);
+  return isNaN(dt2.getTime())?null:dt2;
+}
+function siteHasDafInLast36Months(sk){
+  if(!sk)return false;
   var cutoff=_marcheDaf3AnsCutoff();
   var veh=(IDX.vBySite&&IDX.vBySite[sk])||[];
   for(var i=0;i<veh.length;i++){
     var v=veh[i];
     if(!isDaf(v))continue;
-    var dt=v.date?new Date(v.date):null;
-    if(!dt||isNaN(dt.getTime()))continue;
-    if(dt>=cutoff)return true;
+    var dt=_vehicleDateObj(v.date);
+    if(dt&&dt>=cutoff)return true;
   }
   return false;
+}
+function clientHasDafInLast36Months(c){
+  if(!c)return false;
+  var sk=c._siteKey||makeSiteKey(c);
+  var scope=(GF.marcheFocus&&GF.marcheFocus.scope)||'site';
+  if(scope==='group'){
+    var g=typeof getGroupForSiteKey==='function'?getGroupForSiteKey(sk):null;
+    if(g&&g.siteKeys&&g.siteKeys.length){
+      for(var gi=0;gi<g.siteKeys.length;gi++){
+        if(siteHasDafInLast36Months(g.siteKeys[gi]))return true;
+      }
+      return false;
+    }
+  }
+  return siteHasDafInLast36Months(sk);
 }
 function passesMarcheDaf3AnsMask(c){
   ensureMarcheMaskTriState();
@@ -4236,7 +4260,7 @@ function _renderMarcheFilterBars(kTypeVerifier){
   html+='<div id="marche-mask-bar" class="'+_dim+'" style="display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;background:var(--bg2);border-bottom:1px solid var(--border);">'
     +'<button class="gf-chip'+(_ss==='exclude'?' mask-exclude':(_ss==='only'?' mask-only':''))+'" id="btn-marche-mask-sites-sec">Sites sec.'+(_ss==='neutral'?'':(' '+_toursMaskLabel(_ss)))+'</button>'
     +'<button class="gf-chip'+(_sf==='exclude'?' mask-exclude':(_sf==='only'?' mask-only':''))+'" id="btn-marche-mask-sans-fiche">Sans fiche'+(_sf==='neutral'?'':(' '+_toursMaskLabel(_sf)))+'</button>'
-    +'<button class="gf-chip'+(_d3==='exclude'?' mask-exclude':(_d3==='only'?' mask-only':''))+'" id="btn-marche-mask-daf-3ans" title="Client ayant immatriculé ≥1 DAF sur les 36 derniers mois">DAF 3 ans'+(_d3==='neutral'?'':(' '+_toursMaskLabel(_d3)))+'</button>'
+    +'<button class="gf-chip'+(_d3==='exclude'?' mask-exclude':(_d3==='only'?' mask-only':''))+'" id="btn-marche-mask-daf-3ans" title="≥1 DAF immatriculé sur 36 mois · Site seul / Tout le groupe selon le périmètre">DAF 3 ans'+(_d3==='neutral'?'':(' '+_toursMaskLabel(_d3)))+'</button>'
     +'</div>';
   return html;
 }
