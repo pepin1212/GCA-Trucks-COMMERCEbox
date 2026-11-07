@@ -389,7 +389,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-07-bases-v81';
+const APP_BUILD='2026-11-08-bases-v82';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -5573,7 +5573,33 @@ function bindImportEvents(){
   if(zi&&fi){zi.onclick=function(){fi.click();};fi.onchange=function(e){var f=e.target.files[0];if(!f)return;parseExcel(f).then(function(data){showImportFilterModal(f,data,'immat');}).catch(function(){toast('Erreur import immatriculations');});};}
   bindBasesEvents();
 }
-function restoreJSON(file){return new Promise(function(resolve){const reader=new FileReader();reader.onload=function(e){try{const data=JSON.parse(e.target.result);openModal('📥 Restaurer',`<p style="font-size:12px;color:var(--text2);">Restaurer la sauvegarde <strong>${escH(data.nom||data.base||'?')}</strong> ?<br><br>Les données actuelles de la base active seront remplacées.</p>`,[{label:'Annuler',cls:'btn-ghost'},{label:'Restaurer',cls:'btn-primary',action:function(){if(data.clients)DB.saveClients(data.clients);if(data.crm)DB.saveCRM(data.crm);if(data.projects)DB.saveProjects(data.projects);if(data.history)DB.saveHistory(data.history);if(data.possession)DB.savePossession(data.possession);if(data.settings)DB.saveSettings(data.settings);if(data.exclusions)DB.saveExclusions(data.exclusions);if(data.accessible)DB.saveAccessible(data.accessible);_accessibleStorageMigrated=false;migrateAccessibleStorage();restoreCommerceFromBackup(data);var p=data.vehicles?DB.saveVehicles(data.vehicles):Promise.resolve(true);p.then(function(){buildIndex();autoSave();toast('Restauration effectuée');renderScreen(currentScreen);resolve(true);});}}]);}catch(err){toast('Fichier JSON invalide');resolve(false);}};reader.readAsText(file);});}
+function applyBackupData(data){
+  return new Promise(function(resolve,reject){
+    try{
+      localStorage.setItem('daf_coffre_apply','1');
+      if(data.clients)DB.saveClients(data.clients);
+      if(data.crm)DB.saveCRM(data.crm);
+      if(data.projects)DB.saveProjects(data.projects);
+      if(data.history)DB.saveHistory(data.history);
+      if(data.possession)DB.savePossession(data.possession);
+      if(data.settings)DB.saveSettings(data.settings);
+      if(data.exclusions)DB.saveExclusions(data.exclusions);
+      if(data.accessible)DB.saveAccessible(data.accessible);
+      _accessibleStorageMigrated=false;
+      if(typeof migrateAccessibleStorage==='function')migrateAccessibleStorage();
+      restoreCommerceFromBackup(data);
+      var p=data.vehicles?DB.saveVehicles(data.vehicles):Promise.resolve(true);
+      p.then(function(ok){
+        if(ok===false){localStorage.removeItem('daf_coffre_apply');reject(new Error('véhicules non enregistrés'));return;}
+        buildIndex();autoSave();
+        localStorage.removeItem('daf_coffre_apply');
+        try{renderScreen(currentScreen);}catch(e){}
+        resolve(true);
+      }).catch(function(err){localStorage.removeItem('daf_coffre_apply');reject(err);});
+    }catch(err){try{localStorage.removeItem('daf_coffre_apply');}catch(e){}reject(err);}
+  });
+}
+function restoreJSON(file){return new Promise(function(resolve){const reader=new FileReader();reader.onload=function(e){try{const data=JSON.parse(e.target.result);openModal('📥 Restaurer',`<p style="font-size:12px;color:var(--text2);">Restaurer la sauvegarde <strong>${escH(data.nom||data.base||'?')}</strong> ?<br><br>Les données actuelles de la base active seront remplacées.</p>`,[{label:'Annuler',cls:'btn-ghost',action:function(){resolve(false);}},{label:'Restaurer',cls:'btn-primary',action:function(){applyBackupData(data).then(function(){toast('Restauration effectuée');resolve(true);}).catch(function(){toast('Restauration incomplète — la base véhicules n’a peut-être pas été enregistrée');resolve(false);});}}]);}catch(err){toast('Fichier JSON invalide');resolve(false);}};reader.readAsText(file);});}
 function exportBackupJSONDirect(){
   try{
     var data=getBackupData();
@@ -13418,6 +13444,276 @@ document.addEventListener('DOMContentLoaded',function(){
       if(vm&&!(vm.contains(ev.target)))vm.style.display='none';
       if(cp&&!(cp.contains(ev.target)))cp.style.display='none';
     });
+  }
+})();
+</script>
+<script>
+/* Coffre : copie volontaire entre iPhone, iPad et Mac. Ne remplace jamais la base locale sans confirmation. */
+(function(){
+  var URL_='https://ublizkcyepxaaytwwpih.supabase.co';
+  var KEY='sb_publishable_Or1YDGVBsVWUQXXzLwaCUw_W4TynV7y';
+  var CHUNK=280000;
+  function lsGet(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
+  function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+  function lsDel(k){try{localStorage.removeItem(k);}catch(e){}}
+  function session(){try{return JSON.parse(lsGet('daf_coffre_session')||'null');}catch(e){return null;}}
+  function saveSession(s){if(!s){lsDel('daf_coffre_session');return;}lsSet('daf_coffre_session',JSON.stringify(s));}
+  function deviceName(){
+    var saved=lsGet('daf_coffre_device');
+    if(saved)return saved;
+    var ua=navigator.userAgent||'';
+    if(/iPad/.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1))return 'iPad';
+    if(/iPhone/.test(ua))return 'iPhone';
+    if(/Mac/.test(ua))return 'Mac';
+    return 'Appareil';
+  }
+  function countsOf(data){return {clients:(data&&data.clients||[]).length, vehicles:(data&&data.vehicles||[]).length};}
+  function localCounts(){return {clients:(DB.getClients()||[]).length, vehicles:(DB.getVehicles()||[]).length};}
+  function fmtDate(iso){try{return new Date(iso).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch(e){return iso||'';}}
+  function lineCounts(c){return (c.clients||0)+' clients · '+(c.vehicles||0)+' véhicules';}
+  function api(path, opts){
+    opts=opts||{};
+    var token=opts.token||KEY;
+    var headers={'apikey':KEY,'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'application/json'};
+    if(opts.prefer)headers.Prefer=opts.prefer;
+    return fetch(URL_+path,{method:opts.method||'GET',headers:headers,body:opts.body!=null?JSON.stringify(opts.body):undefined}).then(function(res){
+      return res.text().then(function(text){
+        var json=null; try{json=text?JSON.parse(text):null;}catch(e){json={message:text};}
+        if(!res.ok){
+          var msg=(json&&(json.message||json.msg||json.error_description||json.error))||('Erreur '+res.status);
+          var err=new Error(msg); err.status=res.status; err.body=json; throw err;
+        }
+        return json;
+      });
+    });
+  }
+  function ensureAuth(){
+    var s=session();
+    if(!s||!s.access_token)return Promise.reject(new Error('Connectez-vous au coffre.'));
+    if(s.expires_at && Date.now()<s.expires_at-60000)return Promise.resolve(s);
+    if(!s.refresh_token)return Promise.resolve(s);
+    return api('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:{refresh_token:s.refresh_token}}).then(function(data){
+      var next={access_token:data.access_token,refresh_token:data.refresh_token||s.refresh_token,expires_at:Date.now()+((data.expires_in||3600)*1000),email:s.email};
+      saveSession(next); return next;
+    }).catch(function(){saveSession(null); throw new Error('Session expirée. Reconnectez-vous.');});
+  }
+  function tableMissing(err){
+    var m=String(err&&err.message||'');
+    return err&&(err.status===404||/PGRST205|coffre_snapshots|schema cache|relation/i.test(m));
+  }
+  function listSnapshots(token){
+    return api('/rest/v1/coffre_snapshots?select=id,created_at,device,clients,vehicles,parts,base_id,complete&complete=eq.true&order=created_at.desc&limit=8',{token:token});
+  }
+  function loadSnapshot(token, snap){
+    return api('/rest/v1/coffre_parts?select=idx,data&snapshot_id=eq.'+encodeURIComponent(snap.id)+'&order=idx.asc',{token:token}).then(function(parts){
+      parts=parts||[];
+      if(!parts.length||parts.length!==Number(snap.parts||0))throw new Error('Cette copie du coffre est incomplète. Elle n’a pas été appliquée.');
+      var str=''; parts.forEach(function(p){str+=p.data||'';});
+      var data=JSON.parse(str);
+      if(!data||!Array.isArray(data.clients))throw new Error('Copie illisible.');
+      return data;
+    });
+  }
+  function upload(token, data, baseId){
+    var str=JSON.stringify(data);
+    var chunks=[], i; for(i=0;i<str.length;i+=CHUNK)chunks.push(str.slice(i,i+CHUNK));
+    if(!chunks.length)chunks.push('');
+    var c=countsOf(data);
+    return api('/rest/v1/coffre_snapshots',{method:'POST',token:token,prefer:'return=representation',body:{device:deviceName(),clients:c.clients,vehicles:c.vehicles,parts:chunks.length,base_id:baseId||null,complete:false}}).then(function(rows){
+      var snap=Array.isArray(rows)?rows[0]:rows;
+      if(!snap||!snap.id)throw new Error('Envoi refusé par le coffre.');
+      var chain=Promise.resolve();
+      chunks.forEach(function(part,idx){
+        chain=chain.then(function(){return api('/rest/v1/coffre_parts',{method:'POST',token:token,prefer:'return=minimal',body:{snapshot_id:snap.id,idx:idx,data:part}});});
+      });
+      return chain.then(function(){
+        return api('/rest/v1/coffre_snapshots?id=eq.'+encodeURIComponent(snap.id),{method:'PATCH',token:token,prefer:'return=minimal',body:{complete:true}}).then(function(){snap.complete=true;return snap;});
+      });
+    });
+  }
+  function markSynced(id){lsSet('daf_coffre_base',id||'');lsDel('daf_coffre_dirty');}
+  function isDirty(){return lsGet('daf_coffre_dirty')==='1';}
+  function baseId(){return lsGet('daf_coffre_base');}
+  function tooSmall(local, latest){
+    if(!latest)return false;
+    if((local.vehicles||0)===0 && (latest.vehicles||0)>0)return true;
+    if((latest.clients||0)>0 && (local.clients||0)<Math.floor(latest.clients*0.5))return true;
+    return false;
+  }
+  function snapBlock(title, snap){
+    if(!snap)return '<div style="margin:8px 0;padding:8px;background:var(--bg3);border-radius:8px;"><strong>'+escH(title)+'</strong><div style="font-size:12px;color:var(--text3);">Aucune copie</div></div>';
+    return '<div style="margin:8px 0;padding:8px;background:var(--bg3);border-radius:8px;"><strong>'+escH(title)+'</strong><div style="font-size:12px;color:var(--text2);margin-top:3px;">'+escH(snap.device||'Appareil')+' · '+escH(fmtDate(snap.created_at))+'</div><div style="font-size:13px;font-weight:700;margin-top:3px;">'+escH(lineCounts(snap))+'</div></div>';
+  }
+  function localBlock(){
+    var c=localCounts();
+    return '<div style="margin:8px 0;padding:8px;background:var(--bg3);border-radius:8px;"><strong>Cet appareil</strong><div style="font-size:12px;color:var(--text2);margin-top:3px;">'+escH(deviceName())+(isDirty()?' · modifications non envoyées':'')+'</div><div style="font-size:13px;font-weight:700;margin-top:3px;">'+escH(lineCounts(c))+'</div></div>';
+  }
+  function applySnap(token, snap){
+    return loadSnapshot(token, snap).then(function(data){
+      var c=countsOf(data);
+      if(!c.clients)throw new Error('Cette copie n’a aucun client. Elle n’a pas été appliquée.');
+      return applyBackupData(data).then(function(){markSynced(snap.id);toast('Base de cet appareil remplacée');paint();});
+    });
+  }
+  function guard(err){
+    if(tableMissing(err)){toast('Le coffre n’est pas encore préparé dans Supabase');return;}
+    toast(err&&err.message?err.message:'Coffre indisponible');
+  }
+  function doUpload(forceSmall){
+    var data; try{data=getBackupData();}catch(e){toast('Lecture de la base impossible');return;}
+    var local=countsOf(data);
+    if(!local.clients){openModal('Envoi refusé','<p style="font-size:12px;color:var(--text2);">Cet appareil n’a aucun client. Rien n’a été envoyé.</p>',[{label:'Fermer',cls:'btn-primary'}]);return;}
+    ensureAuth().then(function(s){
+      return listSnapshots(s.access_token).then(function(rows){
+        var latest=(rows&&rows[0])||null;
+        if(latest && latest.id!==baseId()){
+          if(!baseId()||isDirty()){showConflict(s.access_token, latest, data);return;}
+          openModal('Le coffre est plus récent', snapBlock('Coffre', latest)+localBlock()+'<p style="font-size:12px;color:var(--text2);">Cet appareil n’a pas de modification locale. Rien n’a été envoyé. Récupérez le coffre pour prendre la copie la plus récente.</p>',[{label:'Fermer',cls:'btn-primary'}]);
+          return;
+        }
+        if(!forceSmall && tooSmall(local, latest)){showSmall(latest, function(){doUpload(true);});return;}
+        openModal('Envoyer vers le coffre', localBlock()+snapBlock('Dernière copie du coffre', latest)+'<p style="font-size:12px;color:var(--text2);">La copie actuelle du coffre est conservée. La base de cet appareil ne change pas.</p>',[
+          {label:'Annuler',cls:'btn-ghost'},
+          {label:'Envoyer',cls:'btn-primary',close:false,action:function(){
+            upload(s.access_token, data, latest?latest.id:null).then(function(snap){markSynced(snap.id);closeModal();toast('Envoyé au coffre');paint();}).catch(function(err){guard(err);});
+          }}
+        ]);
+      });
+    }).catch(guard);
+  }
+  function showSmall(latest, again){
+    openModal('Cette base est plus petite', snapBlock('Coffre', latest)+localBlock()+'<p style="font-size:12px;color:var(--text2);">L’envoi est arrêté parce que cette base a beaucoup moins de clients ou plus aucun véhicule. Confirmez seulement si c’est voulu.</p>',[
+      {label:'Annuler',cls:'btn-ghost'},
+      {label:'Envoyer quand même',cls:'btn-primary',action:again}
+    ]);
+  }
+  function showConflict(token, latest, data){
+    openModal('Deux bases différentes', localBlock()+snapBlock('Coffre', latest)+'<p style="font-size:12px;color:var(--text2);">Les deux copies restent disponibles. Rien n’est effacé tant que vous n’avez pas choisi.</p>',[
+      {label:'Annuler',cls:'btn-ghost'},
+      {label:'Prendre le coffre',cls:'btn-secondary',close:false,action:function(){applySnap(token, latest).then(closeModal).catch(guard);}},
+      {label:'Garder cet appareil',cls:'btn-primary',close:false,action:function(){
+        var local=countsOf(data);
+        if(tooSmall(local, latest)){closeModal();showSmall(latest, function(){upload(token, data, latest.id).then(function(snap){markSynced(snap.id);toast('Envoyé au coffre');paint();}).catch(guard);});return;}
+        upload(token, data, latest.id).then(function(snap){markSynced(snap.id);closeModal();toast('Envoyé au coffre');paint();}).catch(guard);
+      }}
+    ]);
+  }
+  function doReceive(){
+    ensureAuth().then(function(s){
+      return listSnapshots(s.access_token).then(function(rows){
+        var latest=(rows&&rows[0])||null;
+        if(!latest){openModal('Coffre vide','<p style="font-size:12px;color:var(--text2);">Aucune copie. Envoyez d’abord depuis l’appareil qui a la bonne base. Cet appareil n’a pas été modifié.</p>',[{label:'Fermer',cls:'btn-primary'}]);return;}
+        if(latest.id===baseId() && !isDirty()){openModal('Déjà à jour', snapBlock('Coffre', latest)+'<p style="font-size:12px;color:var(--text2);">Cet appareil a déjà cette copie.</p>',[{label:'Fermer',cls:'btn-primary'}]);return;}
+        var conflict=isDirty()||(!baseId()&&localCounts().clients>0);
+        if(conflict && latest.id!==baseId()){showConflict(s.access_token, latest, getBackupData());return;}
+        openModal('Récupérer le coffre', snapBlock('Copie qui va remplacer cet appareil', latest)+localBlock()+'<p style="font-size:12px;color:var(--text2);">La base de cet appareil est remplacée seulement si vous confirmez.</p>',[
+          {label:'Annuler',cls:'btn-ghost'},
+          {label:'Remplacer cet appareil',cls:'btn-primary',close:false,action:function(){applySnap(s.access_token, latest).then(closeModal).catch(guard);}}
+        ]);
+      });
+    }).catch(guard);
+  }
+  function showHistory(){
+    ensureAuth().then(function(s){
+      return listSnapshots(s.access_token).then(function(rows){
+        rows=rows||[];
+        if(!rows.length){openModal('Copies','<p style="font-size:12px;color:var(--text2);">Le coffre ne contient encore aucune copie complète.</p>',[{label:'Fermer',cls:'btn-primary'}]);return;}
+        var html='<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Choisissez une copie. Elle ne remplace cet appareil qu’après confirmation.</div>';
+        rows.forEach(function(snap){
+          html+='<button type="button" class="btn btn-secondary coffre-old" data-id="'+escH(snap.id)+'" style="width:100%;margin-bottom:6px;text-align:left;">'+escH(fmtDate(snap.created_at))+' · '+escH(snap.device||'')+'<br>'+escH(lineCounts(snap))+'</button>';
+        });
+        openModal('Copies précédentes', html, [{label:'Fermer',cls:'btn-ghost'}]);
+        setTimeout(function(){
+          var buttons=document.querySelectorAll('.coffre-old');
+          Array.prototype.forEach.call(buttons, function(btn){
+            btn.onclick=function(){
+              var id=btn.getAttribute('data-id');
+              var snap=null; rows.forEach(function(r){if(r.id===id)snap=r;});
+              if(!snap)return;
+              openModal('Prendre cette copie', snapBlock('Copie choisie', snap)+localBlock(),[
+                {label:'Annuler',cls:'btn-ghost'},
+                {label:'Remplacer cet appareil',cls:'btn-primary',close:false,action:function(){applySnap(s.access_token, snap).then(closeModal).catch(guard);}}
+              ]);
+            };
+          });
+        },0);
+      });
+    }).catch(guard);
+  }
+  function auth(kind){
+    var email=(($('coffre-email')||{}).value||'').trim();
+    var password=($('coffre-pass')||{}).value||'';
+    if(!email||password.length<6){toast('E-mail et mot de passe (6 caractères minimum)');return;}
+    var path=kind==='up'?'/auth/v1/signup':'/auth/v1/token?grant_type=password';
+    api(path,{method:'POST',body:{email:email,password:password}}).then(function(data){
+      if(!data||!data.access_token){
+        openModal('Confirmez l’e-mail','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Le compte est créé, mais Supabase attend une confirmation. Ouvrez le mail, ou dans Supabase : <strong>Authentication</strong> → <strong>Sign In / Providers</strong> → <strong>Email</strong> → décochez <strong>Confirm email</strong>, puis reconnectez-vous.</p>',[{label:'Compris',cls:'btn-primary'}]);
+        return;
+      }
+      saveSession({access_token:data.access_token,refresh_token:data.refresh_token,expires_at:Date.now()+((data.expires_in||3600)*1000),email:email});
+      lsSet('daf_coffre_email',email);
+      toast('Connecté au coffre');
+      paint();
+    }).catch(function(err){
+      var m=String(err&&err.message||'');
+      if(/already registered|already exists/i.test(m))toast('Ce compte existe déjà. Utilisez Se connecter.');
+      else if(/invalid login/i.test(m))toast('E-mail ou mot de passe incorrect');
+      else guard(err);
+    });
+  }
+  function paint(){
+    var box=$('coffre-body'); if(!box)return;
+    var s=session();
+    var html='';
+    if(!s){
+      html+='<div style="font-size:11px;color:var(--text2);line-height:1.45;margin-bottom:8px;">Même e-mail et même mot de passe sur l’iPhone, l’iPad et le Mac. Avant le premier envoi, faites <strong>Exporter sauvegarde JSON</strong>.</div>';
+      html+='<input id="coffre-email" class="form-input" type="email" autocomplete="username" placeholder="E-mail" value="'+escH(lsGet('daf_coffre_email'))+'" style="margin-bottom:6px;">';
+      html+='<input id="coffre-pass" class="form-input" type="password" autocomplete="current-password" placeholder="Mot de passe" style="margin-bottom:6px;">';
+      html+='<button type="button" class="btn btn-primary" id="coffre-in" style="width:100%;margin-bottom:6px;">Se connecter</button>';
+      html+='<button type="button" class="btn btn-secondary" id="coffre-up" style="width:100%;">Créer le compte</button>';
+    }else{
+      html+='<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">Connecté : <strong>'+escH(s.email||'')+'</strong></div>';
+      html+='<label style="font-size:10px;color:var(--text3);">Nom de cet appareil</label>';
+      html+='<input id="coffre-device" class="form-input" value="'+escH(deviceName())+'" style="margin-bottom:8px;">';
+      html+=localBlock();
+      html+='<button type="button" class="btn btn-primary" id="coffre-send" style="width:100%;margin-bottom:6px;">Envoyer vers le coffre</button>';
+      html+='<button type="button" class="btn btn-secondary" id="coffre-get" style="width:100%;margin-bottom:6px;">Récupérer depuis le coffre</button>';
+      html+='<button type="button" class="btn btn-ghost" id="coffre-hist" style="width:100%;margin-bottom:6px;">Copies précédentes</button>';
+      html+='<button type="button" class="btn btn-ghost" id="coffre-out" style="width:100%;">Se déconnecter</button>';
+      html+='<div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Rien n’est remplacé tout seul. Envoyez depuis l’appareil que vous quittez, récupérez sur celui que vous ouvrez, après avoir lu les compteurs.</div>';
+    }
+    box.innerHTML=html;
+    var inn=$('coffre-in'), up=$('coffre-up'), send=$('coffre-send'), get=$('coffre-get'), hist=$('coffre-hist'), out=$('coffre-out'), dev=$('coffre-device');
+    if(inn)inn.onclick=function(){auth('in');};
+    if(up)up.onclick=function(){auth('up');};
+    if(send)send.onclick=function(){doUpload(false);};
+    if(get)get.onclick=doReceive;
+    if(hist)hist.onclick=showHistory;
+    if(out)out.onclick=function(){saveSession(null);paint();};
+    if(dev)dev.onchange=function(){var v=String(dev.value||'').trim(); if(v)lsSet('daf_coffre_device',v);};
+  }
+  function mount(){
+    var host=$('more-content'); if(!host||$('coffre-card')){paint();return;}
+    var card=document.createElement('div');
+    card.className='card'; card.id='coffre-card';
+    card.innerHTML='<div class="card-title">☁ Coffre iPhone · iPad · Mac</div><div id="coffre-body"></div>';
+    var anchor=host.querySelector('.card');
+    if(anchor&&anchor.nextSibling)host.insertBefore(card, anchor.nextSibling); else host.appendChild(card);
+    paint();
+  }
+  if(typeof renderMore==='function'&&!renderMore._coffre){
+    var prevMore=renderMore;
+    renderMore=function(){prevMore.apply(this, arguments); try{mount();}catch(e){console.error(e);} };
+    renderMore._coffre=true;
+  }
+  if(typeof autoSave==='function'&&!autoSave._coffre){
+    var prevSave=autoSave;
+    autoSave=function(){
+      var r=prevSave.apply(this, arguments);
+      try{ if(lsGet('daf_coffre_apply')==='1')return r; if(lsGet('daf_coffre_base'))lsSet('daf_coffre_dirty','1'); }catch(e){}
+      return r;
+    };
+    autoSave._coffre=true;
   }
 })();
 </script>
