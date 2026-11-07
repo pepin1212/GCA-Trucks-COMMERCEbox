@@ -67,9 +67,22 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .immat-hors{color:var(--text2);font-weight:700;}
 .immat-zero{color:var(--text3);font-weight:600;}
 .immat-pct{font-weight:800;color:var(--text);}
+.immat-score{font-weight:800;color:var(--daf);}
 .immat-visit{font-size:10px;padding:3px 2px;max-width:118px;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:6px;}
 .immat-table input[type=checkbox]{width:16px;height:16px;accent-color:var(--daf);}
 .immat-table input[type=checkbox]:disabled{accent-color:var(--text3);opacity:.85;}
+.immat-table tbody tr{height:40px;}
+.immat-table tbody td{height:40px;max-height:40px;}
+.immat-table tr.immat-pad td{height:auto;max-height:none;padding:0;border:none;background:transparent;}
+.immat-num{cursor:pointer;}
+.immat-num:active{background:var(--daf-bg);}
+.immat-visit-btn,.immat-col{background:none;border:none;color:inherit;font:inherit;font-weight:800;cursor:pointer;padding:1px 2px;}
+.immat-visit-btn{font-size:9px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);max-width:108px;}
+.immat-col.on{color:var(--daf);}
+#immat-filters.collapsed{display:none;}
+#immat-detail:empty{display:none;}
+#immat-detail{flex:0 1 auto;max-height:38vh;overflow:auto;background:var(--bg);border-bottom:1px solid var(--border);}
+#immat-visit-menu,#immat-col-pop{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
 .c-info{flex:1;min-width:0}
 .c-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .c-sub{font-size:10px;color:var(--text3);margin-top:1px}
@@ -322,16 +335,25 @@ input[type=file]{display:none}
 
 <div class="screen" id="screen-immat">
   <div class="screen-header">
-    <div class="screen-title">IMMAT</div>
-    <div class="screen-sub" id="immat-sub">Immatriculations par site</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+      <div>
+        <div class="screen-title">IMMAT</div>
+        <div class="screen-sub" id="immat-sub">Immatriculations par site</div>
+      </div>
+      <button type="button" class="gf-chip" id="immat-projet-btn" title="ON : projet ou pas de projet déjà renseigné. OFF : les retire.">PROJET</button>
+      <button type="button" class="gf-chip" id="immat-filter-toggle">Filtres</button>
+    </div>
   </div>
   <div class="search-bar" id="immat-search-bar" style="position:relative;z-index:12;margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;">
     <span>🔍</span>
     <input type="text" id="immat-search" placeholder="Client, ville, TVA, canton…" autocomplete="off">
     <button type="button" class="btn btn-ghost btn-sm" id="immat-search-clear" title="Effacer la recherche" style="min-width:30px;height:30px;padding:0;border-radius:50%;font-size:13px;line-height:1;">✕</button>
   </div>
-  <div id="immat-filters"></div>
+  <div id="immat-filters" class="collapsed"></div>
+  <div id="immat-detail"></div>
   <div id="immat-scroll"></div>
+  <div id="immat-visit-menu" style="display:none;"></div>
+  <div id="immat-col-pop" style="display:none;"></div>
 </div>
 
 <nav id="nav">
@@ -367,7 +389,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-07-bases-v78';
+const APP_BUILD='2026-11-07-bases-v80';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -873,6 +895,7 @@ const GF = {
   immatMaskAccessible: 'neutral',
   immatFUrgent: 'neutral',
   immatFProtocole: 'neutral',
+  immatFProjet: 'neutral',
   immatCantons: [],
   immatVilles: [],
   immatMaskSitesSec: 'exclude',
@@ -12546,7 +12569,12 @@ document.addEventListener('DOMContentLoaded',function(){
 <script>
 /* IMMAT — tableau des immatriculations par site. Filtres indépendants de Marché. */
 (function(){
-  var UI={geo:false,vend:false,q:'',keep:false};
+  var UI={geo:false,vend:false,q:'',keep:false,filtersOpen:false};
+  var MODEL={sig:'',rows:null};
+  var SORT={key:'client',dir:1};
+  var COLF={};
+  var VIEW={start:-1,rows:[]};
+  var RH=40;
   var VISIT=[['Prospecté','VISITÉ'],['À prospecter','A VISITER'],['Ne pas prospecter','NE PAS VISITER']];
   function ensure(){
     if(!Array.isArray(GF.immatCantons))GF.immatCantons=[];
@@ -12558,6 +12586,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if(!GF.immatMaskAccessible)GF.immatMaskAccessible='neutral';
     if(!GF.immatFUrgent)GF.immatFUrgent='neutral';
     if(!GF.immatFProtocole)GF.immatFProtocole='neutral';
+    if(!GF.immatFProjet)GF.immatFProjet='neutral';
     if(!GF.immatMaskSitesSec)GF.immatMaskSitesSec='exclude';
     if(!GF.immatMaskSansFiche)GF.immatMaskSansFiche='neutral';
     if(!GF.immatMaskDaf3Ans)GF.immatMaskDaf3Ans='neutral';
@@ -12644,79 +12673,272 @@ document.addEventListener('DOMContentLoaded',function(){
     }
     return true;
   }
-  function buildRows(){
+  function takeSnap(){
+    var st=getAppSettings()||{};
+    return {aff:st.immatAffichage||{}, etat:st.siteEtatProspection||{}, acc:DB.getAccessible()||{}, ex:DB.getExclusions()||{}};
+  }
+  function recOf(map,c,sk){return (map&&(map[sk]||(c&&map[c.tva])))||{};}
+  function accOf(c,sk,map){var rec=recOf(map,c,sk); if(rec.manual)return rec.accessible===true; return norm(c.accessible||'')==='OUI';}
+  function excOf(c,sk,map){var rec=recOf(map,c,sk); if(rec.manual)return rec.excluded===true; return norm(c.exclu||'')==='OUI';}
+  function urgOf(c,sk,map){var rec=recOf(map,c,sk); if(rec.manualUrgent)return rec.urgent===true; var p=String(c.priorite||'').trim(); return p!==''&&p!=='0'&&p.toUpperCase()!=='NON';}
+  function dataSig(){
+    var cs=DB.getClients()||[], vs=DB.getVehicles()||[];
+    return cs.length+'|'+vs.length+'|'+(GF.immatTypeFilter||'tous')+'|'+YEAR+'|'+(cs[0]&&cs[0].tva||'')+'|'+(vs[0]&&vs[0].plaque||'');
+  }
+  function crmRecOf(crm,c,sk){
+    if(crm[sk])return crm[sk];
+    var tva=c.tva||'';
+    var sites=(IDX.sitesByTva&&IDX.sitesByTva[tva])||[];
+    if(tva&&sites.length<=1&&crm[tva])return crm[tva];
+    return {};
+  }
+  function rowScore(sk, urgent, c){
+    var veh=(IDX.vBySite&&IDX.vBySite[sk])||[];
+    var tf=GF.immatTypeFilter||'tous', list=[], i, v, y, ren=0, ac=0, daf=false;
+    for(i=0;i<veh.length;i++){
+      v=veh[i];
+      if(tf==='tracteur'&&!isTracteur(v))continue;
+      if(tf==='porteur'&&!isPorteur(v))continue;
+      list.push(v);
+      if(isDaf(v))daf=true;
+      if(isVehicleRenewableCore(v))ren++;
+      y=getYear(v.date);
+      if(y&&y>=YEAR-4)ac++;
+    }
+    var s=Math.min(Math.min(ren,8)*12+Math.min(ac,6)*2,100);
+    if(daf)s+=5;
+    if(urgent)s+=5;
+    if(isDefenseActive(c))s+=5;
+    return Math.min(s,100);
+  }
+  function buildModels(){
+    var snap=takeSnap();
+    var crm=DB.getCRM()||{};
     var rows=[];
     (DB.getClients()||[]).forEach(function(c){
       var sk=c._siteKey||makeSiteKey(c);
+      if(!sk)return;
       var stats=siteStats(sk);
-      if(!passes(c, stats))return;
-      rows.push({c:c,sk:sk,stats:stats});
+      var urg=urgOf(c,sk,snap.ex);
+      var proj=hasOpenProject(c.tva, sk);
+      var pas=crmRecOf(crm,c,sk).pas_projet_year===YEAR;
+      rows.push({
+        c:c, sk:sk, stats:stats,
+        nom:c.nom||'', ville:c.ville||'',
+        hay:[c.nom,c.ville,c.canton,c.tva,c.siret,c.vendeur,c.profil].join(' ').toLowerCase(),
+        aff:!!snap.aff[sk],
+        acc:accOf(c,sk,snap.acc),
+        exc:excOf(c,sk,snap.ex),
+        urg:urg,
+        ina:isInactiveClient(c.tva, sk),
+        sec:isSecondary(c),
+        proto:!!String(c.groupement||'').trim(),
+        daf3:siteHasDafInLast36Months(sk),
+        visit:normalizeEtatProspection((snap.etat&&snap.etat[sk])||c.etatProspection||''),
+        proj:proj, pas:pas, marked:!!(proj||pas),
+        score:rowScore(sk, urg, c)
+      });
     });
+    MODEL.sig=dataSig();
+    MODEL.rows=rows;
+    return rows;
+  }
+  function models(){
+    if(MODEL.rows&&MODEL.sig===dataSig())return MODEL.rows;
+    return buildModels();
+  }
+  function refreshFlags(){
+    var rows=models();
+    var snap=takeSnap();
+    var crm=DB.getCRM()||{};
+    rows.forEach(function(r){
+      r.aff=!!snap.aff[r.sk];
+      r.acc=accOf(r.c,r.sk,snap.acc);
+      r.exc=excOf(r.c,r.sk,snap.ex);
+      r.urg=urgOf(r.c,r.sk,snap.ex);
+      r.visit=normalizeEtatProspection((snap.etat&&snap.etat[r.sk])||r.c.etatProspection||'');
+      r.proj=hasOpenProject(r.c.tva, r.sk);
+      r.pas=crmRecOf(crm,r.c,r.sk).pas_projet_year===YEAR;
+      r.marked=!!(r.proj||r.pas);
+      r.score=rowScore(r.sk, r.urg, r.c);
+    });
+  }
+  function pagePass(r){
+    var c=r.c;
+    var profils=GF.immatProfils||[];
+    if(profils.length&&!profils.some(function(p){return norm(p)===norm(c.profil||'');}))return false;
+    var vends=GF.immatVendeurs||[];
+    if(vends.length&&!vends.some(function(v){return norm(v)===norm(c.vendeur||'');}))return false;
+    if(!passesTriMask(GF.immatMaskExclusion, r.exc))return false;
+    if(!passesTriMask(GF.immatMaskInactifs, r.ina))return false;
+    if(!passesTriMask(GF.immatMaskAccessible, !r.acc))return false;
+    var cantons=GF.immatCantons||[], villes=GF.immatVilles||[];
+    if(cantons.length&&cantons.indexOf(String(c.canton||'').trim()||'Sans canton')<0)return false;
+    if(villes.length&&villes.indexOf(String(c.ville||'').trim()||'Sans ville')<0)return false;
+    var ss=GF.immatMaskSitesSec||'exclude';
+    if(ss==='only'&&!r.sec)return false;
+    if(ss==='exclude'&&r.sec)return false;
+    var d3=GF.immatMaskDaf3Ans||'neutral';
+    if(d3!=='neutral'&&!passesTriMask(d3, r.daf3))return false;
+    var f=GF.immatF||'all';
+    if(f==='daf_with'&&!(r.stats.parcDaf>0))return false;
+    if(f==='no_daf'&&!(r.stats.parc>0&&r.stats.parcDaf===0))return false;
+    if(!passesTriMask(GF.immatFUrgent, r.urg))return false;
+    if(!passesTriMask(GF.immatFProtocole, r.proto))return false;
+    if(!passesTriMask(GF.immatFProjet||'neutral', !!r.marked))return false;
+    var mode=GF.immatAffichage||'tous';
+    if(mode==='on'&&!r.aff)return false;
+    if(mode==='off'&&r.aff)return false;
+    var q=String(GF.immatSearch||'').trim().toLowerCase();
+    if(q&&r.hay.indexOf(q)<0)return false;
+    return true;
+  }
+  function numVal(r,col){
+    if(col==='totald')return r.stats.winD;
+    if(col==='totalh')return r.stats.winH;
+    if(col==='pct'){var t=r.stats.winD+r.stats.winH; return t?r.stats.winD/t:null;}
+    if(col==='score')return typeof r.score==='number'?r.score:0;
+    var m=/^y(\d+)([dh])$/.exec(col);
+    if(!m)return 0;
+    var slot=r.stats.by[Number(m[1])]||{d:0,h:0};
+    return m[2]==='d'?slot.d:slot.h;
+  }
+  function sortVal(r,key){
+    if(key==='client')return r.nom||'';
+    if(key==='aff')return r.aff?1:0;
+    if(key==='acc')return r.acc?1:0;
+    if(key==='exc')return r.exc?1:0;
+    if(key==='ina')return r.ina?1:0;
+    if(key==='visit')return r.visit||'';
+    return numVal(r,key);
+  }
+  function colActive(col){
+    var f=COLF[col]; if(!f)return false;
+    if(f.mode&&f.mode!=='all')return true;
+    if(f.q)return true;
+    if(f.vals&&f.vals.length)return true;
+    return false;
+  }
+  function colPass(r){
+    var keys=Object.keys(COLF), i, col, f, v;
+    for(i=0;i<keys.length;i++){
+      col=keys[i]; f=COLF[col]; if(!f)continue;
+      if(col==='client'){
+        if(f.q){
+          var qq=String(f.q).toLowerCase();
+          if((r.nom+' '+r.ville).toLowerCase().indexOf(qq)<0)return false;
+        }
+        continue;
+      }
+      if(col==='visit'){
+        if(f.vals&&f.vals.length&&f.vals.indexOf(r.visit||'')<0)return false;
+        continue;
+      }
+      if(col==='aff'||col==='acc'||col==='exc'||col==='ina'){
+        v=!!r[col==='aff'?'aff':col];
+        if(f.mode==='on'&&!v)return false;
+        if(f.mode==='off'&&v)return false;
+        continue;
+      }
+      v=numVal(r,col);
+      if(v==null){if(f.mode&&f.mode!=='all')return false; continue;}
+      if(f.mode==='pos'&&!(v>0))return false;
+      if(f.mode==='zero'&&v!==0)return false;
+    }
+    return true;
+  }
+  function viewRows(){
+    var rows=models().filter(function(r){return pagePass(r)&&colPass(r);});
+    var key=SORT.key||'client', dir=SORT.dir||1;
     rows.sort(function(a,b){
-      var n=String(a.c.nom||'').localeCompare(String(b.c.nom||''),'fr');
-      if(n)return n;
-      return String(a.c.ville||'').localeCompare(String(b.c.ville||''),'fr');
+      var va=sortVal(a,key), vb=sortVal(b,key);
+      if(va==null&&vb==null)return 0;
+      if(va==null)return 1;
+      if(vb==null)return -1;
+      var n=typeof va==='number'?va-vb:String(va).localeCompare(String(vb),'fr',{numeric:true});
+      if(!n)n=String(a.nom||'').localeCompare(String(b.nom||''),'fr');
+      return n*dir;
     });
     return rows;
   }
-  function pair(d,h){
-    return '<td class="'+(d?'immat-daf':'immat-zero')+'">'+(d||0)+'</td><td class="'+(h?'immat-hors':'immat-zero')+'">'+(h||0)+'</td>';
+  function visitLabel(v){
+    var i; for(i=0;i<VISIT.length;i++) if(VISIT[i][0]===v) return VISIT[i][1];
+    return v||'—';
   }
-  function pctCell(d,h){
-    var t=d+h;
-    if(!t)return '<td class="immat-pct">—</td>';
-    var n=(Math.round(d/t*1000)/10).toFixed(1).replace('.',',');
-    return '<td class="immat-pct" title="'+d+' DAF / '+t+'">'+n+' %</td>';
+  function colBtn(col,label){
+    var on=SORT.key===col||colActive(col);
+    var mark=SORT.key===col?(SORT.dir>0?' ▲':' ▼'):'';
+    return '<button type="button" class="immat-col'+(on?' on':'')+'" data-col="'+col+'">'+label+mark+'</button>';
   }
-  function visitSelect(sk,c){
-    var cur='';
-    try{cur=normalizeEtatProspection(getSiteEtatProspection(sk,c)||'');}catch(e){cur='';}
-    var html='<select class="immat-visit" data-sk="'+attr(sk)+'">';
-    html+='<option value="">—</option>';
-    var known=false;
-    VISIT.forEach(function(o){
-      if(cur===o[0])known=true;
-      html+='<option value="'+attr(o[0])+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>';
+  function colSpan(){return 3+years().length*2+2+6;}
+  function numCell(r,year,kind,n){
+    if(!n)return '<td class="immat-zero">0</td>';
+    var cls=kind==='d'?'immat-daf':'immat-hors';
+    return '<td class="immat-num '+cls+'" data-sk="'+attr(r.sk)+'" data-year="'+(year||'')+'" data-kind="'+kind+'">'+n+'</td>';
+  }
+  function rowHtml(r){
+    var c=r.c, sk=r.sk, st=r.stats, ys=years();
+    var quick='';
+    try{quick=_toursProjectQuickHtml({hasProjet:!!r.proj,pasProjet:!!r.pas,_siteKey:sk,tva:c.tva,nom:c.nom});}catch(e){quick='';}
+    var html='<tr data-sk="'+attr(sk)+'">';
+    html+='<td class="c-aff"><input type="checkbox" class="immat-aff" data-sk="'+attr(sk)+'"'+(r.aff?' checked':'')+'></td>';
+    html+='<td class="c-prj">'+quick+'</td>';
+    html+='<td class="c-nom"><button type="button" class="immat-name" data-sk="'+attr(sk)+'">'+escH(r.nom||'—')+'</button><div class="immat-ville">'+escH(r.ville||'')+'</div></td>';
+    ys.forEach(function(y){
+      var slot=st.by[y]||{d:0,h:0};
+      html+=numCell(r,y,'d',slot.d)+numCell(r,y,'h',slot.h);
     });
-    if(cur&&!known)html+='<option value="'+attr(cur)+'" selected>'+escH(cur)+'</option>';
-    return html+'</select>';
+    html+=numCell(r,'','d',st.winD)+numCell(r,'','h',st.winH);
+    var tot=st.winD+st.winH;
+    if(!tot)html+='<td class="immat-pct">—</td>';
+    else html+='<td class="immat-num immat-pct" data-sk="'+attr(sk)+'" data-year="" data-kind="all" title="'+st.winD+' DAF / '+tot+'">'+((Math.round(st.winD/tot*1000)/10).toFixed(1).replace('.',','))+' %</td>';
+    html+='<td><input type="checkbox" class="immat-acc" data-sk="'+attr(sk)+'"'+(r.acc?' checked':'')+'></td>';
+    html+='<td><input type="checkbox" class="immat-exc" data-sk="'+attr(sk)+'"'+(r.exc?' checked':'')+'></td>';
+    html+='<td><input type="checkbox" class="immat-inact" disabled'+(r.ina?' checked':'')+' title="Calculé sur les dates d\'immatriculation"></td>';
+    html+='<td><button type="button" class="immat-visit-btn" data-sk="'+attr(sk)+'">'+escH(visitLabel(r.visit))+'</button></td>';
+    html+='<td class="immat-score" title="Score du site">'+r.score+'</td>';
+    return html+'</tr>';
   }
-  function tableHtml(rows){
+  function headHtml(){
     var ys=years();
-    var html='<table class="immat-table"><thead><tr>';
-    html+='<th class="c-aff" rowspan="2">AFFICHAGE</th><th class="c-prj" rowspan="2"></th><th class="c-nom" rowspan="2">CLIENT</th>';
+    var html='<tr><th class="c-aff" rowspan="2">'+colBtn('aff','AFFICHAGE')+'</th><th class="c-prj" rowspan="2"></th><th class="c-nom" rowspan="2">'+colBtn('client','CLIENT')+'</th>';
     ys.forEach(function(y){html+='<th colspan="2">'+y+'</th>';});
-    html+='<th colspan="2">TOTAL</th><th rowspan="2">% DAF</th><th rowspan="2">ACCESSIBLE</th><th rowspan="2">EXCLUS</th><th rowspan="2" title="Calculé : aucune immatriculation sur les '+INACTIVE_PURCHASE_YEARS+' dernières années, ou parc vide.">INACTIFS</th><th rowspan="2" title="VISITÉ / A VISITER / NE PAS VISITER">VISITE</th></tr><tr>';
-    var i;
-    for(i=0;i<ys.length+1;i++)html+='<th title="Immatriculations DAF">DAF</th><th title="Immatriculations hors DAF">HORS</th>';
-    html+='</tr></thead><tbody>';
+    html+='<th colspan="2">TOTAL</th><th rowspan="2">'+colBtn('pct','% DAF')+'</th><th rowspan="2">'+colBtn('acc','ACCESSIBLE')+'</th><th rowspan="2">'+colBtn('exc','EXCLUS')+'</th><th rowspan="2" title="Calculé : aucune immatriculation sur les '+INACTIVE_PURCHASE_YEARS+' dernières années, ou parc vide.">'+colBtn('ina','INACTIFS')+'</th><th rowspan="2" title="VISITÉ / A VISITER / NE PAS VISITER">'+colBtn('visit','VISITE')+'</th><th rowspan="2" title="Même score que la fiche : renouvelables, actifs, DAF, urgent.">'+colBtn('score','SCORE')+'</th></tr><tr>';
+    ys.forEach(function(y){html+='<th>'+colBtn('y'+y+'d','DAF')+'</th><th>'+colBtn('y'+y+'h','HORS')+'</th>';});
+    html+='<th>'+colBtn('totald','DAF')+'</th><th>'+colBtn('totalh','HORS')+'</th></tr>';
+    return html;
+  }
+  function paintBody(){
+    var sc=$('immat-scroll'), body=$('immat-body');
+    if(!sc||!body)return;
+    var rows=VIEW.rows||[];
+    var span=colSpan();
     if(!(DB.getClients()||[]).length){
-      html+='<tr><td colspan="'+(8+ys.length*2)+'" style="text-align:left;padding:14px;color:var(--text2);">Aucun client. Importez le CRM et les immatriculations dans Plus.</td></tr>';
-    }else if(!rows.length){
-      html+='<tr><td colspan="'+(8+ys.length*2)+'" style="text-align:left;padding:14px;color:var(--text2);">Aucun site avec ces filtres.</td></tr>';
+      body.innerHTML='<tr><td colspan="'+span+'" style="text-align:left;padding:14px;color:var(--text2);height:auto;max-height:none;">Aucun client. Importez le CRM et les immatriculations dans Plus.</td></tr>';
+      return;
     }
-    rows.forEach(function(r){
-      var c=r.c, sk=r.sk, st=r.stats;
-      var quick='';
-      try{quick=_toursProjectQuickHtml({hasProjet:hasOpenProject(c.tva,sk),pasProjet:hasPasProjet(c,sk),_siteKey:sk,tva:c.tva,nom:c.nom});}catch(e){quick='';}
-      var inac=isInactiveClient(c.tva, sk);
-      html+='<tr>';
-      html+='<td class="c-aff"><input type="checkbox" class="immat-aff" data-sk="'+attr(sk)+'"'+(affichageOn(sk)?' checked':'')+' title="AFFICHAGE"></td>';
-      html+='<td class="c-prj">'+quick+'</td>';
-      html+='<td class="c-nom"><button type="button" class="immat-name" data-sk="'+attr(sk)+'">'+escH(c.nom||'—')+'</button><div class="immat-ville">'+escH(c.ville||'')+'</div></td>';
-      ys.forEach(function(y){
-        var slot=st.by[y]||{d:0,h:0};
-        html+=pair(slot.d, slot.h);
-      });
-      html+=pair(st.winD, st.winH);
-      html+=pctCell(st.winD, st.winH);
-      html+='<td><input type="checkbox" class="immat-acc" data-sk="'+attr(sk)+'"'+(isClientAccessible(c)?' checked':'')+' title="Accessible"></td>';
-      html+='<td><input type="checkbox" class="immat-exc" data-sk="'+attr(sk)+'"'+(isClientExcludedMarche(c)?' checked':'')+' title="Exclu"></td>';
-      html+='<td><input type="checkbox" class="immat-inact" disabled'+(inac?' checked':'')+' title="Calculé sur les dates d\'immatriculation"></td>';
-      html+='<td>'+visitSelect(sk,c)+'</td>';
-      html+='</tr>';
-    });
-    return html+'</tbody></table>';
+    if(!rows.length){
+      body.innerHTML='<tr><td colspan="'+span+'" style="text-align:left;padding:14px;color:var(--text2);height:auto;max-height:none;">Aucun site avec ces filtres.</td></tr>';
+      VIEW.start=-2;
+      return;
+    }
+    var vh=sc.clientHeight||640;
+    var count=Math.ceil(vh/RH)+14;
+    var start=Math.max(0, Math.floor(sc.scrollTop/RH)-6);
+    if(start>rows.length-1)start=Math.max(0, rows.length-1);
+    if(start===VIEW.start)return;
+    var slice=rows.slice(start, start+count);
+    var top=start*RH, bot=Math.max(0,(rows.length-start-slice.length)*RH);
+    var html='';
+    if(top)html+='<tr class="immat-pad"><td colspan="'+span+'" style="height:'+top+'px"></td></tr>';
+    slice.forEach(function(r){html+=rowHtml(r);});
+    if(bot)html+='<tr class="immat-pad"><td colspan="'+span+'" style="height:'+bot+'px"></td></tr>';
+    body.innerHTML=html;
+    VIEW.start=start;
+  }
+  function ensureTable(){
+    var sc=$('immat-scroll'); if(!sc)return;
+    sc.innerHTML='<table class="immat-table"><thead id="immat-head">'+headHtml()+'</thead><tbody id="immat-body"></tbody></table>';
   }
   function triBtn(id,label,st){
     return '<button type="button" class="gf-chip'+_triChipClass(st)+'" id="'+id+'">'+_triLabel(label,st)+'</button>';
@@ -12759,9 +12981,9 @@ document.addEventListener('DOMContentLoaded',function(){
     function pill(key,label){
       return '<div class="fpill'+(f===key?' active':'')+'" data-imf="'+key+'">'+label+'</div>';
     }
-    function triPill(key,label,st){
+    function triPill(key,label,st,title){
       var cls=st==='exclude'?' tri-off':(st==='only'?' tri-on':'');
-      return '<div class="fpill'+cls+'" data-imf="'+key+'" data-tri="1">'+_triLabel(label,st)+'</div>';
+      return '<div class="fpill'+cls+'" data-imf="'+key+'" data-tri="1"'+(title?' title="'+attr(title)+'"':'')+'>'+_triLabel(label,st)+'</div>';
     }
     var html='<div style="display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;align-items:center;background:var(--bg2);">'
       +'<span style="font-size:9px;font-weight:800;color:var(--text3);">AFFICHAGE</span>'
@@ -12781,7 +13003,7 @@ document.addEventListener('DOMContentLoaded',function(){
       +'</div>';
     html+='<div id="immat-fpills" class="filter-row" style="padding:4px 12px;background:var(--bg2);border-top:1px solid var(--border);flex-wrap:wrap;">'
       +pill('all','Tous')+pill('daf_with','Avec DAF')+pill('no_daf','Sans DAF')
-      +triPill('urgent','Urgents',GF.immatFUrgent)+triPill('protocole','Protocole',GF.immatFProtocole)
+      +triPill('urgent','Urgents',GF.immatFUrgent)+triPill('protocole','Protocole',GF.immatFProtocole)+triPill('projet','PROJET',GF.immatFProjet||'neutral','ON : projet ou pas de projet renseigné. OFF : les retire.')
       +'</div>';
     html+='<div style="padding:4px 12px 6px;background:var(--bg2);border-top:1px solid var(--border);">'+geoHtml()+'</div>';
     html+='<div style="display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;background:var(--bg2);border-top:1px solid var(--border);">'
@@ -12844,7 +13066,8 @@ document.addEventListener('DOMContentLoaded',function(){
     QA('#immat-fpills .fpill').forEach(function(el){
       el.onclick=function(){
         if(el.getAttribute('data-tri')==='1'){
-          var key=el.getAttribute('data-imf')==='urgent'?'immatFUrgent':'immatFProtocole';
+          var triMap={urgent:'immatFUrgent',protocole:'immatFProtocole',projet:'immatFProjet'};
+          var key=triMap[el.getAttribute('data-imf')]||'immatFUrgent';
           GF[key]=cycleToursMaskState(GF[key]||'neutral');
         }else GF.immatF=el.getAttribute('data-imf')||'all';
         renderImmat();
@@ -12916,26 +13139,135 @@ document.addEventListener('DOMContentLoaded',function(){
     if(reset)reset.onclick=function(e){e.stopPropagation(); GF.immatCantons=[]; GF.immatVilles=[]; UI.q=''; UI.geo=true; UI.keep=true; renderImmat();};
     if(UI.geo){placeDrop(btn,drop); fillGeo(); if(inp)inp.value=UI.q||'';}
   }
+  function syncFilterToggle(){
+    var box=$('immat-filters'), btn=$('immat-filter-toggle');
+    if(box)box.classList.toggle('collapsed', !UI.filtersOpen);
+    if(btn)btn.textContent=UI.filtersOpen?'Masquer filtres':'Filtres';
+    var pj=$('immat-projet-btn'), st=GF.immatFProjet||'neutral';
+    if(pj){
+      pj.textContent=_triLabel('PROJET', st);
+      pj.className='gf-chip'+_triChipClass(st);
+      if(!pj._bound){
+        pj._bound=1;
+        pj.onclick=function(){
+          GF.immatFProjet=cycleToursMaskState(GF.immatFProjet||'neutral');
+          renderImmat();
+        };
+      }
+    }
+  }
+  function modelBySk(sk){
+    var rows=models(), i;
+    for(i=0;i<rows.length;i++) if(rows[i].sk===sk)return rows[i];
+    return null;
+  }
+  function cellVehicles(r, year, kind){
+    var veh=(IDX.vBySite&&IDX.vBySite[r.sk])||[];
+    var tf=GF.immatTypeFilter||'tous', y0=YEAR-9, y1=YEAR, out=[], i, v, y, daf;
+    for(i=0;i<veh.length;i++){
+      v=veh[i];
+      if(tf==='tracteur'&&!isTracteur(v))continue;
+      if(tf==='porteur'&&!isPorteur(v))continue;
+      y=getYear(v.date);
+      if(!y||y<y0||y>y1)continue;
+      if(year&&Number(year)!==Number(y))continue;
+      daf=isDaf(v);
+      if(kind==='d'&&!daf)continue;
+      if(kind==='h'&&daf)continue;
+      out.push(v);
+    }
+    out.sort(function(a,b){return String(b.date||'').localeCompare(String(a.date||''));});
+    return out;
+  }
+  function openDetail(sk, year, kind){
+    var r=modelBySk(sk), det=$('immat-detail');
+    if(!r||!det)return;
+    var list=cellVehicles(r, year, kind);
+    if(!list.length){det.innerHTML='';return;}
+    var what=kind==='d'?'DAF':(kind==='h'?'HORS DAF':'toutes');
+    var when=year?String(year):(YEAR-9)+'–'+YEAR;
+    var title=(r.nom||'Site')+' — '+when+' — '+what;
+    var rows='';
+    list.slice(0,200).forEach(function(v,i){
+      rows+='<tr style="border-bottom:1px solid var(--border);"><td style="padding:5px 8px;white-space:nowrap;color:var(--text2);">'+escH(fmtDate(v.date))+'</td><td style="padding:5px 8px;font-weight:600;">'+escH(r.nom||'—')+'</td><td style="padding:5px 8px;font-family:monospace;white-space:nowrap;">'+escH(v.plaque||'—')+'</td><td style="padding:5px 8px;white-space:nowrap;">'+escH(v.marque||'—')+'</td><td style="padding:5px 8px;white-space:nowrap;color:var(--text2);">'+escH(v.type||'—')+'</td><td style="padding:5px 8px;white-space:nowrap;color:var(--text2);">'+escH(v.carrosserie||'—')+'</td><td style="padding:5px 8px;text-align:right;"><button type="button" class="btn btn-secondary btn-sm immat-det-fiche" data-i="'+i+'" style="font-size:9px;">Fiche</button></td></tr>';
+    });
+    det._rows=list; det._sk=sk; det._title=title;
+    det.innerHTML='<div style="background:var(--bg3);margin:6px 8px;border-radius:var(--radius);overflow:hidden;"><div style="padding:7px 12px;display:flex;align-items:center;gap:8px;justify-content:space-between;border-bottom:1px solid var(--border);"><span style="font-size:11px;font-weight:700;color:var(--daf);flex:1;">'+escH(title)+' — '+list.length+' immat.</span><button type="button" class="btn btn-primary btn-sm" id="immat-det-export" style="font-size:10px;">Exporter XLSX</button><button type="button" id="immat-det-close" style="background:none;border:none;color:var(--text3);font-size:14px;cursor:pointer;">✕</button></div><div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;width:100%;"><tr style="border-bottom:1px solid var(--border);"><th style="padding:4px 8px;text-align:left;color:var(--text3);">Date</th><th style="padding:4px 8px;text-align:left;color:var(--text3);">Client</th><th style="padding:4px 8px;text-align:left;color:var(--text3);">Plaque</th><th style="padding:4px 8px;text-align:left;color:var(--text3);">Marque</th><th style="padding:4px 8px;text-align:left;color:var(--text3);">Type</th><th style="padding:4px 8px;text-align:left;color:var(--text3);">Carross.</th><th></th></tr>'+rows+(list.length>200?'<tr><td colspan="7" style="padding:6px 8px;color:var(--text3);font-size:9px;">Liste limitée à 200 lignes. L’export contient tout.</td></tr>':'')+'</table></div></div>';
+    var exp=$('immat-det-export');
+    if(exp)exp.onclick=function(e){
+      e.stopPropagation();
+      if(typeof XLSX==='undefined'){try{toast('xlsx.full.min.js requis');}catch(err){}return;}
+      var aoa=[['Date','Client','TVA','Plaque','Marque','Type','Carrosserie','Modèle']];
+      list.forEach(function(v){aoa.push([fmtDate(v.date), r.nom||v.client||'', v.tva||r.c.tva||'', v.plaque||'', v.marque||'', v.type||'', v.carrosserie||'', v.modele||'']);});
+      var wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb,ws,'Cible');
+      XLSX.writeFile(wb,'DAF_CommerceBox_IMMAT.xlsx');
+    };
+    var close=$('immat-det-close');
+    if(close)close.onclick=function(e){e.stopPropagation(); det.innerHTML='';};
+    QA('#immat-detail .immat-det-fiche').forEach(function(b){
+      b.onclick=function(e){e.stopPropagation(); openSiteSheet(sk);};
+    });
+  }
+  function openVisitMenu(btn){
+    var sk=btn.getAttribute('data-sk'), menu=$('immat-visit-menu'), row=modelBySk(sk), cur=row?row.visit:'';
+    if(!menu)return;
+    var html='<button type="button" class="immat-vopt" data-val="" style="display:block;width:100%;text-align:left;padding:9px 12px;background:none;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:12px;">—</button>';
+    VISIT.forEach(function(o){
+      html+='<button type="button" class="immat-vopt" data-val="'+attr(o[0])+'" style="display:block;width:100%;text-align:left;padding:9px 12px;background:'+(cur===o[0]?'var(--daf-bg)':'none')+';border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:12px;font-weight:700;">'+o[1]+'</button>';
+    });
+    menu.innerHTML=html; menu.style.display='block'; menu._sk=sk;
+    var rc=btn.getBoundingClientRect();
+    menu.style.top=Math.max(8, Math.min(rc.bottom+4, window.innerHeight-170))+'px';
+    menu.style.left=Math.max(8, Math.min(rc.left, window.innerWidth-180))+'px';
+    menu.style.width='168px';
+  }
+  function openColPop(btn){
+    var col=btn.getAttribute('data-col'), pop=$('immat-col-pop');
+    if(!pop)return;
+    var f=COLF[col]||{};
+    var kind=col==='client'?'text':(col==='visit'?'visit':((col==='aff'||col==='acc'||col==='exc'||col==='ina')?'check':'num'));
+    var html='<div style="padding:8px;">';
+    html+='<button type="button" class="btn btn-secondary btn-sm immat-sort-go" data-dir="1" style="width:100%;margin-bottom:4px;">Trier croissant</button>';
+    html+='<button type="button" class="btn btn-secondary btn-sm immat-sort-go" data-dir="-1" style="width:100%;margin-bottom:8px;">Trier décroissant</button>';
+    if(kind==='text')html+='<input id="immat-col-q" class="form-input" placeholder="Le nom contient…" value="'+attr(f.q||'')+'" style="font-size:13px;margin-bottom:6px;">';
+    else if(kind==='check')html+='<button type="button" class="gf-chip immat-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip immat-fmode" data-mode="on">Cochés</button> <button type="button" class="gf-chip immat-fmode" data-mode="off">Non cochés</button>';
+    else if(kind==='num')html+='<button type="button" class="gf-chip immat-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip immat-fmode" data-mode="pos">&gt; 0</button> <button type="button" class="gf-chip immat-fmode" data-mode="zero">= 0</button>';
+    else{
+      html+='<label style="display:flex;gap:6px;padding:4px 0;font-size:12px;"><input type="checkbox" class="immat-vfilt" value=""'+((f.vals||[]).indexOf('')>=0?' checked':'')+'> —</label>';
+      VISIT.forEach(function(o){html+='<label style="display:flex;gap:6px;padding:4px 0;font-size:12px;"><input type="checkbox" class="immat-vfilt" value="'+attr(o[0])+'"'+((f.vals||[]).indexOf(o[0])>=0?' checked':'')+'> '+o[1]+'</label>';});
+      html+='<button type="button" class="btn btn-primary btn-sm" id="immat-vfilt-apply" style="width:100%;margin-top:6px;">Filtrer</button>';
+    }
+    html+='<button type="button" class="btn btn-ghost btn-sm" id="immat-col-clear" style="width:100%;margin-top:6px;">Effacer le filtre</button></div>';
+    pop.innerHTML=html; pop.style.display='block'; pop._col=col;
+    var rc=btn.getBoundingClientRect();
+    pop.style.top=Math.max(8, Math.min(rc.bottom+4, window.innerHeight-220))+'px';
+    pop.style.left=Math.max(8, Math.min(rc.left, window.innerWidth-250))+'px';
+  }
   function renderImmat(opts){
     try{
       ensure();
+      opts=opts||{};
       var box=$('immat-filters'), sc=$('immat-scroll'), sub=$('immat-sub');
       if(!box||!sc)return;
-      var keep=opts&&opts.keepScroll;
-      var top=keep?sc.scrollTop:0, left=keep?sc.scrollLeft:0;
       var inp=$('immat-search');
       if(inp&&document.activeElement!==inp)inp.value=GF.immatSearch||'';
-      box.innerHTML=filtersHtml();
-      bindFilters();
+      if(!opts.tableOnly){box.innerHTML=filtersHtml(); bindFilters();}
+      syncFilterToggle();
       if((GF.immatMaskSansFiche||'neutral')==='only'){
         sc.innerHTML=typeof _renderMarcheOrphanPanel==='function'?_renderMarcheOrphanPanel():'';
         if(sub)sub.textContent='Immatriculations sans fiche';
         return;
       }
-      var rows=buildRows();
-      if(sub)sub.textContent=rows.length+' site'+(rows.length>1?'s':'')+' · '+(YEAR-9)+'–'+YEAR+' · DAF / hors DAF';
-      sc.innerHTML=tableHtml(rows);
-      sc.scrollTop=top; sc.scrollLeft=left;
+      if(opts.refreshFlags)refreshFlags();
+      VIEW.rows=viewRows();
+      VIEW.start=-1;
+      if(sub)sub.textContent=VIEW.rows.length+' site'+(VIEW.rows.length>1?'s':'')+' · '+(YEAR-9)+'–'+YEAR;
+      if(!opts.keepScroll){sc.scrollTop=0; sc.scrollLeft=sc.scrollLeft||0;}
+      var head=$('immat-head');
+      if(!head||!$('immat-body'))ensureTable();
+      else head.innerHTML=headHtml();
+      paintBody();
     }catch(err){
       console.error('renderImmat',err);
       var sc2=$('immat-scroll');
@@ -12943,7 +13275,7 @@ document.addEventListener('DOMContentLoaded',function(){
     }
   }
   window.renderImmat=renderImmat;
-  function refreshIfHere(){ if(typeof currentScreen!=='undefined'&&currentScreen==='immat')renderImmat({keepScroll:true}); }
+  function refreshIfHere(){ if(window._immatLight)return; if(typeof currentScreen!=='undefined'&&currentScreen==='immat')renderImmat({keepScroll:true, tableOnly:true, refreshFlags:true}); }
   var oldEx=setClientExcludedState;
   setClientExcludedState=window.setClientExcludedState=function(){
     var r=oldEx.apply(this,arguments); refreshIfHere(); return r;
@@ -12977,7 +13309,18 @@ document.addEventListener('DOMContentLoaded',function(){
   var sc=$('immat-scroll');
   if(sc&&!sc._immatBound){
     sc._immatBound=true;
+    var raf=0;
+    sc.addEventListener('scroll',function(){
+      if(raf)return;
+      raf=requestAnimationFrame(function(){raf=0; var prev=VIEW.start; paintBody(); if(VIEW.start===prev){} });
+    },{passive:true});
     sc.addEventListener('click',function(e){
+      var col=e.target.closest&&e.target.closest('.immat-col');
+      if(col&&sc.contains(col)){e.preventDefault();e.stopPropagation();UI.keep=true;openColPop(col);return;}
+      var vb=e.target.closest&&e.target.closest('.immat-visit-btn');
+      if(vb&&sc.contains(vb)){e.preventDefault();e.stopPropagation();UI.keep=true;openVisitMenu(vb);return;}
+      var num=e.target.closest&&e.target.closest('.immat-num');
+      if(num&&sc.contains(num)){openDetail(num.getAttribute('data-sk'), num.getAttribute('data-year'), num.getAttribute('data-kind'));return;}
       var quick=e.target.closest&&e.target.closest('.tours-proj-quick');
       if(quick&&sc.contains(quick)){
         e.preventDefault(); e.stopPropagation();
@@ -12990,25 +13333,77 @@ document.addEventListener('DOMContentLoaded',function(){
     sc.addEventListener('change',function(e){
       var t=e.target; if(!t||!sc.contains(t))return;
       var sk=t.getAttribute('data-sk'); if(!sk)return;
-      var c=IDX.cBySite&&IDX.cBySite[sk];
-      if(t.classList.contains('immat-aff')){setAffichage(sk, t.checked); renderImmat({keepScroll:true}); return;}
-      if(t.classList.contains('immat-acc')){if(c)setClientAccessibleState(c, t.checked, sk); return;}
-      if(t.classList.contains('immat-exc')){if(c)setClientExcludedState(c, t.checked, sk); return;}
-      if(t.classList.contains('immat-visit'))setSiteEtatProspection(sk, t.value);
+      var c=(IDX.cBySite&&IDX.cBySite[sk])||(modelBySk(sk)&&modelBySk(sk).c);
+      var row=modelBySk(sk);
+      if(t.classList.contains('immat-aff')){setAffichage(sk, t.checked); if(row)row.aff=!!t.checked; renderImmat({tableOnly:true, keepScroll:true}); return;}
+      if(t.classList.contains('immat-acc')){if(c){saveAccessibleRec(c,{accessible:!!t.checked,manual:true},sk); try{syncClientAccessibleToggles(sk);}catch(err){}} if(row)row.acc=!!t.checked; renderImmat({tableOnly:true, keepScroll:true}); return;}
+      if(t.classList.contains('immat-exc')){if(c){saveExclusionRec(c,{excluded:!!t.checked,manual:true},sk); try{syncClientExcluToggles(sk);}catch(err){}} if(row)row.exc=!!t.checked; renderImmat({tableOnly:true, keepScroll:true}); return;}
     });
+  }
+  var vmenu=$('immat-visit-menu');
+  if(vmenu&&!vmenu._bound){
+    vmenu._bound=true;
+    vmenu.addEventListener('click',function(e){
+      var b=e.target.closest&&e.target.closest('.immat-vopt'); if(!b)return;
+      var sk=vmenu._sk, val=b.getAttribute('data-val')||'';
+      window._immatLight=true;
+      try{setSiteEtatProspection(sk, val);}finally{window._immatLight=false;}
+      var row=modelBySk(sk); if(row)row.visit=normalizeEtatProspection(val);
+      vmenu.style.display='none';
+      renderImmat({tableOnly:true, keepScroll:true});
+    });
+  }
+  var pop=$('immat-col-pop');
+  if(pop&&!pop._bound){
+    pop._bound=true;
+    pop.addEventListener('click',function(e){
+      e.stopPropagation();
+      var col=pop._col;
+      var sort=e.target.closest&&e.target.closest('.immat-sort-go');
+      if(sort){SORT={key:col, dir:Number(sort.getAttribute('data-dir'))||1}; pop.style.display='none'; renderImmat({tableOnly:true, keepScroll:true}); return;}
+      var mode=e.target.closest&&e.target.closest('.immat-fmode');
+      if(mode){COLF[col]=COLF[col]||{}; COLF[col].mode=mode.getAttribute('data-mode')||'all'; if(COLF[col].mode==='all'&&!COLF[col].q)delete COLF[col]; renderImmat({tableOnly:true}); return;}
+      if(e.target.id==='immat-vfilt-apply'){
+        var vals=[];
+        pop.querySelectorAll('.immat-vfilt:checked').forEach(function(cb){vals.push(cb.value);});
+        if(vals.length)COLF[col]={vals:vals}; else delete COLF[col];
+        renderImmat({tableOnly:true});
+        return;
+      }
+      if(e.target.id==='immat-col-clear'){delete COLF[col]; pop.style.display='none'; renderImmat({tableOnly:true});}
+    });
+    pop.addEventListener('input',function(e){
+      if(e.target.id!=='immat-col-q')return;
+      var col=pop._col;
+      COLF[col]=COLF[col]||{};
+      COLF[col].q=e.target.value||'';
+      if(!COLF[col].q&&(!COLF[col].mode||COLF[col].mode==='all'))delete COLF[col];
+      clearTimeout(pop._t);
+      pop._t=setTimeout(function(){renderImmat({tableOnly:true});},140);
+    });
+  }
+  var ft=$('immat-filter-toggle');
+  if(ft&&!ft._bound){
+    ft._bound=true;
+    ft.onclick=function(){UI.filtersOpen=!UI.filtersOpen; syncFilterToggle();};
   }
   var search=$('immat-search'), searchTimer=null;
   if(search)search.oninput=function(){
     GF.immatSearch=this.value||'';
     clearTimeout(searchTimer);
-    searchTimer=setTimeout(function(){ if(currentScreen==='immat')renderImmat(); },180);
+    searchTimer=setTimeout(function(){ if(currentScreen==='immat')renderImmat({tableOnly:true}); },160);
   };
   var clearBtn=$('immat-search-clear');
   if(clearBtn)clearBtn.onclick=function(){
     GF.immatSearch='';
     if(search)search.value='';
-    if(currentScreen==='immat')renderImmat();
+    if(currentScreen==='immat')renderImmat({tableOnly:true});
   };
+  if(typeof buildIndex==='function'&&!buildIndex._immat){
+    var _bi=buildIndex;
+    buildIndex=function(){MODEL.sig=''; return _bi.apply(this, arguments);};
+    buildIndex._immat=true;
+  }
   if(!document._immatDoc){
     document._immatDoc=true;
     document.addEventListener('click',function(ev){
@@ -13016,6 +13411,9 @@ document.addEventListener('DOMContentLoaded',function(){
       var gw=$('immat-geo-wrap'), vw=$('immat-vend-wrap');
       if(!(gw&&gw.contains(ev.target))){var gd=$('immat-geo-drop'); if(gd)gd.style.display='none'; UI.geo=false;}
       if(!(vw&&vw.contains(ev.target))){var vd=$('immat-vend-drop'); if(vd)vd.style.display='none'; UI.vend=false;}
+      var vm=$('immat-visit-menu'), cp=$('immat-col-pop');
+      if(vm&&!(vm.contains(ev.target)))vm.style.display='none';
+      if(cp&&!(cp.contains(ev.target)))cp.style.display='none';
     });
   }
 })();
