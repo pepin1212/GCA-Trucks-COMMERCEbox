@@ -389,7 +389,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-07-bases-v80';
+const APP_BUILD='2026-11-07-bases-v81';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -12794,10 +12794,13 @@ document.addEventListener('DOMContentLoaded',function(){
     return true;
   }
   function numVal(r,col){
+    if(col==='total')return (r.stats.winD||0)+(r.stats.winH||0);
     if(col==='totald')return r.stats.winD;
     if(col==='totalh')return r.stats.winH;
     if(col==='pct'){var t=r.stats.winD+r.stats.winH; return t?r.stats.winD/t:null;}
     if(col==='score')return typeof r.score==='number'?r.score:0;
+    var sum=/^y(\d+)$/.exec(col);
+    if(sum){var both=r.stats.by[Number(sum[1])]||{d:0,h:0}; return (both.d||0)+(both.h||0);}
     var m=/^y(\d+)([dh])$/.exec(col);
     if(!m)return 0;
     var slot=r.stats.by[Number(m[1])]||{d:0,h:0};
@@ -12902,8 +12905,8 @@ document.addEventListener('DOMContentLoaded',function(){
   function headHtml(){
     var ys=years();
     var html='<tr><th class="c-aff" rowspan="2">'+colBtn('aff','AFFICHAGE')+'</th><th class="c-prj" rowspan="2"></th><th class="c-nom" rowspan="2">'+colBtn('client','CLIENT')+'</th>';
-    ys.forEach(function(y){html+='<th colspan="2">'+y+'</th>';});
-    html+='<th colspan="2">TOTAL</th><th rowspan="2">'+colBtn('pct','% DAF')+'</th><th rowspan="2">'+colBtn('acc','ACCESSIBLE')+'</th><th rowspan="2">'+colBtn('exc','EXCLUS')+'</th><th rowspan="2" title="Calculé : aucune immatriculation sur les '+INACTIVE_PURCHASE_YEARS+' dernières années, ou parc vide.">'+colBtn('ina','INACTIFS')+'</th><th rowspan="2" title="VISITÉ / A VISITER / NE PAS VISITER">'+colBtn('visit','VISITE')+'</th><th rowspan="2" title="Même score que la fiche : renouvelables, actifs, DAF, urgent.">'+colBtn('score','SCORE')+'</th></tr><tr>';
+    ys.forEach(function(y){html+='<th colspan="2" title="DAF + HORS de cette année">'+colBtn('y'+y, String(y))+'</th>';});
+    html+='<th colspan="2" title="DAF + HORS sur les 10 ans">'+colBtn('total','TOTAL')+'</th><th rowspan="2">'+colBtn('pct','% DAF')+'</th><th rowspan="2">'+colBtn('acc','ACCESSIBLE')+'</th><th rowspan="2">'+colBtn('exc','EXCLUS')+'</th><th rowspan="2" title="Calculé : aucune immatriculation sur les '+INACTIVE_PURCHASE_YEARS+' dernières années, ou parc vide.">'+colBtn('ina','INACTIFS')+'</th><th rowspan="2" title="VISITÉ / A VISITER / NE PAS VISITER">'+colBtn('visit','VISITE')+'</th><th rowspan="2" title="Même score que la fiche : renouvelables, actifs, DAF, urgent.">'+colBtn('score','SCORE')+'</th></tr><tr>';
     ys.forEach(function(y){html+='<th>'+colBtn('y'+y+'d','DAF')+'</th><th>'+colBtn('y'+y+'h','HORS')+'</th>';});
     html+='<th>'+colBtn('totald','DAF')+'</th><th>'+colBtn('totalh','HORS')+'</th></tr>';
     return html;
