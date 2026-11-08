@@ -381,7 +381,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-08-bases-v91';
+const APP_BUILD='2026-11-08-bases-v93';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -478,47 +478,13 @@ function _pickPrincipalAmongCandidates(cands,tva){
 function resolveClientForVehicle(v){
   if(!v||!IDX)return null;
   var _vsiret=normSiret(v.siret);
-  if(_vsiret&&IDX.cBySiret&&IDX.cBySiret[_vsiret])return IDX.cBySiret[_vsiret];
+  if(_vsiret){
+    if(IDX.cBySiret&&IDX.cBySiret[_vsiret])return IDX.cBySiret[_vsiret];
+    return null;
+  }
   if(v.tva){
     var sitesTva=(IDX.sitesByTva&&IDX.sitesByTva[v.tva])||[];
     if(sitesTva.length===1)return sitesTva[0];
-  }
-  var siren=siretSiren(_vsiret);
-  var cands=siren&&IDX.cBySiren?IDX.cBySiren[siren]:null;
-  if(cands&&cands.length){
-    if(cands.length===1)return cands[0];
-    if(v.tva){
-      var byTva=cands.filter(function(c){return String(c.tva||'')===String(v.tva||'');});
-      if(byTva.length===1)return byTva[0];
-      if(byTva.length>1)cands=byTva;
-    }
-    var vn=normClientName(v.client||v.nom||'');
-    if(vn){
-      var byName=cands.filter(function(c){var cn=normClientName(c.nom);return cn&&(cn===vn||cn.indexOf(vn)>=0||vn.indexOf(cn)>=0);});
-      if(byName.length===1)return byName[0];
-    }
-    if(v.ville){
-      var byVille=cands.filter(function(c){return norm(c.ville)===norm(v.ville);});
-      if(byVille.length===1)return byVille[0];
-    }
-    var viaPrincipal=_pickPrincipalAmongCandidates(cands,v.tva);
-    if(viaPrincipal)return viaPrincipal;
-  }
-  if(v.tva){
-    var vn2=normClientName(v.client||'');
-    var tvaSites=(IDX.sitesByTva&&IDX.sitesByTva[v.tva])||[];
-    if(vn2){
-      var byNameTva=tvaSites.filter(function(c){var cn=normClientName(c.nom);return cn&&(cn===vn2||cn.indexOf(vn2)>=0||vn2.indexOf(cn)>=0);});
-      if(byNameTva.length===1)return byNameTva[0];
-      if(byNameTva.length>1){
-        var viaNamePrincipal=_pickPrincipalAmongCandidates(byNameTva,v.tva);
-        if(viaNamePrincipal)return viaNamePrincipal;
-      }
-    }
-    if(tvaSites.length>1){
-      var viaTvaPrincipal=_pickPrincipalAmongCandidates(tvaSites,v.tva);
-      if(viaTvaPrincipal)return viaTvaPrincipal;
-    }
   }
   return null;
 }
@@ -910,7 +876,7 @@ const GF = {
   toursFProtocole: 'neutral',
   toursMaskSitesSec: 'exclude',
   toursMaskSansFiche: 'neutral',
-  marcheMaskSitesSec: 'exclude',
+  marcheMaskSitesSec: 'neutral',
   marcheMaskSansFiche: 'neutral',
   marcheMaskDaf3Ans: 'neutral',
   marcheF: 'all',
@@ -1132,7 +1098,7 @@ function ensureMarcheMaskTriState(){
   if(GF.marcheF==='protocole'){GF.marcheFProtocole='only';GF.marcheF='all';}
   if(GF.marcheMaskDaf3Ans==null||GF.marcheMaskDaf3Ans===undefined)GF.marcheMaskDaf3Ans='neutral';
   if(GF._marcheMaskTriState)return;
-  if(GF.marcheMaskSitesSec==null||GF.marcheMaskSitesSec===undefined)GF.marcheMaskSitesSec='exclude';
+  if(GF.marcheMaskSitesSec==null||GF.marcheMaskSitesSec===undefined)GF.marcheMaskSitesSec='neutral';
   if(GF.marcheMaskSansFiche==null||GF.marcheMaskSansFiche===undefined)GF.marcheMaskSansFiche='neutral';
   if(!GF.marcheF)GF.marcheF='all';
   GF._marcheMaskTriState=true;
@@ -1466,6 +1432,27 @@ function _compactSheet(ws){
   return out;
 }
 // ===== EXCEL PARSE optimisé iPhone =====
+function _fullSheet(ws){
+  var ref=ws['!ref']; if(!ref)return [[]];
+  var range=XLSX.utils.decode_range(ref);
+  var headers=[];
+  for(var c=range.s.c;c<=range.e.c;c++){
+    var cell=ws[XLSX.utils.encode_cell({r:range.s.r,c:c})];
+    headers.push(cell?String(cell.v==null?'':cell.v).trim():'');
+  }
+  var out=[headers];
+  for(var r=range.s.r+1;r<=range.e.r;r++){
+    var row=[], has=false;
+    for(var k=0;k<headers.length;k++){
+      var src=ws[XLSX.utils.encode_cell({r:r,c:range.s.c+k})];
+      var v=src?src.v:'';
+      if(v!==''&&v!==null&&v!==undefined)has=true;
+      row.push(v===undefined||v===null?'':v);
+    }
+    if(has)out.push(row);
+  }
+  return out;
+}
 function parseExcel(file){
   return new Promise((resolve,reject)=>{
     if(typeof XLSX==='undefined'){reject(new Error('xlsx.full.min.js non chargé'));return;}
@@ -1474,7 +1461,8 @@ function parseExcel(file){
       try{
         const wb=XLSX.read(e.target.result,{type:'array',cellDates:false,dense:false,cellStyles:false,cellNF:false,cellHTML:false});
         const ws=wb.Sheets[wb.SheetNames[0]];
-        const data=_compactSheet(ws);
+        const data=_fullSheet(ws);
+        data.sheetName=wb.SheetNames[0]||'';
         resolve(data);
       }catch(err){reject(err);}
     };
@@ -1487,7 +1475,7 @@ function importCRM(data){
   if(!data||data.length<2)return{clients:[],cols:[],stats:{}};
   const headers=data[0].map(h=>String(h||'').trim());
   const rows=data.slice(1).filter(r=>r.some(c=>c!==''));
-  const raw=rows.map(r=>mapClientRow(r,headers)).filter(c=>c.tva);
+  const raw=rows.map(function(r){var c=mapClientRow(r,headers);c.origin=rowOrigin(headers,r);return c;}).filter(c=>c.tva);
   const seen=new Set(); const dups=[];
   const unique=raw.filter(c=>{
     if(seen.has(c.key)){dups.push(c.key);return false;}
@@ -1500,41 +1488,434 @@ function importCRM(data){
   return{clients:unique,cols:headers.filter(Boolean),stats:{total:rows.length,reconnus:unique.length,sansTva,sansNom,sansVille,sansCanton,dups:dups.length}};
 }
 
+function sheetHeaders(data){return ((data&&data[0])||[]).map(function(h){return String(h||'').trim();});}
+function namedHeaders(data){return sheetHeaders(data).filter(Boolean);}
+function isDateHeader(h){return norm(h).indexOf('DATE')>=0;}
+function originCellValue(header, raw){
+  if(raw==null||raw==='')return '';
+  if(isDateHeader(header)){
+    var d=parseDate(raw);
+    if(d){var p=d.split('-');if(p.length===3)return p[2]+'/'+p[1]+'/'+p[0];}
+  }
+  if(typeof raw==='number'&&isFinite(raw)){
+    if(Math.abs(raw-Math.round(raw))<1e-8)return String(Math.round(raw));
+    return String(raw);
+  }
+  return String(raw).trim();
+}
+function rowOrigin(headers, row){
+  var o={};
+  for(var i=0;i<headers.length;i++){
+    if(!headers[i])continue;
+    o[headers[i]]=originCellValue(headers[i], row?row[i]:'');
+  }
+  return o;
+}
+function vehicleIdentity(v){
+  return String(v&&v.tva||'')+'|'+String(v&&v.plaque||'')+'|'+norm(v&&v.marque)+'|'+String(v&&v.date||'')+'|'+norm(v&&v.type);
+}
+function safeSheetName(n){
+  var s=String(n||'Feuille').replace(/[\\\/\?\*\[\]:]/g,' ').trim()||'Feuille';
+  return s.slice(0,31);
+}
+function isSansFicheVehicle(v){
+  if(!v||!v.tva)return true;
+  var clients=DB.getClients()||[];
+  var siret=normSiret(v.siret);
+  if(siret){
+    for(var i=0;i<clients.length;i++){if(normSiret(clients[i].siret)===siret)return false;}
+    return true;
+  }
+  var n=0;
+  for(var j=0;j<clients.length;j++){if(String(clients[j].tva||'')===String(v.tva))n++;}
+  return n!==1;
+}
 function importVehicles(data, possession){
-  if(!data||data.length<2)return{vehicles:[],cols:[],stats:{}};
-  const headers=data[0].map(h=>String(h||'').trim());
-  const rows=data.slice(1).filter(r=>r.some(c=>c!==''));
-  var siretByTva={};
-  (DB.getClients()||[]).forEach(function(c){
-    if(c.tva&&normSiret(c.siret)&&!siretByTva[c.tva])siretByTva[c.tva]=normSiret(c.siret);
-  });
-  var enrichedFromCrm=0;
+  if(!data||data.length<2)return{vehicles:[],cols:[],stats:{total:0,reconnus:0,sansSiret:0,sansFiche:0,enrichedFromCrm:0,sansTva:0,sansDate:0,sansPlaque:0,sansType:0,sansMarque:0,dups:0}};
+  const headers=sheetHeaders(data);
+  const rows=data.slice(1).filter(r=>r.some(c=>c!==''&&c!=null));
   const raw=rows.map(function(r){
     var v=mapVehicleRow(r,headers);
-    if(!normSiret(v.siret)&&v.tva&&siretByTva[v.tva]){v.siret=siretByTva[v.tva];enrichedFromCrm++;}
+    v.origin=rowOrigin(headers,r);
     return v;
   });
-  const sansSiret=raw.filter(function(v){return !normSiret(v.siret);}).length;
-  const withSiret=raw.filter(function(v){return normSiret(v.siret);});
+  const sansTva=raw.filter(function(v){return !v.tva;}).length;
+  const kept=raw.filter(function(v){return !!v.tva;});
   const seen=new Set(); const dups=[];
-  const unique=withSiret.filter(v=>{
-    const k=`${v.tva}|${v.plaque}|${norm(v.marque)}|${v.date}|${norm(v.type)}`;
+  const unique=kept.filter(function(v){
+    const k=vehicleIdentity(v);
     if(seen.has(k)){dups.push(k);return false;}
     seen.add(k);return true;
   });
-  // Restore possession
   if(possession){
-    unique.forEach(v=>{
-      const vk=`${v.tva}|${v.plaque}`;
+    unique.forEach(function(v){
+      const vk=String(v.tva||'')+'|'+String(v.plaque||'');
       if(possession[vk]===false)v.possession=false;
     });
   }
-  const sansTva=raw.filter(v=>!v.tva).length;
+  var sansFiche=0;
+  unique.forEach(function(v){if(isSansFicheVehicle(v))sansFiche++;});
+  const sansSiret=unique.filter(function(v){return !normSiret(v.siret);}).length;
   const sansDate=unique.filter(v=>!v.date).length;
   const sansPlaque=unique.filter(v=>!v.plaque).length;
   const sansType=unique.filter(v=>!v.type).length;
   const sansMarque=unique.filter(v=>!v.marque).length;
-  return{vehicles:unique,cols:headers.filter(Boolean),stats:{total:rows.length,reconnus:unique.length,sansSiret,enrichedFromCrm,sansTva,sansDate,sansPlaque,sansType,sansMarque,dups:dups.length}};
+  return{vehicles:unique,cols:headers.filter(Boolean),stats:{total:rows.length,reconnus:unique.length,sansSiret:sansSiret,sansFiche:sansFiche,enrichedFromCrm:0,sansTva:sansTva,sansDate:sansDate,sansPlaque:sansPlaque,sansType:sansType,sansMarque:sansMarque,dups:dups.length}};
+}
+function appendImmatRows(data){
+  var res=importVehicles(data, null);
+  var have={};
+  (DB.getVehicles()||[]).forEach(function(v){have[vehicleIdentity(v)]=1;});
+  var add=[], skipped=0, sansFiche=0;
+  res.vehicles.forEach(function(v){
+    var k=vehicleIdentity(v);
+    if(have[k]){skipped++;return;}
+    have[k]=1;
+    v.fromOrigin=false;
+    add.push(v);
+    if(isSansFicheVehicle(v))sansFiche++;
+  });
+  openModal('Ajouter les immatriculations','<p style="font-size:12px;color:var(--text2);line-height:1.55;">Lignes lues : <strong>'+res.stats.total+'</strong><br>Nouvelles : <strong>'+add.length+'</strong><br>Déjà présentes : <strong>'+(skipped+(res.stats.dups||0))+'</strong><br>Sans fiche parmi les nouvelles : <strong>'+sansFiche+'</strong><br>Sans TVA, ignorées : <strong>'+(res.stats.sansTva||0)+'</strong></p><p style="font-size:12px;color:var(--text2);">Le parc déjà enregistré ne change pas.</p>',[
+    {label:'Annuler',cls:'btn-ghost'},
+    {label:'Ajouter',cls:'btn-primary',action:function(){
+      if(!add.length){toast('Aucune ligne nouvelle');return;}
+      DB.saveVehicles((DB.getVehicles()||[]).concat(add)).then(function(ok){
+        if(!ok){toast('Sauvegarde impossible');return;}
+        buildIndex();autoSave();
+        toast(add.length+' immatriculation(s) ajoutée(s)');
+        try{renderScreen(currentScreen);}catch(e){}
+      });
+    }}
+  ]);
+}
+function routeImmatData(file,data,force){
+  if(force||!(DB.getVehicles()||[]).length)showImportFilterModal(file,data,'immat');
+  else appendImmatRows(data);
+}
+function stampCrmBaseline(clients, data){
+  var st=DB.getSettings()||{};
+  if(!st.originCrmHeaders||!st.originCrmHeaders.length){
+    st.originCrmHeaders=namedHeaders(data);
+    st.originCrmSheet=safeSheetName(data&&data.sheetName||'Clients');
+    DB.saveSettings(st);
+    (clients||[]).forEach(function(c){if(c&&c.origin)c.fromOrigin=true;});
+    return clients;
+  }
+  var old={};
+  (DB.getClients()||[]).forEach(function(c){
+    if(!c||!c.fromOrigin||!c.origin)return;
+    old[makeSiteKey(c)]=c.origin;
+    if(c.key)old[c.key]=c.origin;
+    var s=normSiret(c.siret);
+    if(c.tva&&s)old[String(c.tva)+'|'+s]=c.origin;
+  });
+  (clients||[]).forEach(function(c){
+    if(!c)return;
+    var prev=old[c.key]||old[makeSiteKey(c)]||old[String(c.tva||'')+'|'+normSiret(c.siret)];
+    if(prev){c.origin=prev;c.fromOrigin=true;}
+    else c.fromOrigin=false;
+  });
+  return clients;
+}
+function stampImmatBaseline(vehicles, data){
+  var st=DB.getSettings()||{};
+  var locked=st.originImmatHeaders&&st.originImmatHeaders.length;
+  var old={};
+  if(locked){(DB.getVehicles()||[]).forEach(function(v){if(v&&v.fromOrigin&&v.origin)old[vehicleIdentity(v)]=v.origin;});}
+  (vehicles||[]).forEach(function(v){
+    if(!v)return;
+    var prev=old[vehicleIdentity(v)];
+    if(prev){v.origin=prev;v.fromOrigin=true;}
+    else if(!locked)v.fromOrigin=true;
+    else v.fromOrigin=false;
+  });
+  if(!locked){
+    st.originImmatHeaders=namedHeaders(data);
+    st.originImmatSheet=safeSheetName(data&&data.sheetName||'Immatriculations');
+    DB.saveSettings(st);
+  }
+  return vehicles;
+}
+function memorizeCrmOrigin(data){
+  var raw=sheetHeaders(data);
+  var st=DB.getSettings()||{};
+  st.originCrmHeaders=namedHeaders(data);
+  st.originCrmSheet=safeSheetName(data&&data.sheetName||'Clients');
+  var okSet=DB.saveSettings(st);
+  var clients=DB.getClients()||[];
+  var by={};
+  clients.forEach(function(c){
+    c.fromOrigin=false;
+    by[makeSiteKey(c)]=c;
+    if(c.key)by[c.key]=c;
+    var s=normSiret(c.siret);
+    if(c.tva&&s)by[String(c.tva)+'|'+s]=c;
+  });
+  var matched=0, fileRows=0;
+  (data||[]).slice(1).forEach(function(r){
+    if(!r||!r.some(function(c){return c!==''&&c!=null;}))return;
+    fileRows++;
+    var mapped=mapClientRow(r, raw);
+    if(!mapped.tva)return;
+    var obj=by[mapped.key]||by[makeSiteKey(mapped)]||by[String(mapped.tva)+'|'+normSiret(mapped.siret)];
+    if(!obj||obj.fromOrigin)return;
+    obj.origin=rowOrigin(raw, r);
+    obj.fromOrigin=true;
+    matched++;
+  });
+  var ok=DB.saveClients(clients);
+  return {ok:ok!==false&&okSet!==false, matched:matched, fileRows:fileRows};
+}
+function memorizeImmatOrigin(data){
+  var raw=sheetHeaders(data);
+  var st=DB.getSettings()||{};
+  st.originImmatHeaders=namedHeaders(data);
+  st.originImmatSheet=safeSheetName(data&&data.sheetName||'Immatriculations');
+  var okSet=DB.saveSettings(st);
+  var vehicles=DB.getVehicles()||[];
+  var by={};
+  vehicles.forEach(function(v){v.fromOrigin=false;by[vehicleIdentity(v)]=v;});
+  var matched=0, fileRows=0;
+  (data||[]).slice(1).forEach(function(r){
+    if(!r||!r.some(function(c){return c!==''&&c!=null;}))return;
+    fileRows++;
+    var mapped=mapVehicleRow(r, raw);
+    if(!mapped.tva)return;
+    var obj=by[vehicleIdentity(mapped)];
+    if(!obj||obj.fromOrigin)return;
+    obj.origin=rowOrigin(raw, r);
+    obj.fromOrigin=true;
+    matched++;
+  });
+  return DB.saveVehicles(vehicles).then(function(ok){return {ok:!!ok&&okSet!==false, matched:matched, fileRows:fileRows};});
+}
+var CLIENT_FIELD_DEFS=[
+  {field:'tva',aliases:['CLIENT/N° TVA','N° TVA','NUM TVA','NTVA','TVA']},
+  {field:'siret',aliases:['SIRET ETABLISSEMENT','SIRET ENTREPRISE','SIRET CLIENT','CODE SIRET','N° SIRET','NUMERO SIRET','NUM SIRET','N SIRET','SIRET']},
+  {field:'siren',aliases:['SIREN']},
+  {field:'nom',aliases:['RAISON SOCIALE','RAISON_SOCIALE','NOM','CLIENT','ENTREPRISE','NAME']},
+  {field:'adresse',aliases:['ADRESSE ETABLISSEMENT','ADRESSE CLIENT','ADRESSE SITE','ADRESSE','RUE']},
+  {field:'ville',aliases:['VILLE','COMMUNE','CITY']},
+  {field:'canton',aliases:['CANTON','SECTEUR','ZONE']},
+  {field:'dept',aliases:['CODE DEPARTEMENT','CODE DÉPARTEMENT','DEPARTEMENT','DÉPARTEMENT','DEPT']},
+  {field:'pays',aliases:['PAYS','COUNTRY']},
+  {field:'vendeur',aliases:['NOM DU VENDEUR','NOM VENDEUR','VENDEUR','COMMERCIAL']},
+  {field:'tel',aliases:['TELEPHONE','TÉLÉPHONE','TEL']},
+  {field:'profil',aliases:['PROFIL COMMERCIAL ACTUEL','PROFIL COMMERCIAL CLIENT','PROFIL_COMMERCIAL','PROFIL COMMERCIAL','PROFIL CLIENT','PROFIL_CLIENT','TYPE CLIENT','TYPE_CLIENT','SEGMENT CLIENT','CATEGORIE CLIENT','CATÉGORIE CLIENT','FAMILLE CLIENT','TYPE FLOTTE','STATUT FLOTTE','PROFIL']},
+  {field:'groupement',aliases:['GROUPEMENT CLIENT','GROUPEMENT','GROUPMENT','GROUPE CLIENT','GROUPE']},
+  {field:'accessible',aliases:['COLONNE ACCESSIBLE','ACCESSIBLE CLIENT','ACCESSIBLE SITE','ACCESSIBLE']},
+  {field:'exclu',aliases:['EXCLU_MANUEL','EXCLU_MANU','EXCLU']},
+  {field:'etatProspection',aliases:['ETAT PROSPECTION','ÉTAT PROSPECTION','ETAT_PROSPECTION','STATUT PROSPECTION','STATUT_PROSPECTION','PROSPECTION']},
+  {field:'priorite',aliases:['PRIORITE FORCEE','PRIORITE_FORCEE','PRIORITE']}
+];
+var VEHICLE_FIELD_DEFS=[
+  {field:'tva',aliases:['CLIENT/N° TVA','N° TVA','NUM TVA','NTVA','TVA']},
+  {field:'siret',aliases:['SIRET ETABLISSEMENT','SIRET ENTREPRISE','SIRET CLIENT','CODE SIRET','N° SIRET','NUMERO SIRET','NUM SIRET','N SIRET','SIRET']},
+  {field:'siren',aliases:['SIREN']},
+  {field:'date',aliases:['DATE D\'IMMATRICULATION','DATE IMMATRICULATION','DATE_IMMAT','DATE']},
+  {field:'plaque',aliases:['PLAQUE D\'IMMATRICULATION','PLAQUE IMMATRICULATION','PLAQUE']},
+  {field:'chassis',aliases:['NUMÉRO DE CHÂSSIS','NUMERO DE CHASSIS','NUM CHASSIS']},
+  {field:'type',aliases:['TYPE CHASSIS','TYPE CHÂSSIS','TYPE VEHICULE','TYPE VÉHICULE','TYPE']},
+  {field:'marque',aliases:['MARQUE','BRAND','MAKE']},
+  {field:'carrosserie',aliases:['CARROSSERIE','BODY']},
+  {field:'modele',aliases:['MODÈLE','MODELE','MODEL']},
+  {field:'client',aliases:['CLIENT','NOM']},
+  {field:'ville',aliases:['VILLE','COMMUNE']},
+  {field:'pays',aliases:['PAYS']},
+  {field:'dept',aliases:['DEPARTEMENT','DÉPARTEMENT','DEPT']},
+  {field:'vendeur',aliases:['VENDEUR','COMMERCIAL']},
+  {field:'possession',aliases:['TOUJOURS EN POSSESSION','EN POSSESSION','POSSESSION']}
+];
+function findColFree(headers, keys, used){
+  var hn=headers.map(function(h){return norm(h);});
+  var i,j,kn;
+  for(i=0;i<keys.length;i++){
+    kn=norm(keys[i]);
+    for(j=0;j<hn.length;j++){if(!used[j]&&hn[j]===kn)return j;}
+  }
+  for(i=0;i<keys.length;i++){
+    kn=norm(keys[i]);
+    if(kn.length<3)continue;
+    for(j=0;j<hn.length;j++){if(!used[j]&&hn[j].indexOf(kn)>=0)return j;}
+  }
+  return -1;
+}
+function bindHeaderFields(headers, defs){
+  var map=headers.map(function(){return '';});
+  var used={};
+  defs.forEach(function(def){
+    var idx=findColFree(headers, def.aliases, used);
+    if(idx>=0){map[idx]=def.field;used[idx]=1;}
+  });
+  return map;
+}
+function frDateCell(v){
+  var d=parseDate(v);
+  if(!d)return String(v==null?'':v).trim();
+  var p=d.split('-');
+  return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:String(v||'').trim();
+}
+function currentClientCell(c, field){
+  if(!c||!field)return '';
+  return String(c[field]==null?'':c[field]).trim();
+}
+function currentVehicleCell(v, field){
+  if(!v||!field)return '';
+  if(field==='possession')return possessionExcelLabel(v);
+  if(field==='date')return frDateCell(v.date);
+  if(field==='siret')return normSiret(v.siret)||String(v.siret||'').trim();
+  return String(v[field]==null?'':v[field]).trim();
+}
+function sameExported(field, current, origin){
+  if(field==='date'){
+    var a=parseDate(current), b=parseDate(origin);
+    if(a||b)return a===b;
+  }
+  if(field==='siret'||field==='siren')return normSiret(current)===normSiret(origin);
+  if(field==='possession')return norm(current)===norm(origin);
+  return String(current||'').trim()===String(origin||'').trim();
+}
+function originExportRows(records, headers, fields, currentFn){
+  return (records||[]).map(function(rec){
+    var added=!rec||rec.fromOrigin!==true;
+    var originMap=rec&&rec.origin||{};
+    return headers.map(function(h,i){
+      var field=fields[i]||'';
+      var origin=originMap[h]!=null?originMap[h]:'';
+      var cur=field?currentFn(rec, field):'';
+      if(added)return {v:field?(cur||origin):origin, red:true};
+      if(!field)return {v:origin, red:false};
+      var changed=!sameExported(field, cur, origin);
+      return {v:changed?cur:(origin||cur), red:changed};
+    });
+  });
+}
+function xmlEsc(s){
+  return String(s==null?'':s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function colLetter(n){
+  var s=''; n=n+1;
+  while(n>0){var m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26);}
+  return s;
+}
+function utf8Bytes(s){
+  if(typeof TextEncoder!=='undefined')return new TextEncoder().encode(s);
+  var bin=unescape(encodeURIComponent(s));
+  var a=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i);
+  return a;
+}
+function u8cat(parts){
+  var len=0,i; for(i=0;i<parts.length;i++)len+=parts[i].length;
+  var out=new Uint8Array(len), p=0;
+  for(i=0;i<parts.length;i++){out.set(parts[i],p);p+=parts[i].length;}
+  return out;
+}
+function u16le(n){return new Uint8Array([n&255,(n>>8)&255]);}
+function u32le(n){return new Uint8Array([n&255,(n>>8)&255,(n>>16)&255,(n>>>24)&255]);}
+var _crcTable=null;
+function crc32Bytes(bytes){
+  if(!_crcTable){
+    _crcTable=new Uint32Array(256);
+    for(var i=0;i<256;i++){var c=i,k;for(k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);_crcTable[i]=c>>>0;}
+  }
+  var crc=0xFFFFFFFF;
+  for(var j=0;j<bytes.length;j++)crc=_crcTable[(crc^bytes[j])&255]^(crc>>>8);
+  return (crc^0xFFFFFFFF)>>>0;
+}
+function zipStore(files){
+  var parts=[], central=[], offset=0;
+  files.forEach(function(f){
+    var name=utf8Bytes(f.name);
+    var data=f.data;
+    var crc=crc32Bytes(data);
+    var local=u8cat([u32le(0x04034b50),u16le(20),u16le(0),u16le(0),u16le(0),u16le(0),u32le(crc),u32le(data.length),u32le(data.length),u16le(name.length),u16le(0),name,data]);
+    parts.push(local);
+    central.push(u8cat([u32le(0x02014b50),u16le(20),u16le(20),u16le(0),u16le(0),u16le(0),u16le(0),u32le(crc),u32le(data.length),u32le(data.length),u16le(name.length),u16le(0),u16le(0),u16le(0),u16le(0),u32le(0),u32le(offset),name]));
+    offset+=local.length;
+  });
+  var centralBlob=u8cat(central);
+  var end=u8cat([u32le(0x06054b50),u16le(0),u16le(0),u16le(files.length),u16le(files.length),u32le(centralBlob.length),u32le(offset),u16le(0)]);
+  return new Blob([u8cat(parts.concat([centralBlob,end]))],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function buildOriginWorkbook(headers, rows, sheetName){
+  var cols=headers.length||1;
+  var last=colLetter(cols-1)+(rows.length+1);
+  var body=['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>','<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:'+last+'"/><sheetData>'];
+  function pushRow(r, cells){
+    var xml='<row r="'+r+'">';
+    for(var i=0;i<cells.length;i++){
+      var cell=cells[i]||{v:'',red:false};
+      xml+='<c r="'+colLetter(i)+r+'" t="inlineStr" s="'+(cell.red?1:0)+'"><is><t>'+xmlEsc(cell.v)+'</t></is></c>';
+    }
+    body.push(xml+'</row>');
+  }
+  pushRow(1, headers.map(function(h){return {v:h,red:false};}));
+  for(var r=0;r<rows.length;r++)pushRow(r+2, rows[r]);
+  body.push('</sheetData></worksheet>');
+  var sheet=utf8Bytes(body.join(''));
+  var styles=utf8Bytes('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><sz val="11"/><color rgb="FFFF0000"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4CCCC"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs></styleSheet>');
+  var wb=utf8Bytes('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="'+xmlEsc(safeSheetName(sheetName))+'" sheetId="1" r:id="rId1"/></sheets></workbook>');
+  var rels=utf8Bytes('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+  var root=utf8Bytes('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+  var types=utf8Bytes('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
+  return zipStore([
+    {name:'[Content_Types].xml',data:types},
+    {name:'_rels/.rels',data:root},
+    {name:'xl/workbook.xml',data:wb},
+    {name:'xl/_rels/workbook.xml.rels',data:rels},
+    {name:'xl/styles.xml',data:styles},
+    {name:'xl/worksheets/sheet1.xml',data:sheet}
+  ]);
+}
+function downloadBlob(blob, name){
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(a.href);},1500);
+}
+function exportTwoOriginExcels(){
+  var st=DB.getSettings()||{};
+  if(!st.originCrmHeaders||!st.originCrmHeaders.length||!st.originImmatHeaders||!st.originImmatHeaders.length){
+    openModal('Référence manquante','<p style="font-size:12px;color:var(--text2);line-height:1.55;">Mémorisez d’abord les deux fichiers d’origine. L’export reprend leurs colonnes. Le rouge marque les cellules modifiées et les lignes ajoutées.</p>',[{label:'Compris',cls:'btn-primary'}]);
+    return;
+  }
+  try{
+    var d=new Date().toISOString().slice(0,10);
+    var clientFields=bindHeaderFields(st.originCrmHeaders, CLIENT_FIELD_DEFS);
+    var clientRows=originExportRows(DB.getClients()||[], st.originCrmHeaders, clientFields, currentClientCell);
+    downloadBlob(buildOriginWorkbook(st.originCrmHeaders, clientRows, st.originCrmSheet||'Clients'), 'Clients_DAF_'+d+'.xlsx');
+    setTimeout(function(){
+      try{
+        var vehicleFields=bindHeaderFields(st.originImmatHeaders, VEHICLE_FIELD_DEFS);
+        var vehicleRows=originExportRows(DB.getVehicles()||[], st.originImmatHeaders, vehicleFields, currentVehicleCell);
+        downloadBlob(buildOriginWorkbook(st.originImmatHeaders, vehicleRows, st.originImmatSheet||'Immatriculations'), 'Immatriculations_DAF_'+d+'.xlsx');
+        toast('Deux Excel téléchargés');
+      }catch(e){console.error(e);toast('Export immatriculations impossible');}
+    },800);
+  }catch(e){console.error(e);toast('Export Excel impossible');}
+}
+function parseTableFile(file){
+  var name=String(file&&file.name||'').toLowerCase();
+  if((name.endsWith('.csv')||name.endsWith('.txt'))&&typeof window.parseCSVFile==='function')return window.parseCSVFile(file);
+  return parseExcel(file);
+}
+function renderOriginExcelCard(){
+  var st=DB.getSettings()||{};
+  var okC=st.originCrmHeaders&&st.originCrmHeaders.length;
+  var okI=st.originImmatHeaders&&st.originImmatHeaders.length;
+  return '<div class="card"><div class="card-title">Excel clients et immatriculations</div>'
+    +'<div style="font-size:11px;color:var(--text2);line-height:1.45;margin-bottom:8px;">Mêmes colonnes que les fichiers d’origine. Une cellule modifiée est en rouge. Une fiche créée ou une immatriculation ajoutée est en rouge sur toute la ligne.</div>'
+    +'<div style="font-size:10px;color:var(--text3);margin-bottom:8px;">'+(okC?'Référence clients mémorisée. ':'Référence clients à mémoriser. ')+(okI?'Référence immatriculations mémorisée.':'Référence immatriculations à mémoriser.')+'</div>'
+    +'<input type="file" id="file-origin-crm" accept=".xlsx,.xls,.csv,.txt" style="display:none">'
+    +'<input type="file" id="file-origin-immat" accept=".xlsx,.xls,.csv,.txt" style="display:none">'
+    +'<button type="button" class="btn btn-secondary" id="btn-origin-crm" style="width:100%;margin-bottom:6px;">Mémoriser le fichier clients d’origine</button>'
+    +'<button type="button" class="btn btn-secondary" id="btn-origin-immat" style="width:100%;margin-bottom:6px;">Mémoriser le fichier immatriculations d’origine</button>'
+    +'<button type="button" class="btn btn-primary" id="btn-export-origin-xlsx" style="width:100%;">Exporter les deux Excel</button>'
+    +'<div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">La mémorisation ne change ni les fiches ni le parc. Elle fixe la référence du rouge. Les fichiers d’origine ne sont pas réécrits.</div></div>';
 }
 
 // ===== INDEX BUILDING =====
@@ -3108,16 +3489,18 @@ function renderMktBars(vehicles){
 function renderImportCard(xlsxOk){
   return`<div class="card">
     <div class="card-title">📂 Import fichiers Excel</div>
-    <input type="file" id="file-crm" accept=".xlsx,.xls,.csv">
-    <input type="file" id="file-immat" accept=".xlsx,.xls,.csv">
+    <input type="file" id="file-crm" accept=".xlsx,.xls,.csv,.txt">
+    <input type="file" id="file-immat" accept=".xlsx,.xls,.csv,.txt">
     <div class="file-zone" id="zone-crm">
       <div class="fz-title">📋 BASE CRM.xlsx</div>
-      <div class="fz-sub" id="crm-status">Appuyez pour sélectionner</div>
+      <div class="fz-sub" id="crm-status">Premier chargement des clients</div>
     </div>
     <div class="file-zone" id="zone-immat">
-      <div class="fz-title">🚛 IMMATRICULATIONS.xlsx</div>
-      <div class="fz-sub" id="immat-status">Appuyez pour sélectionner</div>
+      <div class="fz-title">🚛 Nouvelles immatriculations</div>
+      <div class="fz-sub" id="immat-status">Ajoute les lignes nouvelles. Le parc déjà présent reste en place.</div>
     </div>
+    <button type="button" class="btn btn-ghost" id="btn-replace-immat" style="width:100%;margin-top:6px;">Remplacer tout le parc</button>
+    <div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Parc vide : le fichier charge l’historique. Parc déjà rempli : seules les lignes nouvelles sont ajoutées. Une ligne déjà connue est ignorée. Avec SIRET, le camion va sur ce site. Sans SIRET, il va sur la fiche seulement si la TVA n’a qu’un site.</div>
     <div id="import-diag"></div>
   </div>`;
 }
@@ -4622,7 +5005,7 @@ function _renderMarcheFilterBars(kTypeVerifier){
   ensureMarcheMaskTriState();
   var _dim=isMarcheFocusActive()?' marche-filter-dimmed':'';
   var _flotteM=GF.exclFlotteNationaleMarche;
-  var _ss=GF.marcheMaskSitesSec||'exclude',_sf=GF.marcheMaskSansFiche||'neutral',_d3=GF.marcheMaskDaf3Ans||'neutral';
+  var _ss=GF.marcheMaskSitesSec||'neutral',_sf=GF.marcheMaskSansFiche||'neutral',_d3=GF.marcheMaskDaf3Ans||'neutral';
   var html='<div id="marche-sticky-bar" class="'+_dim+'" style="display:flex;gap:5px;padding:5px 12px;border-bottom:1px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:10;flex-wrap:wrap;">'
     +'<button class="gf-btn'+(GF.marcheTypeFilter==='tous'?' gf-on':'')+'" data-mtype="tous">Tous</button>'
     +'<button class="gf-btn'+(GF.marcheTypeFilter==='tracteur'?' gf-on':'')+'" data-mtype="tracteur">Tracteurs</button>'
@@ -5491,7 +5874,7 @@ function renderQualite(){
   // Section CLIENTS À QUALIFIER
   html+='<div class="card quality-section" style="border-color:var(--orange);border-width:2px;">'
     +'<div class="card-title" style="color:var(--orange);">⚠️ Clients à qualifier</div>'
-    +'<div style="font-size:10px;color:var(--text3);margin-bottom:8px;line-height:1.4;">Rattachement par SIRET exact, puis départage TVA/SIREN/nom/ville. Si plusieurs sites (même TVA), rattachement auto au <strong>site principal</strong> du groupe ou au siège <strong>VÉRIFIÉ</strong>.</div>'
+    +'<div style="font-size:10px;color:var(--text3);margin-bottom:8px;line-height:1.4;">Rattachement par SIRET exact. Sans SIRET, rattachement seulement si la TVA n’a qu’une fiche. Sinon le véhicule reste sans fiche.</div>'
     +_qualityBlock('Clients sans véhicule rattaché (SIRET absent ou inconnu dans immat.)',clientsSansVehicule,_clientLine,'warn')
     +_qualityBlock('Véhicules orphelins (SIRET présent mais inconnu dans le CRM)',vehiculesOrphelins,_vehicleLine,'err')
     +_qualityBlock('Véhicules sans SIRET (non rattachables)',vehiculesSansSiret,_vehicleLine,'warn')
@@ -5829,7 +6212,8 @@ function showImportFilterModal(file,data,type){
     var currentY=(new Date()).getFullYear();
     yearsHtml='<div class="form-group"><label class="form-label">Années immatriculations</label><div style="display:flex;gap:6px;"><input class="form-input" id="import-year-min" type="number" value="" placeholder="Année min (optionnel)"><input class="form-input" id="import-year-max" type="number" value="" placeholder="Année max (optionnel)"></div><div style="font-size:10px;color:var(--text3);margin-top:4px;">Optionnel : laissez vide pour importer toutes les années, ou renseignez une année min/max pour alléger le fichier.</div></div>';
   }
-  var html='<div style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.45;">Fichier lu en mode compact : seules les colonnes utiles sont conservées. '+(heavy?'<br><strong style="color:var(--orange);">⚠️ Fichier lourd : appliquez un filtre année/vendeur/pays/département avant import.</strong>':'')+'</div>'+yearsHtml+_multiCheckboxHtml('Vendeur',vendeurs,'vendeur')+_multiCheckboxHtml('Pays',pays,'pays')+_multiCheckboxHtml('Département',depts,'dept')+'<div id="import-preview" style="font-size:12px;color:var(--daf);font-weight:800;margin-top:8px;"></div>';
+  var replaceNote=(type==='immat'&&(DB.getVehicles()||[]).length)?'<div style="font-size:12px;color:var(--orange);margin-bottom:8px;">Ce fichier remplace tout le parc actuel. Les possessions NON déjà saisies restent NON.</div>':'';
+  var html=replaceNote+'<div style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.45;">Toutes les colonnes du fichier sont lues. '+(heavy?'<br><strong style="color:var(--orange);">Fichier lourd : un filtre année, vendeur, pays ou département allège la lecture.</strong>':'')+'</div>'+yearsHtml+_multiCheckboxHtml('Vendeur',vendeurs,'vendeur')+_multiCheckboxHtml('Pays',pays,'pays')+_multiCheckboxHtml('Département',depts,'dept')+'<div id="import-preview" style="font-size:12px;color:var(--daf);font-weight:800;margin-top:8px;"></div>';
   function finishImport(fdata,msg){
     function afterSave(okSave,res){
       if(!okSave){
@@ -5848,19 +6232,20 @@ function showImportFilterModal(file,data,type){
     if(type==='crm'){
       var accStats=countAccessibleOffInImport(fdata);
       saveImportDiagnostic('crm',fdata,{accessibleOffCrm:accStats.off,accessibleOnCrm:accStats.on,accessibleEmptyCrm:accStats.empty,accessibleRows:accStats.total,accessibleCol:accStats.col});
-      var res=importCRM(fdata);res.clients=_mergeManualClientFields(res.clients,DB.getClients());
+      var res=importCRM(fdata);stampCrmBaseline(res.clients,fdata);res.clients=_mergeManualClientFields(res.clients,DB.getClients());
       try{buildIndex();migrateAccessibleStorage();}catch(e){}
       var okSave=DB.saveClients(res.clients);
       $('crm-status')&&($('crm-status').textContent=res.clients.length+' clients importés');
       afterSave(okSave,res);
     }else{
       var res=importVehicles(fdata,DB.getPossession());
+      stampImmatBaseline(res.vehicles,fdata);
       DB.saveVehicles(res.vehicles).then(function(okSave){
         saveImportDiagnostic('immat',fdata,{importedCount:res.vehicles.length,rejectedNoSiret:res.stats&&res.stats.sansSiret,enrichedFromCrm:res.stats&&res.stats.enrichedFromCrm,savedCount:okSave?DB.getVehicles().length:0,saveFailed:!okSave});
         $('immat-status')&&($('immat-status').textContent=DB.getVehicles().length+' véhicules importés');
         if((res.stats&&res.stats.total>0)&&!res.vehicles.length){
           setTimeout(function(){
-            openModal('⚠️ 0 véhicule importé','<p style="font-size:12px;color:var(--text2);line-height:1.55;">Le fichier a <strong>'+res.stats.total+' lignes</strong> mais aucun véhicule retenu.<br><br>Vérifiez la colonne <strong>SIRET</strong> (14 chiffres, identique au CRM). L\'app complète le SIRET depuis le CRM quand la TVA correspond.</p>',[{label:'Compris',cls:'btn-primary'}]);
+            openModal('⚠️ 0 véhicule importé','<p style="font-size:12px;color:var(--text2);line-height:1.55;">Le fichier a <strong>'+res.stats.total+' lignes</strong> mais aucune ligne avec une TVA n’a été retenue.<br><br>Vérifiez la colonne <strong>TVA</strong>.</p>',[{label:'Compris',cls:'btn-primary'}]);
           },400);
         }else if(res.vehicles.length&&!okSave){
           setTimeout(function(){
@@ -5871,18 +6256,25 @@ function showImportFilterModal(file,data,type){
       });
     }
   }
+  function withSheet(out){if(data&&out&&data.sheetName)out.sheetName=data.sheetName;return out;}
   openModal('Filtrer import '+(type==='crm'?'CRM':'Immatriculations'),html,[
     {label:'Annuler',cls:'btn-ghost'},
-    {label:type==='immat'?'Importer selon années/critères':'Importer tout sans filtre',cls:'btn-secondary',action:function(){var sel=_selectedImportFilters();if(type==='crm'){sel={vendeur:[],pays:[],dept:[]};}var fdata=type==='crm'?data:_filterRowsBySelections(data,mapper,sel);finishImport(fdata,type==='crm'?'Import CRM complet terminé':'Import immatriculations optimisé terminé');}},
-    {label:'Importer avec ces critères',cls:'btn-primary',action:function(){var sel=_selectedImportFilters();var fdata=_filterRowsBySelections(data,mapper,sel);finishImport(fdata,'Import filtré terminé');}}
+    {label:type==='immat'?'Importer selon années/critères':'Importer tout sans filtre',cls:'btn-secondary',action:function(){var sel=_selectedImportFilters();if(type==='crm'){sel={vendeur:[],pays:[],dept:[]};}var fdata=type==='crm'?data:_filterRowsBySelections(data,mapper,sel);finishImport(withSheet(fdata),type==='crm'?'Import CRM complet terminé':'Import immatriculations terminé');}},
+    {label:'Importer avec ces critères',cls:'btn-primary',action:function(){var sel=_selectedImportFilters();var fdata=_filterRowsBySelections(data,mapper,sel);finishImport(withSheet(fdata),'Import filtré terminé');}}
   ]);
   function upd(){var sel=_selectedImportFilters(), count=_countRowsBySelections(data,mapper,sel), prev=$('import-preview');if(prev)prev.textContent=count+' lignes sur '+total+' seront importées';}
   QA('#modal-body input[data-mf]').forEach(function(i){i.onchange=upd;});safeOn('import-year-min','input',upd);safeOn('import-year-max','input',upd);upd();
 }
 function bindImportEvents(){
   var zc=$('zone-crm'),fc=$('file-crm'),zi=$('zone-immat'),fi=$('file-immat');
-  if(zc&&fc){zc.onclick=function(){fc.click();};fc.onchange=function(e){var f=e.target.files[0];if(!f)return;parseExcel(f).then(function(data){showImportFilterModal(f,data,'crm');}).catch(function(){toast('Erreur import CRM');});};}
-  if(zi&&fi){zi.onclick=function(){fi.click();};fi.onchange=function(e){var f=e.target.files[0];if(!f)return;parseExcel(f).then(function(data){showImportFilterModal(f,data,'immat');}).catch(function(){toast('Erreur import immatriculations');});};}
+  if(zc&&fc){zc.onclick=function(){fc.click();};fc.onchange=function(e){var f=e.target.files[0];e.target.value='';if(!f)return;parseTableFile(f).then(function(data){showImportFilterModal(f,data,'crm');}).catch(function(){toast('Erreur import CRM');});};}
+  if(zi&&fi){zi.onclick=function(){window._forceImmatReplace=false;fi.click();};fi.onchange=function(e){var f=e.target.files[0];var force=!!window._forceImmatReplace;window._forceImmatReplace=false;e.target.value='';if(!f)return;parseTableFile(f).then(function(data){routeImmatData(f,data,force);}).catch(function(){toast('Erreur import immatriculations');});};}
+  safeOn('btn-replace-immat','click',function(){
+    openModal('Remplacer tout le parc','<p style="font-size:12px;color:var(--text2);line-height:1.55;">Le fichier choisi remplace toutes les immatriculations. Les possessions NON déjà saisies restent NON. Les projets et les affaires ne changent pas.</p>',[
+      {label:'Annuler',cls:'btn-ghost'},
+      {label:'Choisir le fichier',cls:'btn-primary',action:function(){window._forceImmatReplace=true;var input=$('file-immat');if(input)input.click();}}
+    ]);
+  });
   bindBasesEvents();
 }
 function applyBackupData(data){
@@ -5930,13 +6322,35 @@ function exportBackupJSONDirect(){
 }
 
 function renderMore(){
-  const xlsxOk=typeof XLSX!=='undefined';var html='';html+=renderXlsxStatus(xlsxOk);html+=renderImportCard(xlsxOk);html+=renderBasesCard();
+  const xlsxOk=typeof XLSX!=='undefined';var html='';html+=renderXlsxStatus(xlsxOk);html+=renderImportCard(xlsxOk);html+=renderOriginExcelCard();html+=renderBasesCard();
   html+=`<div class="card"><div class="card-title">Nouveau client</div><button class="btn btn-primary" id="btn-new-client" style="width:100%;">Créer un client</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Le client et les fiches modifiées (adresse, ville, téléphone…) sont inclus dans le JSON et le coffre. Un import CRM ne les efface pas.</div></div>`;
   html+=`<div class="card"><div class="card-title">💾 Sauvegarde iCloud</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Sauvegarde complète : clients, fiches, immatriculations, possession, projets, affaires, commissions, archives, groupes, contacts, exclusions, journal Activité. Le même contenu part dans le coffre. Un ancien JSON, enregistré avant cette version, ne contient pas encore le journal.</div></div>`;
   html+=`<div class="card"><div class="card-title">🔍 Qualité</div><button class="btn btn-secondary" id="btn-open-qualite" style="width:100%;">Ouvrir Qualité complète</button></div>`;
   html+=`<div class="card"><div class="card-title">📖 Mode d'emploi</div><button class="btn btn-secondary" id="btn-mode-emploi" style="width:100%;">Ouvrir le mode d'emploi complet</button></div>`;
   $('more-content').innerHTML=html;bindImportEvents();bindBasesEvents();
-  safeOn('btn-open-qualite','click',function(){try{renderQualite();}catch(e){toast('Erreur ouverture Qualité');console.error(e);}});safeOn('btn-mode-emploi','click',function(){try{(window.renderModeEmploi||renderModeEmploi)();}catch(e){toast('Erreur mode d’emploi');console.error(e);}});safeOn('btn-new-client','click',function(){openCreateClientFiche();});safeOn('btn-export-json','click',exportBackupJSONDirect);safeOn('btn-restore-json','click',function(){var f=$('file-restore');if(f)f.click();});safeOn('file-restore','change',function(e){var f=e.target.files[0];if(f)restoreJSON(f);});
+  safeOn('btn-open-qualite','click',function(){try{renderQualite();}catch(e){toast('Erreur ouverture Qualité');console.error(e);}});safeOn('btn-mode-emploi','click',function(){try{(window.renderModeEmploi||renderModeEmploi)();}catch(e){toast('Erreur mode d’emploi');console.error(e);}});safeOn('btn-new-client','click',function(){openCreateClientFiche();});safeOn('btn-export-json','click',exportBackupJSONDirect);safeOn('btn-restore-json','click',function(){var f=$('file-restore');if(f)f.click();});safeOn('file-restore','change',function(e){var f=e.target.files[0];e.target.value='';if(f)restoreJSON(f);});
+  safeOn('btn-export-origin-xlsx','click',exportTwoOriginExcels);
+  safeOn('btn-origin-crm','click',function(){var f=$('file-origin-crm');if(f)f.click();});
+  safeOn('btn-origin-immat','click',function(){var f=$('file-origin-immat');if(f)f.click();});
+  safeOn('file-origin-crm','change',function(e){
+    var f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;
+    toast('Lecture du fichier clients…');
+    parseTableFile(f).then(function(data){
+      var r=memorizeCrmOrigin(data);
+      toast(r.ok?(r.matched+' fiches reliées à l’original'):'Mémorisation clients impossible');
+      if(currentScreen==='more')renderMore();
+    }).catch(function(){toast('Fichier clients illisible');});
+  });
+  safeOn('file-origin-immat','change',function(e){
+    var f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;
+    toast('Lecture du fichier immatriculations…');
+    parseTableFile(f).then(function(data){
+      memorizeImmatOrigin(data).then(function(r){
+        toast(r.ok?(r.matched+' immatriculations reliées à l’original'):'Mémorisation immatriculations impossible');
+        if(currentScreen==='more')renderMore();
+      });
+    }).catch(function(){toast('Fichier immatriculations illisible');});
+  });
 }
 
 
@@ -8181,13 +8595,13 @@ document.addEventListener('DOMContentLoaded',function(){
     html+=sec('1. Principe','<p>L’application travaille sur sa propre copie : fiches clients et immatriculations. Marché analyse le parc. IMMAT liste les immatriculations par site. Tournées prépare les visites. Affaires suit les projets et les affaires chaudes. Commissions suit les commandes et les livraisons. Activité est le journal de l’appareil. Plus réunit l’import, le JSON, le coffre et Qualité.</p><p>Les filtres de Marché, de Tournées et d’IMMAT sont indépendants.</p>');
     html+=sec('2. Enregistrer','<p>Le bouton <strong>Enregistrer</strong> en bas de l’écran télécharge le fichier <strong>DAF_Professional_sauvegarde.json</strong> puis propose l’envoi au coffre. Sur iPhone, iOS peut demander où ranger le fichier. L’application n’écrit pas dans le fichier Excel d’origine.</p><p>Plus → <strong>Exporter sauvegarde JSON</strong> crée un fichier daté, sans envoi au coffre. Plus → <strong>Charger sauvegarde JSON</strong> remplace la base de cet appareil après confirmation.</p><p>Il n’y a plus de téléchargement automatique.</p>');
     html+=sec('3. Coffre','<p>Le coffre transporte une copie entre iPhone, iPad et Mac. Rien ne remplace un appareil sans confirmation, avec la date, le nom de l’appareil, le nombre de clients et le nombre de véhicules. Un envoi sans client est refusé. Une base beaucoup plus petite demande une seconde confirmation. Si deux appareils ont changé chacun de leur côté, les deux copies restent et vous choisissez.</p><p>Le coffre a besoin d’une connexion et d’un compte. S’il est injoignable, le JSON reste le moyen de récupérer la base.</p>');
-    html+=sec('4. Marché','<p>Recherche client, ville, TVA ou immatriculation. Périmètre : site seul ou tout le groupe. Filtres EXCLUS, ACCESSIBLES, INACTIFS, en trois états : neutre, OFF (retire), ON (ne garde que). Profils commerciaux, type tracteur ou porteur, cantons et villes. Un clic sur un chiffre du tableau ouvre la liste, avec export Excel. Cet export contient la colonne <strong>Possession</strong>, OUI ou NON.</p>');
+    html+=sec('4. Marché','<p>Recherche client, ville, TVA ou immatriculation. Périmètre : site seul ou tout le groupe. Filtres EXCLUS, ACCESSIBLES, INACTIFS, en trois états : neutre, OFF (retire), ON (ne garde que). <strong>Sites sec.</strong> est neutre à l’ouverture : les sites secondaires restent visibles. Profils commerciaux, type tracteur ou porteur, cantons et villes. Un clic sur un chiffre du tableau ouvre la liste, avec export Excel. Cet export contient la colonne <strong>Possession</strong>, OUI ou NON.</p>');
     html+=sec('5. IMMAT','<p>Une ligne par site, avec les volumes par année et le score. La recherche, les filtres de page, les tris et les filtres de colonnes sont enregistrés avec le JSON et le coffre. Le défilement n’est pas enregistré.</p><p>Le filtre <strong>PROJET</strong> en OFF retire les projets de l’année en cours, les projets <strong>FUTUR</strong> quelle que soit leur date, et les pas de projet de l’année en cours. En ON, il ne garde que ces fiches.</p><p>La colonne visite distingue A visiter, Visité et Ne pas visiter. Le bouton <strong>P</strong> propose Projet, Pas de projet et Simple visite.</p><p>L’export Excel d’une case contient la colonne Possession.</p>');
     html+=sec('6. Tournées','<p>Mêmes masques en trois états : EXCLUS, ACCESSIBLES, INACTIFS, Projets, Sites sec., Sans fiche. Le filtre Projets suit la même règle que sur IMMAT. Types : tous, tracteurs, porteurs. Profils commerciaux à la place des anciens boutons Flotte. Le bouton <strong>P</strong> ouvre Projet, Pas de projet ou Simple visite. + Créer groupe, Ouvrir et Fermer agissent sur la liste.</p>');
     html+=sec('7. Fiche client','<p><strong>Modifier la fiche</strong> change le nom, l’adresse, la ville, le canton, le département, le pays, le vendeur et le téléphone de ce site. La TVA et le SIRET d’une fiche déjà créée restent fixes. Un client créé dans l’application et ces modifications sont dans le JSON et le coffre. Un import CRM les réapplique.</p><p><strong>Projet détecté</strong> ouvre une affaire. <strong>Pas de projet</strong> concerne l’année en cours. <strong>Simple visite</strong> enregistre la date du jour et un commentaire. Elle ne crée ni projet, ni affaire, ni commission, et ne retire pas le client des tournées.</p><p>L’historique affiche ces trois événements, du plus récent au plus ancien, avec Supprimer après confirmation. Supprimer un projet retire aussi l’affaire et les commissions liées. Supprimer Pas de projet retire le masquage de l’année. Supprimer une simple visite ne retire que la ligne.</p><p>Possession OUI ou NON se règle sur chaque véhicule du parc. NON le sort des opportunités de renouvellement. Le véhicule reste exportable, avec Possession = NON.</p>');
     html+=sec('8. Affaires et Commissions','<p>Affaires regroupe les projets et les affaires chaudes. Le bouton Créer un projet client ouvre le même formulaire que sur la fiche.</p><p>Commissions regroupe les livraisons. Le tableau de suivi, replié au départ, compte les camions en commande et en livraison, mois par mois. Un clic sur le client ouvre la fiche. Un clic sur le nombre de commandes ouvre l’affaire. Un clic sur le nombre de livraisons filtre les commissions de ce client pour ce mois.</p>');
-    html+=sec('9. Activité','<p>Le journal liste les actions de cet appareil. Le filtre <strong>Projet / Pas de projet / Visite</strong> ne garde que ces trois événements, avec la date d’un projet futur quand elle existe. L’export Excel de cette liste a les colonnes Date du projet et Commentaire. Les autres événements restent visibles quand le filtre est sur Tout.</p><p>Le journal part dans le JSON et dans le coffre. Un appareil neuf le retrouve avec le reste de la base.</p>');
-    html+=sec('10. Plus','<p><strong>Importer</strong> le CRM et les immatriculations remplit la base. Un nouvel import d’immatriculations remplace le parc déjà présent. <strong>Créer un client</strong> ajoute une fiche. <strong>Qualité</strong> signale les écarts de TVA, de SIRET et de rattachement. <strong>Forcer la mise à jour</strong> recharge la version de l’application. <strong>Tout effacer</strong> vide la base de cet appareil après confirmation. La copie déjà envoyée au coffre reste en ligne.</p>');
+    html+=sec('9. Activité','<p>Le journal liste les actions de cet appareil. Chaque ligne a <strong>Fiche client</strong> et <strong>Supprimer</strong>. Le filtre <strong>Projet / Pas de projet / Visite</strong> garde aussi le résultat d’un projet. La création d’un projet laisse une ligne. Le passage de EN COURS à GAGNÉ, ou vers un autre résultat, laisse une deuxième ligne.</p><p>Le journal part dans le JSON et dans le coffre. Un appareil neuf le retrouve avec le reste de la base.</p>');
+    html+=sec('10. Plus','<p><strong>BASE CRM</strong> charge les clients. <strong>Nouvelles immatriculations</strong> ajoute seulement les lignes qui ne sont pas déjà dans le parc. Une ligne déjà connue est ignorée. Avec un SIRET, le camion va sur ce site. Sans SIRET, il va sur la fiche seulement si la TVA a un seul site. Sinon il reste sans fiche. <strong>Remplacer tout le parc</strong> est à part et demande confirmation.</p><p><strong>Mémoriser les fichiers d’origine</strong> se fait une fois. Cela ne change pas les fiches ni le parc. <strong>Exporter les deux Excel</strong> reprend les colonnes de ces fichiers. Une cellule modifiée est en rouge. Une fiche créée ou une immatriculation ajoutée est en rouge sur toute la ligne. Les fichiers d’origine ne sont pas réécrits. Projets, affaires, commissions et journal restent dans le JSON et le coffre.</p><p><strong>Créer un client</strong> ajoute une fiche. <strong>Qualité</strong> signale les écarts de TVA, de SIRET et de rattachement. <strong>Forcer la mise à jour</strong> recharge la version de l’application. <strong>Tout effacer</strong> vide la base de cet appareil après confirmation. La copie déjà envoyée au coffre reste en ligne.</p>');
     html+=sec('11. Récupérer un appareil neuf','<p>Installez l’application, puis Plus → Charger sauvegarde JSON, ou récupérez le coffre. La base revient telle qu’elle était à l’enregistrement : clients, fiches modifiées, clients créés, immatriculations, possession OUI/NON, projets, affaires, commissions, archives, groupes, contacts, exclusions, accessibles, réglages d’IMMAT et journal Activité.</p><p>Le coffre et le JSON portent le même contenu. Si le coffre est injoignable, le JSON suffit. La connexion au coffre, elle, se refait sur le nouvel appareil.</p>');
     html+='</div>';
     openSheet('Mode d’emploi complet',html);
@@ -12081,12 +12495,12 @@ document.addEventListener('DOMContentLoaded',function(){
   function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
   function actionLabel(t){if(typeof window.getActivityLabel==='function')return window.getActivityLabel(t);return t||'Action';}
   function actIcon(t){
-    var m={PAS_PROJET_CREATE:'🚫',PROJET_CREATE:'🟢',SIMPLE_VISITE:'📍',PROJET_UPDATE:'✏️',PROJET_DELETE:'🗑',DEAL_CREATE:'🔥',DEAL_UPDATE:'✏️',LINE_UPDATE:'📋',CLIENT_EXCLU:'⛔',CLIENT_URGENT:'🔴',CLIENT_ACCESSIBLE:'🔓',PROSPECTION:'📌',POSSESSION:'🚛',GROUPE:'👥',CONTACT:'👤',IMPORT:'📥',LIVRAISON:'🚚',SAUVEGARDE:'💾',RESTORE:'📂',CRM:'📝',EVENT:'📌'};
+    var m={PAS_PROJET_CREATE:'🚫',PROJET_CREATE:'🟢',PROJET_RESULT:'✅',SIMPLE_VISITE:'📍',PROJET_UPDATE:'✏️',PROJET_DELETE:'🗑',DEAL_CREATE:'🔥',DEAL_UPDATE:'✏️',LINE_UPDATE:'📋',CLIENT_EXCLU:'⛔',CLIENT_URGENT:'🔴',CLIENT_ACCESSIBLE:'🔓',PROSPECTION:'📌',POSSESSION:'🚛',GROUPE:'👥',CONTACT:'👤',IMPORT:'📥',LIVRAISON:'🚚',SAUVEGARDE:'💾',RESTORE:'📂',CRM:'📝',EVENT:'📌'};
     return m[t]||'📌';
   }
   function dshort(v){if(!v)return '—';var d=new Date(v);if(isNaN(d))return String(v).slice(0,16);return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'})+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}
   function actUi(){if(!window._actUi)window._actUi={filterYear:null,filterMonth:null,filterKind:'',exp:{}};if(window._actUi.filterKind==null)window._actUi.filterKind='';return window._actUi;}
-  function isProjetVisiteEvent(e){return !!e&&(e.type==='PAS_PROJET_CREATE'||e.type==='PROJET_CREATE'||e.type==='SIMPLE_VISITE');}
+  function isProjetVisiteEvent(e){return !!e&&(e.type==='PAS_PROJET_CREATE'||e.type==='PROJET_CREATE'||e.type==='PROJET_RESULT'||e.type==='SIMPLE_VISITE');}
   function activityComment(e){
     if(!e)return '';
     if(e.commentaire)return e.commentaire;
@@ -12131,13 +12545,40 @@ document.addEventListener('DOMContentLoaded',function(){
     });
     return byYear;
   }
+  function activitySig(e){
+    if(!e)return '';
+    if(e.id)return 'id:'+e.id;
+    return 'sig:'+String(e.date||'')+'|'+String(e.type||'')+'|'+String(e.tva||'')+'|'+String(e.description||'').slice(0,80);
+  }
+  function deleteActivityEntry(sig){
+    if(!sig)return;
+    function strip(key){
+      var list=[];
+      try{list=JSON.parse(localStorage.getItem(key)||'[]')||[];}catch(e){list=[];}
+      if(!Array.isArray(list))list=[];
+      var removed=false;
+      list=list.filter(function(e){
+        if(removed)return true;
+        if(activitySig(e)===sig){removed=true;return false;}
+        return true;
+      });
+      try{localStorage.setItem(key,JSON.stringify(list));}catch(e){}
+    }
+    strip('daf_commercebox_activity');
+    strip('daf_activity_log');
+    renderActivitePage();
+  }
   function renderActEventRow(e){
-    var dealBtn=e.dealId?('<button type="button" class="btn btn-ghost btn-sm act-open-deal" data-deal-id="'+esc(e.dealId)+'" style="font-size:9px;margin-top:4px;">→ Affaire</button>'):'';
+    var sig=activitySig(e);
+    var dealBtn=e.dealId?('<button type="button" class="btn btn-ghost btn-sm act-open-deal" data-deal-id="'+esc(e.dealId)+'" style="font-size:9px;">Affaire</button>'):'';
+    var clientBtn='<button type="button" class="btn btn-ghost btn-sm act-open-client" data-site="'+esc(e.siteKey||'')+'" data-tva="'+esc(e.tva||'')+'" style="font-size:9px;">Fiche client</button>';
+    var delBtn='<button type="button" class="btn btn-red btn-sm act-del-event" data-act-sig="'+esc(sig)+'" style="font-size:9px;">Supprimer</button>';
     return '<div class="card" style="margin:0 0 6px 12px;"><div style="display:flex;justify-content:space-between;gap:8px;"><div style="min-width:0;flex:1;">'
       +'<div style="font-size:12px;font-weight:800;">'+actIcon(e.type)+' '+esc(e.clientNom||'—')+'</div>'
       +'<div style="font-size:11px;color:var(--text2);">'+esc(actionLabel(e.type))+(e.status?' · '+esc(e.status):'')+(e.projetDate?' · échéance '+esc(String(e.projetDate).slice(0,10)):'')+'</div>'
       +'<div style="font-size:10px;color:var(--text3);line-height:1.35;">'+esc(e.description||'')+'</div>'
-      +dealBtn+'</div><div style="font-size:9px;color:var(--text3);white-space:nowrap;">'+esc(dshort(e.date))+'</div></div></div>';
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">'+clientBtn+dealBtn+delBtn+'</div>'
+      +'</div><div style="font-size:9px;color:var(--text3);white-space:nowrap;">'+esc(dshort(e.date))+'</div></div></div>';
   }
   function renderActiviteFilters(byYear,rows){
     var el=byId('activite-filters'); if(!el)return;
@@ -12255,6 +12696,23 @@ document.addEventListener('DOMContentLoaded',function(){
     qsa('#activite-content .act-open-deal').forEach(function(b){
       b.onclick=function(e){e.stopPropagation();var id=b.getAttribute('data-deal-id');if(id&&typeof window.openDealV213==='function')window.openDealV213(id);else if(id&&typeof window.openDeal==='function')window.openDeal(id);};
     });
+    qsa('#activite-content .act-open-client').forEach(function(b){
+      b.onclick=function(ev){
+        ev.stopPropagation();
+        var sk=b.getAttribute('data-site')||'';
+        var tva=b.getAttribute('data-tva')||'';
+        if(sk&&typeof openSiteSheet==='function'&&IDX&&IDX.cBySite&&IDX.cBySite[sk]){openSiteSheet(sk);return;}
+        if((sk||tva)&&typeof openClientSheet==='function'){openClientSheet(sk||tva);return;}
+        try{toast('Cet enregistrement n’est pas lié à un client');}catch(e){}
+      };
+    });
+    qsa('#activite-content .act-del-event').forEach(function(b){
+      b.onclick=function(ev){
+        ev.stopPropagation();
+        deleteActivityEntry(b.getAttribute('data-act-sig')||'');
+        try{toast('Enregistrement supprimé');}catch(e){}
+      };
+    });
     var ex=byId('cb-act-export-v60'); if(ex)ex.onclick=function(){
       if(typeof XLSX==='undefined'){try{toast('xlsx.full.min.js requis');}catch(e){}return;}
       var data=[['Date','Heure','Client','TVA','Action','Statut','Date du projet','Commentaire','Description']];
@@ -12342,7 +12800,7 @@ document.addEventListener('DOMContentLoaded',function(){
   'use strict';
   var MAX=2000;
   var LABELS={
-    PAS_PROJET_CREATE:'Sans projet',PROJET_CREATE:'Création projet',PROJET_UPDATE:'Modification projet',PROJET_DELETE:'Suppression projet',SIMPLE_VISITE:'Simple visite',
+    PAS_PROJET_CREATE:'Sans projet',PROJET_CREATE:'Création projet',PROJET_RESULT:'Résultat projet',PROJET_UPDATE:'Modification projet',PROJET_DELETE:'Suppression projet',SIMPLE_VISITE:'Simple visite',
     DEAL_CREATE:'Création affaire',DEAL_UPDATE:'Modification affaire',LINE_UPDATE:'Ligne affaire',
     CLIENT_EXCLU:'Exclusion client',CLIENT_URGENT:'Client urgent',CLIENT_ACCESSIBLE:'Accessible',
     PROSPECTION:'État prospection',POSSESSION:'Possession véhicule',GROUPE:'Groupement',CONTACT:'Contact',
@@ -12358,12 +12816,25 @@ document.addEventListener('DOMContentLoaded',function(){
   function saveAL(v){try{localStorage.setItem('daf_commercebox_activity',JSON.stringify((v||[]).slice(0,MAX)));}catch(e){}}
   function cbLogActivity(ev){
     ev=ev||{};
-    var key=(ev.type||'')+'|'+(ev.tva||'')+'|'+(ev.dealId||'')+'|'+(ev.projectId||'')+'|'+String(ev.description||'').slice(0,100);
     var now=Date.now();
+    var log=getAL();
+    if(ev.type==='PROJET_CREATE'&&ev.projectId){
+      var idx=log.findIndex(function(e){return e&&e.type==='PROJET_CREATE'&&String(e.projectId)===String(ev.projectId)&&(now-new Date(e.date).getTime())<5000;});
+      if(idx>=0){
+        var old=log[idx];
+        var richer=!!(ev.commentaire||ev.siteKey||ev.projetDate);
+        var oldRich=!!(old.commentaire||old.siteKey||old.projetDate);
+        if(richer&&!oldRich){
+          log[idx]=Object.assign({},old,{clientNom:ev.clientNom||old.clientNom,tva:ev.tva||old.tva,siteKey:ev.siteKey||old.siteKey,status:ev.status||old.status,description:ev.description||old.description,commentaire:ev.commentaire||'',projetDate:ev.projetDate||''});
+          saveAL(log);
+        }
+        return;
+      }
+    }
+    var key=(ev.type||'')+'|'+(ev.tva||'')+'|'+(ev.dealId||'')+'|'+(ev.projectId||'')+'|'+String(ev.description||'').slice(0,100);
     if(key===_dedupeKey&&now-_dedupeTs<1200)return;
     _dedupeKey=key;_dedupeTs=now;
-    var log=getAL();
-    log.unshift({id:ev.id||('act_'+now+'_'+Math.floor(Math.random()*9999)),date:ev.date||new Date().toISOString(),type:ev.type||'EVENT',clientNom:ev.clientNom||ev.nom||'',tva:ev.tva||'',siteKey:ev.siteKey||'',status:ev.status||'',description:ev.description||'',commentaire:ev.commentaire||'',projetDate:ev.projetDate||'',dealId:ev.dealId||'',projectId:ev.projectId||''});
+    log.unshift({id:ev.id||('act_'+now+'_'+Math.floor(Math.random()*9999)),date:ev.date||new Date().toISOString(),type:ev.type||'EVENT',clientNom:ev.clientNom||ev.nom||'',tva:ev.tva||'',siteKey:ev.siteKey||'',status:ev.status||'',previousStatus:ev.previousStatus||'',description:ev.description||'',commentaire:ev.commentaire||'',projetDate:ev.projetDate||'',dealId:ev.dealId||'',projectId:ev.projectId||''});
     saveAL(log);
   }
   window.cbLogActivity=cbLogActivity;
@@ -12390,10 +12861,17 @@ document.addEventListener('DOMContentLoaded',function(){
     var c=IDX.cBySite&&IDX.cBySite[sk];
     cbLogActivity({type:'PROSPECTION',clientNom:c&&c.nom,tva:c&&c.tva,siteKey:sk,status:val||'',description:'État prospection : '+String(val||'—')});
   });
-  wrapFn('updateProjet',function(pid,status,tva){
-    var p=(DB.getProjects()||[]).find(function(x){return x.id===pid;});
-    cbLogActivity({type:'PROJET_UPDATE',clientNom:p&&(p.nom||p.client),tva:p&&p.tva,projectId:pid,status:status,description:'Projet → '+status});
-  });
+  function projStatus(p){return String(p&&p.status||'').toUpperCase();}
+  function projStatusLabel(s){
+    var m={EN_COURS:'EN COURS',FUTUR:'FUTUR',GAGNE:'GAGNÉ',PERDU:'PERDU',ABANDON:'ABANDON',REPORTE:'REPORTÉ',PROJET:'EN COURS'};
+    return m[s]||s||'—';
+  }
+  function projSnap(p){
+    if(!p)return '';
+    var c={};
+    Object.keys(p).forEach(function(k){if(k!=='updated'&&k!=='resultDate')c[k]=p[k];});
+    return JSON.stringify(c);
+  }
   wrapFn('saveExclusionRec',function(cOrTva,updates,sk){
     if(!updates||updates.urgent===undefined)return;
     cbLogActivity({type:'CLIENT_URGENT',clientNom:clientNomFrom(cOrTva,sk),tva:typeof cOrTva==='object'?cOrTva.tva:cOrTva,siteKey:sk,status:updates.urgent?'URGENT':'NORMAL',description:updates.urgent?'Client marqué urgent':'Urgence retirée'});
@@ -12411,7 +12889,7 @@ document.addEventListener('DOMContentLoaded',function(){
     DB.savePossession._actV64=true;
   }
   var _projSnap={};
-  function initProjSnap(){(DB.getProjects()||[]).forEach(function(p){if(p&&p.id)_projSnap[p.id]=JSON.stringify(p);});}
+  function initProjSnap(){(DB.getProjects()||[]).forEach(function(p){if(p&&p.id)_projSnap[p.id]=projSnap(p);});}
   if(typeof DB==='object'&&DB.saveProjects&&!DB.saveProjects._actV64){
     initProjSnap();
     var _ospr=DB.saveProjects.bind(DB);
@@ -12420,11 +12898,21 @@ document.addEventListener('DOMContentLoaded',function(){
       var before={};
       (DB.getProjects()||[]).forEach(function(p){if(p&&p.id)before[p.id]=p;});
       var r=_ospr(projects);
+      if(localStorage.getItem('daf_coffre_apply')==='1'){
+        projects.forEach(function(p){if(p&&p.id)_projSnap[p.id]=projSnap(p);});
+        return r;
+      }
       projects.forEach(function(p){
         if(!p||!p.id)return;
-        var s=JSON.stringify(p);
-        if(!_projSnap[p.id])cbLogActivity({type:'PROJET_CREATE',clientNom:p.nom||p.client,tva:p.tva,projectId:p.id,siteKey:p.siteKey,status:p.status,description:'Projet '+String(p.status||'')+' · '+(p.camions||p.qty||'?')+' camion(s)'+(p.commentaire?' · '+p.commentaire:'')});
-        else if(_projSnap[p.id]!==s)cbLogActivity({type:'PROJET_UPDATE',clientNom:p.nom||p.client,tva:p.tva,projectId:p.id,status:p.status,description:'Projet modifié · '+String(p.status||'')});
+        var s=projSnap(p);
+        if(!_projSnap[p.id])cbLogActivity({type:'PROJET_CREATE',clientNom:p.nom||p.client,tva:p.tva,projectId:p.id,siteKey:p.siteKey||'',status:p.status,commentaire:p.commentaire||'',projetDate:p.date||'',description:'Projet '+projStatusLabel(projStatus(p))+' créé · '+(p.camions||p.qty||'?')+' camion(s)'+(p.commentaire?' · '+p.commentaire:'')});
+        else if(_projSnap[p.id]!==s){
+          var prev={};
+          try{prev=JSON.parse(_projSnap[p.id]);}catch(e){}
+          var from=projStatus(prev), to=projStatus(p);
+          if(from&&to&&from!==to)cbLogActivity({type:'PROJET_RESULT',clientNom:p.nom||p.client,tva:p.tva,projectId:p.id,siteKey:p.siteKey||'',status:to,previousStatus:from,description:'Résultat projet : '+projStatusLabel(from)+' → '+projStatusLabel(to)});
+          else cbLogActivity({type:'PROJET_UPDATE',clientNom:p.nom||p.client,tva:p.tva,projectId:p.id,siteKey:p.siteKey||'',status:p.status,description:'Projet modifié · '+projStatusLabel(to)});
+        }
         _projSnap[p.id]=s;
       });
       Object.keys(before).forEach(function(id){
