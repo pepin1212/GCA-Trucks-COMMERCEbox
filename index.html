@@ -381,7 +381,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-08-bases-v94';
+const APP_BUILD='2026-11-08-bases-v95';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -8461,7 +8461,7 @@ document.addEventListener('DOMContentLoaded',function(){
     var html='<div style="padding:10px 12px 20px;"><h3 style="margin-bottom:8px;">Mode d’emploi — DAF CommerceBox</h3><div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Build '+APP_BUILD+'</div>';
     html+=sec('1. Principe','<p>L’application travaille sur sa propre copie : fiches clients et immatriculations. Marché analyse le parc. IMMAT liste les immatriculations par site. Tournées prépare les visites. Affaires suit les projets et les affaires chaudes. Commissions suit les commandes et les livraisons. Activité est le journal de l’appareil. Plus réunit l’import, le JSON, le coffre et Qualité.</p><p>Les filtres de Marché, de Tournées et d’IMMAT sont indépendants.</p>');
     html+=sec('2. Enregistrer','<p>Le bouton <strong>Enregistrer</strong> en bas de l’écran télécharge le fichier <strong>DAF_Professional_sauvegarde.json</strong> puis propose l’envoi au coffre. Sur iPhone, iOS peut demander où ranger le fichier. L’application n’écrit pas dans le fichier Excel d’origine.</p><p>Plus → <strong>Exporter sauvegarde JSON</strong> crée un fichier daté, sans envoi au coffre. Plus → <strong>Charger sauvegarde JSON</strong> remplace la base de cet appareil après confirmation.</p><p>Il n’y a plus de téléchargement automatique.</p>');
-    html+=sec('3. Coffre','<p>Le coffre transporte une copie entre iPhone, iPad et Mac. Rien ne remplace un appareil sans confirmation, avec la date, le nom de l’appareil, le nombre de clients et le nombre de véhicules. Un envoi sans client est refusé. Une base beaucoup plus petite demande une seconde confirmation. Si deux appareils ont changé chacun de leur côté, les deux copies restent et vous choisissez.</p><p>Le coffre a besoin d’une connexion et d’un compte. S’il est injoignable, le JSON reste le moyen de récupérer la base.</p>');
+    html+=sec('3. Coffre','<p>Le coffre transporte une copie entre iPhone, iPad et Mac. Chaque envoi remplace la copie déjà là : une seule reste. Rien ne remplace un appareil sans confirmation, avec la date, le nom de l’appareil, le nombre de clients et le nombre de véhicules. Un envoi sans client est refusé. Une base beaucoup plus petite demande une seconde confirmation. Si deux appareils ont changé chacun de leur côté, vous choisissez avant que le coffre soit remplacé.</p><p>Le coffre a besoin d’une connexion et d’un compte. S’il est injoignable, le JSON reste le moyen de récupérer la base.</p>');
     html+=sec('4. Marché','<p>Recherche client, ville, TVA ou immatriculation. Périmètre : site seul ou tout le groupe. Filtres EXCLUS, ACCESSIBLES, INACTIFS, en trois états : neutre, OFF (retire), ON (ne garde que). <strong>Sites sec.</strong> est neutre à l’ouverture : les sites secondaires restent visibles. Profils commerciaux, type tracteur ou porteur, cantons et villes. Un clic sur un chiffre du tableau ouvre la liste, avec export Excel. Cet export contient la colonne <strong>Possession</strong>, OUI ou NON.</p>');
     html+=sec('5. IMMAT','<p>Une ligne par site, avec les volumes par année et le score. La recherche, les filtres de page, les tris et les filtres de colonnes sont enregistrés avec le JSON et le coffre. Le défilement n’est pas enregistré.</p><p>Le filtre <strong>PROJET</strong> en OFF retire les projets de l’année en cours, les projets <strong>FUTUR</strong> quelle que soit leur date, et les pas de projet de l’année en cours. En ON, il ne garde que ces fiches.</p><p>La colonne visite distingue A visiter, Visité et Ne pas visiter. Le bouton <strong>P</strong> propose Projet, Pas de projet et Simple visite.</p><p>L’export Excel d’une case contient la colonne Possession.</p>');
     html+=sec('6. Tournées','<p>Mêmes masques en trois états : EXCLUS, ACCESSIBLES, INACTIFS, Projets, Sites sec., Sans fiche. Le filtre Projets suit la même règle que sur IMMAT. Types : tous, tracteurs, porteurs. Profils commerciaux à la place des anciens boutons Flotte. Le bouton <strong>P</strong> ouvre Projet, Pas de projet ou Simple visite. + Créer groupe, Ouvrir et Fermer agissent sur la liste.</p>');
@@ -13821,6 +13821,29 @@ document.addEventListener('DOMContentLoaded',function(){
       });
     });
   }
+  function deleteExcept(token, keepId){
+    return api('/rest/v1/coffre_snapshots?id=neq.'+encodeURIComponent(keepId),{method:'DELETE',token:token,prefer:'return=minimal'}).catch(function(){return null;});
+  }
+  function sendReplacing(token, data, previous){
+    var keep=previous&&previous.id;
+    var prep=keep?deleteExcept(token, keep):Promise.resolve();
+    return prep.then(function(){return upload(token, data, keep||null);}).then(function(snap){
+      if(!keep)return snap;
+      return deleteExcept(token, snap.id).then(function(){return listSnapshots(token);}).then(function(rows){
+        rows=rows||[];
+        snap.replaced=rows.length===1&&rows[0]&&rows[0].id===snap.id;
+        return snap;
+      });
+    });
+  }
+  function finishSend(snap){
+    markSynced(snap.id);closeModal();paint();
+    if(snap.replaced===false){
+      openModal('Anciennes copies encore là','<p style="font-size:12px;color:var(--text2);line-height:1.5;">La nouvelle copie est enregistrée. Supabase refuse encore d’effacer les précédentes. Dans <strong>SQL Editor</strong>, nouvelle requête, collez ce script, sélectionnez tout, puis <strong>Run</strong>. L’envoi suivant ne gardera qu’une copie.</p><pre style="font-size:10px;white-space:pre-wrap;background:var(--bg3);padding:8px;border-radius:8px;">drop policy if exists "snap delete" on public.coffre_snapshots;\ncreate policy "snap delete" on public.coffre_snapshots for delete to authenticated using (user_id = auth.uid());\ngrant delete on public.coffre_snapshots to authenticated;</pre>',[{label:'Compris',cls:'btn-primary'}]);
+      return;
+    }
+    toast(snap.replaced?'Coffre remplacé':'Envoyé au coffre');
+  }
   function markSynced(id){lsSet('daf_coffre_base',id||'');lsDel('daf_coffre_dirty');}
   function isDirty(){return lsGet('daf_coffre_dirty')==='1';}
   function baseId(){return lsGet('daf_coffre_base');}
@@ -13862,10 +13885,10 @@ document.addEventListener('DOMContentLoaded',function(){
           return;
         }
         if(!forceSmall && tooSmall(local, latest)){showSmall(latest, function(){doUpload(true);});return;}
-        openModal('Envoyer vers le coffre', localBlock()+snapBlock('Dernière copie du coffre', latest)+'<p style="font-size:12px;color:var(--text2);">La copie actuelle du coffre est conservée. La base de cet appareil ne change pas.</p>',[
+        openModal('Envoyer vers le coffre', localBlock()+snapBlock('Dernière copie du coffre', latest)+'<p style="font-size:12px;color:var(--text2);">Cet envoi remplace la copie du coffre. L’ancienne est effacée quand la nouvelle est complète. La base de cet appareil ne change pas.</p>',[
           {label:'Annuler',cls:'btn-ghost'},
           {label:'Envoyer',cls:'btn-primary',close:false,action:function(){
-            upload(s.access_token, data, latest?latest.id:null).then(function(snap){markSynced(snap.id);closeModal();toast('Envoyé au coffre');paint();}).catch(function(err){guard(err);});
+            sendReplacing(s.access_token, data, latest).then(finishSend).catch(function(err){guard(err);});
           }}
         ]);
       });
@@ -13883,8 +13906,8 @@ document.addEventListener('DOMContentLoaded',function(){
       {label:'Prendre le coffre',cls:'btn-secondary',close:false,action:function(){applySnap(token, latest).then(closeModal).catch(guard);}},
       {label:'Garder cet appareil',cls:'btn-primary',close:false,action:function(){
         var local=countsOf(data);
-        if(tooSmall(local, latest)){closeModal();showSmall(latest, function(){upload(token, data, latest.id).then(function(snap){markSynced(snap.id);toast('Envoyé au coffre');paint();}).catch(guard);});return;}
-        upload(token, data, latest.id).then(function(snap){markSynced(snap.id);closeModal();toast('Envoyé au coffre');paint();}).catch(guard);
+        if(tooSmall(local, latest)){closeModal();showSmall(latest, function(){sendReplacing(token, data, latest).then(finishSend).catch(guard);});return;}
+        sendReplacing(token, data, latest).then(finishSend).catch(guard);
       }}
     ]);
   }
@@ -13970,7 +13993,7 @@ document.addEventListener('DOMContentLoaded',function(){
       html+='<button type="button" class="btn btn-secondary" id="coffre-get" style="width:100%;margin-bottom:6px;">Récupérer depuis le coffre</button>';
       html+='<button type="button" class="btn btn-ghost" id="coffre-hist" style="width:100%;margin-bottom:6px;">Copies précédentes</button>';
       html+='<button type="button" class="btn btn-ghost" id="coffre-out" style="width:100%;">Se déconnecter</button>';
-      html+='<div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Rien n’est remplacé tout seul. Envoyez depuis l’appareil que vous quittez, récupérez sur celui que vous ouvrez, après avoir lu les compteurs.</div>';
+      html+='<div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Un envoi remplace la copie du coffre. Rien ne remplace cet appareil sans confirmation. Envoyez depuis l’appareil que vous quittez, récupérez sur celui que vous ouvrez, après avoir lu les compteurs.</div>';
     }
     box.innerHTML=html;
     var inn=$('coffre-in'), up=$('coffre-up'), send=$('coffre-send'), get=$('coffre-get'), hist=$('coffre-hist'), out=$('coffre-out'), dev=$('coffre-device');
