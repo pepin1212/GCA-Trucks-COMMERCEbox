@@ -233,7 +233,6 @@ input[type=file]{display:none}
       <div><div class="screen-title"><span class="daf-logo">DAF</span> CommerceBox</div><div class="screen-sub" id="marche-sub">Chargez vos fichiers Excel</div></div>
       <div style="display:flex;gap:6px;align-items:center;">
         <div class="save-bar"><div class="save-dot" id="save-dot"></div><span id="save-lbl">—</span></div>
-        <button class="btn btn-secondary btn-sm" id="btn-base-hdr">🗂 <span id="base-name-hdr">Base 1</span></button>
       </div>
     </div>
   </div>
@@ -264,13 +263,11 @@ input[type=file]{display:none}
     <div class="fpill" data-f="no_daf">Sans DAF</div>
     <div class="fpill" data-f="urgent" data-tri="1">Urgents</div>
     <div class="fpill" data-f="protocole" data-tri="1">Protocole</div>
-    <div class="fpill" data-f="flotte">Flotte</div>
   </div>
   <div id="tours-mask-bar" style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:6px 12px;background:var(--bg2);border-bottom:1px solid var(--border);position:sticky;top:40px;z-index:200;overflow:visible;">
     <button class="gf-chip mask-exclude" id="btn-mask-exclus">EXCLUS OFF</button>
     <button class="gf-chip mask-exclude" id="btn-mask-accessible-off">ACCESSIBLES OFF</button>
     <button class="gf-chip mask-exclude" id="btn-mask-inactifs">INACTIFS OFF</button>
-    <button class="gf-chip" id="btn-mask-flotte-nat">Flotte Nat. OFF</button>
     <button class="gf-chip" id="btn-mask-projets" title="OFF retire les projets de l’année en cours, les projets futurs quelle que soit leur date, et les pas de projet de l’année en cours.">Projets</button>
     <button class="gf-chip mask-exclude" id="btn-mask-sites-sec">Sites sec. OFF</button>
     <button class="gf-chip" id="btn-mask-sans-fiche">Sans fiche</button>
@@ -293,11 +290,6 @@ input[type=file]{display:none}
   </div>
   <div id="tours-counters" style="margin-bottom:3px;"></div>
   <div id="tours-list"></div>
-</div>
-
-<div class="screen" id="screen-projets">
-  <div class="screen-header"><div class="screen-title">📋 Projets</div></div>
-  <div id="projets-content" style="padding-top:6px;"></div>
 </div>
 
 <div class="screen" id="screen-affaires">
@@ -389,7 +381,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-08-bases-v89';
+const APP_BUILD='2026-11-08-bases-v91';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -754,14 +746,56 @@ function getBackupFilename(){
   return `DAF_Professional_${base.replace(/\s+/g,'_')}_${d}_${t}.json`;
 }
 
+function readActivityBackup(){
+  var merged=[], seen={};
+  function pull(key){
+    try{
+      var list=JSON.parse(localStorage.getItem(key)||'[]');
+      if(!Array.isArray(list))return;
+      list.forEach(function(e){
+        if(!e)return;
+        var id=e.id||JSON.stringify(e);
+        if(seen[id])return;
+        seen[id]=1;
+        merged.push(e);
+      });
+    }catch(e){}
+  }
+  pull('daf_commercebox_activity');
+  pull('daf_activity_log');
+  merged.sort(function(a,b){return String((b&&b.date)||'').localeCompare(String((a&&a.date)||''));});
+  return merged.slice(0,2000);
+}
+function restoreActivityFromBackup(data){
+  if(!data||!Object.prototype.hasOwnProperty.call(data,'activity'))return;
+  var arr=Array.isArray(data.activity)?data.activity.slice(0,2000):[];
+  try{localStorage.setItem('daf_commercebox_activity',JSON.stringify(arr));}catch(e){}
+  try{localStorage.removeItem('daf_activity_log');}catch(e){}
+  var ui=data.uiState;
+  if(!ui)return;
+  try{
+    if(Object.prototype.hasOwnProperty.call(ui,'commSortFinal')){
+      if(ui.commSortFinal)localStorage.setItem('commSortFinal',ui.commSortFinal);
+      else localStorage.removeItem('commSortFinal');
+      window.commSortFinal=ui.commSortFinal||'desc';
+    }
+    if(Object.prototype.hasOwnProperty.call(ui,'cbRemindersCollapsed')){
+      if(ui.cbRemindersCollapsed)localStorage.setItem('cbRemindersCollapsed',ui.cbRemindersCollapsed);
+      else localStorage.removeItem('cbRemindersCollapsed');
+    }
+  }catch(e){}
+}
 function getBackupData(){
   if(typeof window.migrateCommerceStorage==='function')window.migrateCommerceStorage();
   const base=DB.getBase();
   var st=Object.assign({},DB.getSettings()||{});
   ['hotDeals','deliveries','archivedHotDeals','hotDealArchives','dealArchives'].forEach(function(k){delete st[k];});
   var archives=(typeof getArchivedHotDeals==='function'?getArchivedHotDeals():[])||[];
+  var sort=''; var reminders='';
+  try{sort=localStorage.getItem('commSortFinal')||'';}catch(e){}
+  try{reminders=localStorage.getItem('cbRemindersCollapsed')||'';}catch(e){}
   return {
-    version:8,
+    version:9,
     app:'DAF_COMMERCE-Box',
     folder:BACKUP_FOLDER,
     base,
@@ -779,6 +813,8 @@ function getBackupData(){
     deliveries:(typeof getDeliveries==='function'?getDeliveries():[])||[],
     archivedHotDeals:archives,
     hotDealArchives:archives,
+    activity:readActivityBackup(),
+    uiState:{commSortFinal:sort,cbRemindersCollapsed:reminders},
     exportDate:new Date().toISOString()
   };
 }
@@ -814,12 +850,6 @@ function triggerBackupDownload(silent){ if(silent===undefined)silent=false;
 
 function scheduleAutoBackup(){
   clearTimeout(_backupTimer);
-  _backupTimer=setTimeout(()=>{
-    if(_unsavedChanges && DB.getClients().length>0){
-      triggerBackupDownload(false);
-      toast('⏱ Backup automatique → '+BACKUP_FOLDER,3500);
-    }
-  }, BACKUP_INTERVAL_MS);
 }
 
 function enregistrerJsonEtCoffre(){
@@ -846,10 +876,6 @@ function showBackupInstructions(){
       <p style="margin-bottom:8px;"><strong>Étape 3</strong> — Pour restaurer :</p>
       <p style="margin-bottom:4px;padding-left:12px;">• Onglet <strong>⚙️ Plus</strong> → <strong>📥 Restaurer depuis JSON</strong></p>
       <p style="padding-left:12px;">• Sélectionnez le fichier depuis iCloud Drive</p>
-      <div style="margin-top:10px;padding:8px;background:var(--orange-bg);border-radius:8px;border:1px solid rgba(224,120,48,.3);">
-        <strong style="color:var(--orange);">⏱ Backup automatique</strong><br>
-        <span style="font-size:11px;">Un backup se déclenche automatiquement toutes les 30 minutes si des modifications ont été faites.</span>
-      </div>
     </div>
   `,[
     {label:'Enregistrer',cls:'btn-primary',close:false,action:function(){closeModal();setTimeout(enregistrerJsonEtCoffre,40);}},
@@ -3097,6 +3123,7 @@ function renderImportCard(xlsxOk){
 }
 
 function renderBasesCard(){
+  return '';
   const bases=DB.getBases(); const active=DB.getBase();
   var basesHtml='';
   Object.entries(bases).forEach(function([id,name]){
@@ -3265,10 +3292,9 @@ function bindBasesEvents(){
 function dafEmergencyResetFromUrl(){
   var q=location.search||'', h=location.hash||'';
   if(q.indexOf('reset=1')<0&&h!=='#reset-all')return false;
-  try{resetAllCommerceBoxData();}catch(e){Object.keys(localStorage).forEach(function(k){if(k.indexOf('daf_pro_')===0)localStorage.removeItem(k);});}
-  try{history.replaceState({},'',location.pathname+location.search.replace(/[?&]reset=1/g,'').replace(/^\?&/,'?').replace(/\?$/,''));}catch(e2){}
-  try{toast('Données effacées — '+APP_BUILD);}catch(e3){}
-  return true;
+  try{history.replaceState({},'',location.pathname+location.search.replace(/[?&]reset=1/g,'').replace(/^\?&/,'?').replace(/\?$/,''));}catch(e){}
+  if(h==='#reset-all'){try{history.replaceState({},'',location.pathname+location.search);}catch(e2){}}
+  return false;
 }
 function dafForceAppUpdate(cb){
   var done=function(){
@@ -3333,7 +3359,7 @@ function renderMoreAdminFooter(){
     html+='<div class="card"><div class="card-title">📊 KPI incomplets</div><div style="font-size:11px;color:var(--text2);line-height:1.5;">'+clients+' clients importés mais aucun véhicule. Importez <strong>IMMATRICULATIONS.xlsx</strong> pour alimenter les KPI.</div></div>';
   }
   html+='<div class="card"><div class="card-title">🔄 Mise à jour app</div><button type="button" class="btn btn-primary" id="btn-force-update" onclick="typeof dafManualForceUpdate===\'function\'&&dafManualForceUpdate()" style="width:100%;margin-bottom:6px;">Forcer la mise à jour</button><div style="font-size:10px;color:var(--text3);line-height:1.4;">Build attendu : <strong>'+APP_BUILD+'</strong></div></div>';
-  html+='<div class="card"><div class="card-title">⚠️ Données locales</div><button type="button" class="btn btn-secondary" id="btn-clear" onclick="typeof dafBaseAction===\'function\'&&dafBaseAction(\'clear\',event)" style="width:100%;margin-bottom:6px;">Vider la base active</button><button type="button" class="btn btn-red" id="btn-reset-all-data" onclick="typeof dafBaseAction===\'function\'&&dafBaseAction(\'reset-all\',event)" style="width:100%;">Tout effacer — repartir à zéro</button></div>';
+  html+='<div class="card"><div class="card-title">⚠️ Données locales</div><button type="button" class="btn btn-red" id="btn-reset-all-data" onclick="typeof dafBaseAction===\'function\'&&dafBaseAction(\'reset-all\',event)" style="width:100%;">Tout effacer — repartir à zéro</button></div>';
   html+='<div style="font-size:9px;color:var(--text3);text-align:center;padding:6px 0 14px;">Build '+APP_BUILD+' · '+clients+' clients · '+veh+' véhicules</div>';
   html+='</div>';
   cont.insertAdjacentHTML('beforeend',html);
@@ -3673,6 +3699,7 @@ function deleteProjet(pid,tva,sk){
 let projetFilter='all', projetSearch='', projetSort='date_desc';
 
 function renderProjets(){
+  if(!$('projets-content')){ if(typeof window.renderAffaires==='function')window.renderAffaires(); return; }
   const projects=DB.getProjects();
   const clients=DB.getClients();
   const open=projects.filter(p=>p.status==='EN_COURS'||p.status==='FUTUR');
@@ -3760,83 +3787,6 @@ function renderProjets(){
   QA('#projets-content .proj-card[data-tva]').forEach(el=>{
     el.onclick=()=>openClientSheet(el.dataset.tva);
   });
-}
-
-// ===== CRM SCREEN =====
-let crmSearch='';
-function renderCRM(){
-  const clients=DB.getClients();
-  const filtered=applyGlobalFilters(clients);
-  const search=crmSearch.toLowerCase().trim();
-  let shown=filtered;
-  if(search)shown=shown.filter(c=>
-    c.nom.toLowerCase().includes(search)||c.ville.toLowerCase().includes(search)||
-    c.canton.toLowerCase().includes(search)||(c.vendeur||'').toLowerCase().includes(search)
-  );
-  var scored=shown.map(function(c){return Object.assign({},c,getStats(c.tva));}).sort(function(a,b){return b.score-a.score;});
-  if(!scored.length){
-    $('crm-list').innerHTML=`<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Aucun client</div><div class="empty-sub">${clients.length?'Aucun résultat':'Importez BASE CRM.xlsx'}</div></div>`;
-    return;
-  }
-  $('crm-list').innerHTML=scored.map(function(c){var csk=c._siteKey||makeSiteKey(c);return renderClientRow(Object.assign({},c,{isFlotte:/flotte r[eé]gionale|flotte coordonn[eé]e/i.test(c.profil||''),isUrgent:isClientUrgent(c),hasProjet:hasOpenProject(c.tva,csk),hasPasProj:hasPasProjet(c,csk)}));}).join('');
-  QA('#crm-list .client-row[data-tva]').forEach(el=>{
-    el.onclick=()=>openClientSheet(el.dataset.tva);
-  });
-}
-
-// ===== EXPORTS =====
-function dlCSV(filename,rows){
-  const csv=rows.map(r=>r.map(c=>`"${String(c||'').replace(/"/g,'""')}"`).join(';')).join('\n');
-  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);a.download=filename;a.click();
-}
-
-function exportCSV(type){
-  const base=DB.getBases()[DB.getBase()]||'base';
-  const clients=DB.getClients();const vehicles=DB.getVehicles();
-  const filtered=applyGlobalFilters(clients);
-
-  if(type==='tours'){
-    const rows=[['TVA','Client','Ville','Canton','Vendeur','Pays','Dept','SIREN','SIRET','Flotte','Urgente','Projet','Parc','DAF','R.DAF','R.Hors','Score']];
-    filtered.forEach(c=>{
-      const s=getStats(c.tva);
-      const isF=/flotte r[eé]gionale|flotte coordonn[eé]e/i.test(c.profil||'')?'OUI':'NON';
-      const isU=(c.priorite&&c.priorite.trim())?'OUI':'NON';
-      const isP=hasOpenProject(c.tva)?'OUI':'NON';
-      rows.push([c.tva,c.nom,c.ville,c.canton,c.vendeur,c.pays,c.dept,c.siren,c.siret,isF,isU,isP,s.parc,s.dafCount,s.dafRenew,s.horsRenew,s.score]);
-    });
-    dlCSV(`${base}_tournees_${YEAR}.csv`,rows);
-    toast('Export Tournées téléchargé');
-  }else if(type==='renewals'){
-    const rows=[['TVA','Client','Ville','Canton','Vendeur','Pays','Dept','SIRET','Plaque','Marque','Modèle','Type','Carrosserie','Date Immat','Année','R.DAF/Hors','Possession']];
-    filtered.forEach(c=>{
-      _getSiteVeh(c.tva,c._siteKey||makeSiteKey(c)).filter(v=>isRenewDaf(v)||isRenewHors(v)).forEach(v=>{
-        const possession=(DB.getPossession()[`${v.tva}|${v.plaque}`]===false)?'NON':'OUI';
-        rows.push([c.tva,c.nom,c.ville,c.canton,c.vendeur||v.vendeur,c.pays||v.pays,c.dept||v.dept,c.siret||v.siret,v.plaque,v.marque,v.modele,v.type,v.carrosserie,fmtDate(v.date),getYear(v.date),isRenewDaf(v)?'DAF':'HORS DAF',possession]);
-      });
-    });
-    dlCSV(`${base}_renouvellements_${YEAR}.csv`,rows);
-    toast('Export Renouvellements téléchargé');
-  }else if(type==='projects'){
-    const rows=[['ID','TVA','Client','Ville','Canton','Vendeur','Pays','Dept','SIRET','Statut','Date','Camions','Commentaire','Résultat','Créé','MàJ']];
-    DB.getProjects().forEach(p=>{
-      const c=IDX.cByTva[p.tva]||{};
-      rows.push([p.id,p.tva,p.nom,c.ville,c.canton,c.vendeur,c.pays,c.dept,c.siret,p.status,p.date,p.camions,p.commentaire,p.result||'',p.created,p.updated||'']);
-    });
-    dlCSV(`${base}_projets_${YEAR}.csv`,rows);
-    toast('Export Projets téléchargé');
-  }else if(type==='crm'){
-    const rows=[['TVA','Client','Ville','Canton','Date action','Type','Commentaire']];
-    filtered.forEach(c=>{
-      var sk=c._siteKey||makeSiteKey(c);
-      getHistoryEntries(c,sk).forEach(h=>{
-        rows.push([c.tva,c.nom,c.ville,c.canton,fmtDate(h.date),h.type,h.text]);
-      });
-    });
-    dlCSV(`${base}_crm_${YEAR}.csv`,rows);
-    toast('Export CRM téléchargé');
-  }
 }
 
 function exportJSON(){
@@ -3948,7 +3898,7 @@ function renderScreen(name){
     case 'home':
     case 'pdm': renderMarche(); break;
     case 'tours': renderTours(); break;
-    case 'projets': renderProjets(); break;
+    case 'projets': if(typeof window.renderAffaires==='function')window.renderAffaires(); break;
     case 'qualite': renderQualite(); break;
     case 'more': renderMore(); break;
     case 'activite': if(typeof window.renderActivitePage==='function')window.renderActivitePage(); break;
@@ -3956,7 +3906,6 @@ function renderScreen(name){
   }
 }
 const debouncedTours=debounce(renderTours,200);
-const debouncedCRM=debounce(renderCRM,200);
 
 function bindMarcheContentDelegation(){
   var mc=$('marche-content');
@@ -5955,6 +5904,7 @@ function applyBackupData(data){
       p.then(function(ok){
         if(ok===false){localStorage.removeItem('daf_coffre_apply');reject(new Error('véhicules non enregistrés'));return;}
         buildIndex();autoSave();
+        restoreActivityFromBackup(data);
         localStorage.removeItem('daf_coffre_apply');
         try{renderScreen(currentScreen);}catch(e){}
         resolve(true);
@@ -5982,7 +5932,7 @@ function exportBackupJSONDirect(){
 function renderMore(){
   const xlsxOk=typeof XLSX!=='undefined';var html='';html+=renderXlsxStatus(xlsxOk);html+=renderImportCard(xlsxOk);html+=renderBasesCard();
   html+=`<div class="card"><div class="card-title">Nouveau client</div><button class="btn btn-primary" id="btn-new-client" style="width:100%;">Créer un client</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Le client et les fiches modifiées (adresse, ville, téléphone…) sont inclus dans le JSON et le coffre. Un import CRM ne les efface pas.</div></div>`;
-  html+=`<div class="card"><div class="card-title">💾 Sauvegarde iCloud</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Sauvegarde complète : groupes, exclusions, réglages Accessible, projets, affaires chaudes, livraisons, archives, contacts, possessions OUI/NON, réglages. L’import CRM seul ne remplace pas ces données — utiliser « Tout effacer » pour repartir à zéro.</div></div>`;
+  html+=`<div class="card"><div class="card-title">💾 Sauvegarde iCloud</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Sauvegarde complète : clients, fiches, immatriculations, possession, projets, affaires, commissions, archives, groupes, contacts, exclusions, journal Activité. Le même contenu part dans le coffre. Un ancien JSON, enregistré avant cette version, ne contient pas encore le journal.</div></div>`;
   html+=`<div class="card"><div class="card-title">🔍 Qualité</div><button class="btn btn-secondary" id="btn-open-qualite" style="width:100%;">Ouvrir Qualité complète</button></div>`;
   html+=`<div class="card"><div class="card-title">📖 Mode d'emploi</div><button class="btn btn-secondary" id="btn-mode-emploi" style="width:100%;">Ouvrir le mode d'emploi complet</button></div>`;
   $('more-content').innerHTML=html;bindImportEvents();bindBasesEvents();
@@ -8226,77 +8176,21 @@ document.addEventListener('DOMContentLoaded',function(){
 
   // 5) Mode d'emploi enrichi page par page, avec définitions, critères, impacts et vérifications manuelles.
   window.renderModeEmploi=function(){
-    var sec=function(t,b){return '<div class="card"><div class="card-title">'+t+'</div><div style="font-size:12px;color:var(--text2);line-height:1.65;">'+b+'</div></div>'};
-    var table=function(rows){return '<div style="overflow-x:auto;"><table style="width:100%;min-width:620px;border-collapse:collapse;font-size:11px;"><tr style="color:var(--text3);text-align:left;"><th>Élément</th><th>Définition / formule</th><th>Influence</th><th>Vérification manuelle</th></tr>'+rows.map(function(r){return '<tr style="border-top:1px solid var(--border);"><td><strong>'+r[0]+'</strong></td><td>'+r[1]+'</td><td>'+r[2]+'</td><td>'+r[3]+'</td></tr>'}).join('')+'</table></div>'};
-    var html='<div style="padding:10px 12px 20px;"><h3 style="margin-bottom:8px;">📖 Mode d’emploi complet — DAF_COMMERCE-Box</h3><div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Build '+APP_BUILD+' · Cette notice explique chaque page, bouton et KPI : définition, critère, impact et vérification manuelle.</div>';
-    html+=sec('1. Principe général','<p><strong>DAF_COMMERCE-Box</strong> s’appuie sur le CRM (sites) et les immatriculations (véhicules). Les actions manuelles (groupes, exclusions, accessible, projets, affaires, contacts…) sont stockées localement sur l’iPhone et dans l’export JSON.</p><p><strong>Important :</strong> réimporter le CRM <em>ne supprime pas</em> les exclusions, overrides Accessible ni les réglages. Pour repartir vraiment à zéro : PLUS → <strong>Tout effacer</strong> ou ouvrir l’app avec <code>?reset=1</code>, puis réimporter CRM + immat.</p><p><strong>Règle clé :</strong> MARCHÉ = analyse parc · TOURNÉES = ciblage sites · QUALITÉ = contrôle données · AFFAIRES / LIVRAISONS = pipeline et commissions.</p>');
-    html+=sec('2. Page MARCHÉ',table([
-      ['KPI Groupes','Nombre de groupes (AUTO TVA ou manuels). Clic → modal liste des groupes avec bouton Ouvrir.','Vue consolidée multi-sites.','QUALITÉ > Groupes ou double-clic KPI Groupes Marché.'],
-      ['Parc total / DAF / PDM','Véhicules du périmètre Marché selon filtres type, vendeur, masques.','Graphiques, tendances, KPI globaux.','Comparer au TCD Excel.'],
-      ['Portefeuille / Gagnés','Portefeuille = quantités ouvertes projets + affaires. Gagnés = quantités gagnées sur l’année (affaires + projets simples, sans double comptage).','Barres objectif PDM en haut de page.','Comparer page AFFAIRES et PROJETS.'],
-      ['Exclusion ON','Retire EXCLU_MANU=OUI et inactifs selon règles actives (Accessible = filtre séparé).','Nettoie le marché exploitable.','Comparer Exclusion OFF vs ON.'],
-      ['Accessible OFF ON','Retire les sites ACCESSIBLE=NON (CRM ou toggle manuel).','Filtre Marché distinct de Exclus.','QUALITÉ > Clients Accessibles OFF.'],
-      ['Graphiques Marque × Année','NB IMMAT et % PDM · cellules cliquables → liste véhicules + fiche.','Analyse parts de marché.','TCD Excel Marque × Année.']
-    ]));
-    html+=sec('3. Page TOURNÉES',table([
-      ['KPI Sites (clic / double-clic)','Clic simple = filtre la liste (entourage orange). Double-clic = modal détail ou vue croisée.','Total sites, Groupes, Fidélisation, Urgents, Inactifs.','Tester chaque KPI : liste filtrée puis modal.'],
-      ['KPI Groupes','Nombre de groupes visibles. Clic = sites rattachés à un groupe. Double-clic = modal groupes + vue croisée Groupe × indicateurs (Parc, R.DAF…).','Remplace l’ancien KPI Conquête.','Double-clic KPI Groupes → Ouvrir une fiche Groupe.'],
-      ['+ Créer groupe (jaune)','Crée un groupe manuel depuis la barre Tournées.','Même action que PLUS / Qualité > + Créer groupe.','Créer puis vérifier fiche Groupe.'],
-      ['Masques tri-état (Tournées)','Clic simple : Neutre (gris) → OFF orange (exclut) → ON vert (n’affiche que) → Neutre. Plusieurs ON = intersection. OFF orange retire sa cible dans le résultat (même avec un ON vert actif).','Exclus et Accessible OFF séparés · Inactifs/Projets/Sites sec. OFF par défaut.','Combiner Inactifs ON + Exclus OFF : voir uniquement les inactifs non exclus.'],
-      ['Masque Exclus','Neutre par défaut. OFF = masque EXCLU_MANU=OUI. ON = n’affiche que les exclus manuels.','Distinct de Accessible OFF et de Qualité > Clients exclus.','Neutre au démarrage : rien n’est filtré sur Exclus.'],
-      ['Masque Accessible OFF','Neutre par défaut. OFF = masque ACCESSIBLE=NON. ON = n’affiche que les non accessibles.','Filtre terrain complémentaire à Exclus.','Toggle Accessible sur une fiche test.'],
-      ['Masque Inactifs','OFF par défaut (orange). ON = uniquement inactifs ('+INACTIVE_PURCHASE_YEARS+' ans sans immat. ou parc vide).','Évite les clients dormants dès l’ouverture.','QUALITÉ > Clients inactifs (liste complète).'],
-      ['Masque Projets / Sites sec.','OFF par défaut. ON = uniquement sites avec projet (ou sans projet année) / sites secondaires de groupe.','Pipeline et consolidation groupe.','Fiche Groupe : principal vs secondaire.'],
-      ['Boutons Avec/Sans DAF, Urgents, Flotte, Protocole','Filtres métier rapides · Tous / KPI Tous réinitialise le filtre actif.','Change la cible commerciale.','Vérifier badge sur chaque fiche listée.']
-    ]));
-    html+=sec('4. Fiche Site',table([
-      ['Toggle Exclu','EXCLU_MANU=OUI (CRM) ou exclusion manuelle enregistrée dans l’app. Synchronisé avec QUALITÉ > Clients exclus.','Badge EXCLU · masque Exclus Tournées (OFF ou ON selon état).','Basculer Exclu ON/OFF : vérifier compteur Qualité.'],
-      ['Toggle Accessible','Colonne ACCESSIBLE=OUI/NON ou toggle manuel (store accessible, comme Exclu). Synchronisé QUALITÉ > Clients Accessibles OFF.','Masque Accessible OFF Tournées.','Basculer Accessible : site change de liste Qualité.'],
-      ['Voir / modifier le groupe','Ouvre la fiche Groupe mère (encart ou bouton rapide).','Consolidation parc et KPI groupe.','Site rattaché à un groupe AUTO ou manuel.'],
-      ['Vérification registre','Contrôle SIRET/adresse vs registre (API). Pastilles ✓/✗ sur fiche.','Aide qualité données · n’influence pas les KPI.','Encart VÉRIFIER sur fiche site.'],
-      ['Possédé OUI/NON','Véhicule encore au parc client.','Renouvellement, score, inactif, KPI Tournées.','Mettre NON : sort des opportunités.'],
-      ['Projet détecté / Pas de projet','Alimente PROJETS et masque « clients avec projet ».','Pipeline commercial.','Page PROJETS.']
-    ]));
-    html+=sec('5. Groupes',table([
-      ['Nom affiché','Nom du <strong>site principal</strong> du groupe (pas la TVA). Groupes AUTO TVA : nom dérivé du site principal.','Libellé Tournées, modales, fiche Groupe.','Fiche Groupe vs nom site principal.'],
-      ['Création','PLUS → Groupes · Qualité → + Créer groupe · Tournées → + Créer groupe (bouton jaune).','Groupe manuel multi-sites.','getAllGroups() dans Qualité.'],
-      ['Site principal / secondaire','Un seul principal · KPI consolidés sur lui. Secondaire consultable, masquable.','Tournées KPI et badges.','Fiche Groupe : bascule principal.'],
-      ['Décisionnaire','Informatif uniquement.','Aucun KPI.','Fiche Groupe.']
-    ]));
-    html+=sec('6. Page QUALITÉ — listes Exclusions / activité',table([
-      ['Clients exclus','Liste <strong>complète</strong> · compteur = nombre exact. Critère : EXCLU_MANU=OUI ou toggle Exclu ON. Toggle Exclu sur chaque ligne, synchronisé fiche site.','Contrôle exclusions manuelles CRM.','Ne confondre pas avec Accessibles OFF.'],
-      ['Clients Accessibles OFF','Liste complète · ACCESSIBLE=NON (CRM) ou toggle Accessible OFF manuel. Même logique que Clients exclus.','Contrôle sites non accessibles.','Après import CRM : compter ACCESSIBLE=NON.'],
-      ['Clients inactifs','Liste complète · aucune immat. sur '+INACTIVE_PURCHASE_YEARS+' ans calendaires (année courante incluse) ou parc vide.','Lié au masque Inactifs Tournées (tri-état).','Filtrer Excel dates immat. récentes.'],
-      ['Diagnostic import','Colonnes CRM/immat reconnues (EXCLU, ACCESSIBLE, SIRET…).','Sécurise l’interprétation Excel.','Vérifier colonnes rouges avant de faire confiance aux KPI.'],
-      ['Autres contrôles','Sites/véhicules incomplets, doublons, orphelins, flottes, groupes.','Audit données.','Ouvrir fiche depuis chaque ligne.']
-    ]));
-    html+=sec('7. AFFAIRES · LIVRAISONS · PROJETS',table([
-      ['Projet simple','Fiche site → Projet détecté. Statut, quantité, type, période, commentaire. Reste succinct.','Page PROJETS · masque Tournées « clients avec projet ».','Page PROJETS · bouton 🔥 Développer en affaire chaude.'],
-      ['Affaire chaude','Résultat détaillé véhicule par véhicule : type, modèle, gagné/perdu. + Ajouter un véhicule = une unité. × Dupliquer = copie une ligne identique.','Archives · livraisons · KPI Gagnés Marché.','Page AFFAIRES · modifier chaque ligne.'],
-      ['Résultat gagné/perdu','Saisi uniquement dans AFFAIRES. Si PERDU : marque concurrente + commentaire obligatoires avant archivage.','Bloque l’archivage si incomplet.','Tester une perte sans concurrent.'],
-      ['Archiver affaire','Affaire terminée → quitte les actives → Archives Affaires Chaudes.','Historique pipeline.','Archives en bas page AFFAIRES.'],
-      ['Suivi livraisons','Créé automatiquement depuis les quantités gagnées · commissions PO/livraison/contrat/PACCAR.','Récap annuel commissions.','Page LIVRAISONS après archivage gagné.']
-    ])+'<p style="margin-top:10px;"><strong>Architecture :</strong> le <em>Projet</em> indique le besoin global ; l’<em>Affaire chaude</em> porte le détail et le résultat. Seuls les véhicules gagnés alimentent les livraisons.</p>');
-    html+=sec('8. Sauvegarde · reset · import',table([
-      ['Backup barre nav (💾)','Icône en bas · libellé « Non exporté » (orange) ou « Exporté » (vert). Ouvre la modal avec <strong>Télécharger maintenant</strong>.','Export JSON daté vers iCloud Drive / '+BACKUP_FOLDER+'.','Modifier un groupe puis vérifier le libellé nav.'],
-      ['Backup auto 30 min','Si modifications non exportées et clients présents, téléchargement automatique après 30 min.','Sécurise le travail manuel sans action.','Attendre ou forcer via Télécharger maintenant.'],
-      ['Exporter JSON (PLUS)','Même contenu que backup nav · nom de fichier daté.','Sauvegarde complète du travail manuel.','PLUS → Exporter sauvegarde JSON.'],
-      ['Sauvegarde nom fixe (PLUS)','Fichier toujours <strong>DAF_Professional_sauvegarde.json</strong>. iOS peut demander validation remplacement.','Pratique pour un emplacement iCloud unique.','PLUS → Enregistrer sauvegarde nom fixe.'],
-      ['Charger JSON','Remplace la base active par la sauvegarde (groupes, exclusions, overrides Accessible, affaires…).','Restauration complète.','Après restore : vérifier Qualité.'],
-      ['Tout effacer','PLUS → bouton rouge · efface localStorage + IndexedDB véhicules.','Repartir à zéro sur l’appareil.','Puis réimporter CRM + immat uniquement.'],
-      ['Vider base active','Efface une base sans toucher les autres.','Reset partiel multi-secteurs.','Une base multi-secteurs.'],
-      ['Import CRM seul','Remplace les clients importés · <strong>conserve</strong> exclusions, overrides Accessible, groupes, projets…','Peut laisser des exclusions « fantômes ».','Si doute : Tout effacer avant réimport.'],
-      ['Import XLSX immat','PLUS → Immatriculations · filtres année/vendeur/pays/dépt.','Gros fichiers : risque mémoire Safari.','Au-delà de ~15 000 lignes, préférer CSV.'],
-      ['Import CSV léger','Excel : filtrer puis Enregistrer sous CSV UTF-8 · PLUS → <strong>IMMATRICULATIONS CSV léger recommandé</strong>.','Mêmes colonnes, lecture plus légère sur iPhone.','Même résultat qu’XLSX après import.']
-    ]));
-    html+=sec('9. Badges et distinctions importantes',table([
-      ['Badge EXCLU (fiche)','EXCLU_MANU=OUI ou toggle Exclu manuel. <em>Pas</em> affiché pour ACCESSIBLE=NON seul.','Information visuelle.','Site ACCESSIBLE=NON sans EXCLU : pas de badge EXCLU.'],
-      ['Masque Exclus Tournées','Tri-état · EXCLU_MANU=OUI uniquement (pas ACCESSIBLE=NON). Neutre par défaut.','Filtre liste terrain.','Séparé du masque Accessible OFF.'],
-      ['Masque Accessible OFF Tournées','Tri-état · ACCESSIBLE=NON (CRM ou toggle). Neutre par défaut.','Filtre liste terrain.','Qualité > Accessibles OFF = liste complète.'],
-      ['INACTIF','Aucun achat immat. '+INACTIVE_PURCHASE_YEARS+' ans · année courante incluse.','Masque inactifs · KPI inactifs Qualité.','Ex. en '+YEAR+' : au moins une immat. ≥ '+(YEAR-INACTIVE_PURCHASE_YEARS+1)+'.']
-    ]));
-    html+=sec('10. Vérifications manuelles types','<p><strong>Exclus vs Accessible OFF :</strong> un site ACCESSIBLE=NON apparaît dans Qualité > Accessibles OFF (comme EXCLU_MANU=OUI dans Clients exclus). Les masques Tournées sont séparés.</p><p><strong>Combinaison vert + orange :</strong> Inactifs ON + Exclus OFF → uniquement les inactifs, moins les exclus manuels.</p><p><strong>Groupes :</strong> double-clic KPI Groupes → modal → Ouvrir → vérifier site principal et parc consolidé.</p><p><strong>Reset complet :</strong> Tout effacer → import CRM → import immat → Qualité : comparer Clients exclus (EXCLU=OUI) et Accessibles OFF (ACCESSIBLE=NON).</p><p><strong>Backup :</strong> après une modification manuelle, l’icône 💾 affiche « Non exporté » · ouvrir → Télécharger maintenant → déplacer le JSON dans iCloud Drive / '+BACKUP_FOLDER+'.</p>');
-    html+='</div>'; openSheet('Mode d’emploi complet',html);
+    var sec=function(t,b){return '<div class="card"><div class="card-title">'+t+'</div><div style="font-size:12px;color:var(--text2);line-height:1.65;">'+b+'</div></div>';};
+    var html='<div style="padding:10px 12px 20px;"><h3 style="margin-bottom:8px;">Mode d’emploi — DAF CommerceBox</h3><div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Build '+APP_BUILD+'</div>';
+    html+=sec('1. Principe','<p>L’application travaille sur sa propre copie : fiches clients et immatriculations. Marché analyse le parc. IMMAT liste les immatriculations par site. Tournées prépare les visites. Affaires suit les projets et les affaires chaudes. Commissions suit les commandes et les livraisons. Activité est le journal de l’appareil. Plus réunit l’import, le JSON, le coffre et Qualité.</p><p>Les filtres de Marché, de Tournées et d’IMMAT sont indépendants.</p>');
+    html+=sec('2. Enregistrer','<p>Le bouton <strong>Enregistrer</strong> en bas de l’écran télécharge le fichier <strong>DAF_Professional_sauvegarde.json</strong> puis propose l’envoi au coffre. Sur iPhone, iOS peut demander où ranger le fichier. L’application n’écrit pas dans le fichier Excel d’origine.</p><p>Plus → <strong>Exporter sauvegarde JSON</strong> crée un fichier daté, sans envoi au coffre. Plus → <strong>Charger sauvegarde JSON</strong> remplace la base de cet appareil après confirmation.</p><p>Il n’y a plus de téléchargement automatique.</p>');
+    html+=sec('3. Coffre','<p>Le coffre transporte une copie entre iPhone, iPad et Mac. Rien ne remplace un appareil sans confirmation, avec la date, le nom de l’appareil, le nombre de clients et le nombre de véhicules. Un envoi sans client est refusé. Une base beaucoup plus petite demande une seconde confirmation. Si deux appareils ont changé chacun de leur côté, les deux copies restent et vous choisissez.</p><p>Le coffre a besoin d’une connexion et d’un compte. S’il est injoignable, le JSON reste le moyen de récupérer la base.</p>');
+    html+=sec('4. Marché','<p>Recherche client, ville, TVA ou immatriculation. Périmètre : site seul ou tout le groupe. Filtres EXCLUS, ACCESSIBLES, INACTIFS, en trois états : neutre, OFF (retire), ON (ne garde que). Profils commerciaux, type tracteur ou porteur, cantons et villes. Un clic sur un chiffre du tableau ouvre la liste, avec export Excel. Cet export contient la colonne <strong>Possession</strong>, OUI ou NON.</p>');
+    html+=sec('5. IMMAT','<p>Une ligne par site, avec les volumes par année et le score. La recherche, les filtres de page, les tris et les filtres de colonnes sont enregistrés avec le JSON et le coffre. Le défilement n’est pas enregistré.</p><p>Le filtre <strong>PROJET</strong> en OFF retire les projets de l’année en cours, les projets <strong>FUTUR</strong> quelle que soit leur date, et les pas de projet de l’année en cours. En ON, il ne garde que ces fiches.</p><p>La colonne visite distingue A visiter, Visité et Ne pas visiter. Le bouton <strong>P</strong> propose Projet, Pas de projet et Simple visite.</p><p>L’export Excel d’une case contient la colonne Possession.</p>');
+    html+=sec('6. Tournées','<p>Mêmes masques en trois états : EXCLUS, ACCESSIBLES, INACTIFS, Projets, Sites sec., Sans fiche. Le filtre Projets suit la même règle que sur IMMAT. Types : tous, tracteurs, porteurs. Profils commerciaux à la place des anciens boutons Flotte. Le bouton <strong>P</strong> ouvre Projet, Pas de projet ou Simple visite. + Créer groupe, Ouvrir et Fermer agissent sur la liste.</p>');
+    html+=sec('7. Fiche client','<p><strong>Modifier la fiche</strong> change le nom, l’adresse, la ville, le canton, le département, le pays, le vendeur et le téléphone de ce site. La TVA et le SIRET d’une fiche déjà créée restent fixes. Un client créé dans l’application et ces modifications sont dans le JSON et le coffre. Un import CRM les réapplique.</p><p><strong>Projet détecté</strong> ouvre une affaire. <strong>Pas de projet</strong> concerne l’année en cours. <strong>Simple visite</strong> enregistre la date du jour et un commentaire. Elle ne crée ni projet, ni affaire, ni commission, et ne retire pas le client des tournées.</p><p>L’historique affiche ces trois événements, du plus récent au plus ancien, avec Supprimer après confirmation. Supprimer un projet retire aussi l’affaire et les commissions liées. Supprimer Pas de projet retire le masquage de l’année. Supprimer une simple visite ne retire que la ligne.</p><p>Possession OUI ou NON se règle sur chaque véhicule du parc. NON le sort des opportunités de renouvellement. Le véhicule reste exportable, avec Possession = NON.</p>');
+    html+=sec('8. Affaires et Commissions','<p>Affaires regroupe les projets et les affaires chaudes. Le bouton Créer un projet client ouvre le même formulaire que sur la fiche.</p><p>Commissions regroupe les livraisons. Le tableau de suivi, replié au départ, compte les camions en commande et en livraison, mois par mois. Un clic sur le client ouvre la fiche. Un clic sur le nombre de commandes ouvre l’affaire. Un clic sur le nombre de livraisons filtre les commissions de ce client pour ce mois.</p>');
+    html+=sec('9. Activité','<p>Le journal liste les actions de cet appareil. Le filtre <strong>Projet / Pas de projet / Visite</strong> ne garde que ces trois événements, avec la date d’un projet futur quand elle existe. L’export Excel de cette liste a les colonnes Date du projet et Commentaire. Les autres événements restent visibles quand le filtre est sur Tout.</p><p>Le journal part dans le JSON et dans le coffre. Un appareil neuf le retrouve avec le reste de la base.</p>');
+    html+=sec('10. Plus','<p><strong>Importer</strong> le CRM et les immatriculations remplit la base. Un nouvel import d’immatriculations remplace le parc déjà présent. <strong>Créer un client</strong> ajoute une fiche. <strong>Qualité</strong> signale les écarts de TVA, de SIRET et de rattachement. <strong>Forcer la mise à jour</strong> recharge la version de l’application. <strong>Tout effacer</strong> vide la base de cet appareil après confirmation. La copie déjà envoyée au coffre reste en ligne.</p>');
+    html+=sec('11. Récupérer un appareil neuf','<p>Installez l’application, puis Plus → Charger sauvegarde JSON, ou récupérez le coffre. La base revient telle qu’elle était à l’enregistrement : clients, fiches modifiées, clients créés, immatriculations, possession OUI/NON, projets, affaires, commissions, archives, groupes, contacts, exclusions, accessibles, réglages d’IMMAT et journal Activité.</p><p>Le coffre et le JSON portent le même contenu. Si le coffre est injoignable, le JSON suffit. La connexion au coffre, elle, se refait sur le nouvel appareil.</p>');
+    html+='</div>';
+    openSheet('Mode d’emploi complet',html);
     renderModeEmploi=window.renderModeEmploi;
   };
 
@@ -8892,290 +8786,7 @@ document.addEventListener('DOMContentLoaded',function(){
 })();
 </script>
 
-<script>
-// Legacy commission block (superseded by v2.1.2)
-</script>
 
-
-<script>
-/* === V37 — COMMISSIONS FINAL HARD OVERRIDE === */
-(function(){
-  function $(id){return document.getElementById(id)}
-  function qsa(sel,root){return Array.prototype.slice.call((root||document).querySelectorAll(sel))}
-  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-  function arr(v){return Array.isArray(v)?v:[]}
-  function num(v){var x=parseFloat(String(v||0).replace(',','.'));return isNaN(x)?0:x}
-  function int(v){var x=parseInt(v,10);return isNaN(x)?0:x}
-  function fmt(d){if(!d)return '—';var x=new Date(d);return isNaN(x)?String(d):x.toLocaleDateString('fr-FR')}
-  function ym(d){if(!d)return '';var s=String(d).slice(0,7);return /^\d{4}-\d{2}$/.test(s)?s:''}
-  function ymLabel(k){if(!k)return 'Sans date';var a=String(k).split('-');var m=['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];return (m[parseInt(a[1],10)]||a[1])+' '+a[0]}
-  function get(k){try{return DB.get(k)||[]}catch(e){try{return JSON.parse(localStorage.getItem(k)||'[]')}catch(_){return []}}}
-  function set(k,v){try{DB.set(k,v);try{autoSave()}catch(_){}}catch(e){localStorage.setItem(k,JSON.stringify(v))}}
-  function deliveries(){return arr(get('deliveries'))}
-  function saveDeliveries(v){set('deliveries',arr(v))}
-  function lineQty(d){return Math.max(1,int(d.qty||d.quantity||1))}
-  function orderComm(d){var q=lineQty(d);if(String(d.vnvo||'VN').toUpperCase()==='VO')return 400*q;return (String(d.type||'').toLowerCase().indexOf('port')>=0?550:400)*q}
-  function maintComm(type,qty){var q=Math.max(1,int(qty||1));var t=String(type||'Non').toLowerCase();if(t.indexOf('xtra')>=0)return 200*q;if(t.indexOf('flex')>=0||t.indexOf('full')>=0)return 300*q;if(t.indexOf('care+')>=0)return 100*q;return 0}
-  function paccarComm(d){return String(d.paccar||'Non').toLowerCase()==='oui'?300*lineQty(d):0}
-  function primeComm(d){return num(d.prime)}
-  function totalComm(d){return orderComm(d)+maintComm(d.maintenance,d.qty)+paccarComm(d)+primeComm(d)}
-  function receivedComm(d){return (d.rcvOrder?orderComm(d):0)+(d.rcvMaint?maintComm(d.maintenance,d.qty):0)+(d.rcvPaccar?paccarComm(d):0)+(d.rcvPrime?primeComm(d):0)}
-  function currentYm(){var dt=new Date();return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')}
-  function yearOf(d){var m=String(d||'').match(/^(\d{4})/);return m?m[1]:''}
-  function inCurrentYear(d){return yearOf(d)===String(new Date().getFullYear())}
-  function avgMargin(rows){var sum=0,qty=0;arr(rows).forEach(function(d){var mp=num(d.marginPct);var q=lineQty(d);if(mp>0){sum+=mp*q;qty+=q}});return qty?Math.round((sum/qty)*10)/10:0}
-  function monthAmountFor(d,k){var theo=0,rec=0;if(ym(d.orderDate)===k){var oc=orderComm(d);theo+=oc;if(d.rcvOrder)rec+=oc}if(ym(d.deliveryDate)===k){var mc=maintComm(d.maintenance,d.qty),pc=paccarComm(d),pr=primeComm(d);theo+=mc+pc+pr;if(d.rcvMaint)rec+=mc;if(d.rcvPaccar)rec+=pc;if(d.rcvPrime)rec+=pr}return {theo:theo,rec:rec,rest:theo-rec}}
-  function syncAllDeliveriesSafe(){try{if(typeof syncAllDeliveries==='function')syncAllDeliveries()}catch(e){}}
-  function openDealSafe(id){try{if(typeof openDeal==='function'){openDeal(id);return}}catch(e){}try{showScreen('affaires')}catch(e){}}
-  function renderCommissionsV37(){
-    try{
-      syncAllDeliveriesSafe();
-      var cont=$('livraisons-content'); if(!cont)return;
-      var all=deliveries();
-      var cy=String(new Date().getFullYear());
-      var q=String(window.commSearchV37||'').toLowerCase().trim();
-      var list=all.filter(function(d){var hay=[d.client,d.model,d.type,d.bodybuilder,d.productionNo,d.maintenance,d.paccar,d.carrosserie,d.lessor].join(' ').toLowerCase();return !q||hay.indexOf(q)>=0});
-      var yearRows=all.filter(function(d){return inCurrentYear(d.orderDate)||inCurrentYear(d.deliveryDate)});
-      var totalTheo=all.reduce(function(a,d){return a+totalComm(d)},0);
-      var yearTheo=yearRows.reduce(function(a,d){return a+totalComm(d)},0);
-      var yearRec=yearRows.reduce(function(a,d){return a+receivedComm(d)},0);
-      var yearRest=yearTheo-yearRec;
-      var avgAll=avgMargin(all), avgYear=avgMargin(yearRows);
-      var sort=window.commSortV37||localStorage.getItem('commSortV37')||'asc';
-      var html='<div class="kpi-grid" style="margin-top:4px;">'
-        +'<div class="kpi-card c-daf"><div class="kpi-val">'+totalTheo+'€</div><div class="kpi-lbl">Commissions totales</div></div>'
-        +'<div class="kpi-card c-green"><div class="kpi-val">'+yearRec+'€</div><div class="kpi-lbl">Touchées '+cy+'</div></div>'
-        +'<div class="kpi-card c-orange"><div class="kpi-val">'+yearRest+'€</div><div class="kpi-lbl">Restantes '+cy+'</div></div>'
-        +'<div class="kpi-card c-blue"><div class="kpi-val">'+avgAll+'%</div><div class="kpi-lbl">Marge moy. totale</div></div>'
-        +'<div class="kpi-card c-purple"><div class="kpi-val">'+avgYear+'%</div><div class="kpi-lbl">Marge moy. '+cy+'</div></div>'
-        +'</div>'
-        +'<div class="search-bar"><span>🔍</span><input id="comm-search-v37" placeholder="Rechercher client, N° production, modèle, carrossier…" value="'+esc(window.commSearchV37||'')+'"></div>'
-        +'<div class="card" style="display:flex;gap:8px;align-items:center;justify-content:space-between;"><div><div class="card-title" style="margin-bottom:2px;">Tri des mois</div><div style="font-size:11px;color:var(--text3);">Par défaut : seul le mois en cours est ouvert. Les autres mois restent repliés.</div></div><button class="btn btn-secondary btn-sm" id="comm-sort-toggle-v37">'+(sort==='asc'?'Plus vieux → plus récent':'Plus récent → plus vieux')+'</button></div>';
-      var map={};
-      list.forEach(function(d){[ym(d.orderDate),ym(d.deliveryDate)].forEach(function(k){if(!k)return;if(!map[k])map[k]=[];if(map[k].indexOf(d)<0)map[k].push(d)})});
-      var keys=Object.keys(map).sort(); if(sort==='desc')keys.reverse();
-      if(!keys.length){html+='<div class="card"><div class="card-title">Commissions</div><div style="font-size:11px;color:var(--text3);">Aucune commission.</div></div>'}
-      var cur=currentYm(); window.commOpenStateV37=window.commOpenStateV37||{};
-      keys.forEach(function(k){
-        var rows=map[k],monthTheo=0,monthRec=0;
-        rows.forEach(function(d){var a=monthAmountFor(d,k);monthTheo+=a.theo;monthRec+=a.rec});
-        var rest=monthTheo-monthRec;
-        var open=Object.prototype.hasOwnProperty.call(window.commOpenStateV37,k)?!!window.commOpenStateV37[k]:(k===cur);
-        html+='<div class="card"><div class="sec-hdr comm-month-v37" data-k="'+esc(k)+'" style="margin:-12px -13px 10px;"><div class="sec-hdr-title">'+(open?'▼':'▶')+' '+esc(ymLabel(k))+' : '+monthTheo+'€ · restant '+rest+'€ '+(rest===0?'✅':'')+'</div></div>';
-        if(open){
-          html+='<div class="card-title">Prises de commandes</div>';
-          var hasOrder=false;
-          rows.slice().sort(function(a,b){return String(a.orderDate||'').localeCompare(String(b.orderDate||''))}).forEach(function(d){if(ym(d.orderDate)!==k)return;hasOrder=true;var amount=orderComm(d);html+='<div class="diag-row"><div><strong>'+fmt(d.orderDate)+'</strong> N°prod '+esc(d.productionNo||'—')+' - '+esc(d.client||'')+' '+lineQty(d)+' '+esc(d.type||'')+' '+amount+'€</div><div style="display:flex;gap:6px;align-items:center;"><button class="btn btn-secondary btn-sm open-deal-v37" data-id="'+esc(d.dealId||'')+'">Affaire</button><label><input type="checkbox" class="comm-check-v37" data-id="'+esc(d.id)+'" data-k="rcvOrder" '+(d.rcvOrder?'checked':'')+'> perçue</label></div></div>'});
-          if(!hasOrder)html+='<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Aucune prise d’ordre sur ce mois.</div>';
-          html+='<div class="card-title" style="margin-top:10px;">Livraisons</div>';
-          var hasLiv=false;
-          rows.slice().sort(function(a,b){return String(a.deliveryDate||'').localeCompare(String(b.deliveryDate||''))}).forEach(function(d){if(ym(d.deliveryDate)!==k)return;hasLiv=true;var m=maintComm(d.maintenance,d.qty),p=paccarComm(d),pr=primeComm(d);html+='<div style="border-top:1px solid var(--border);padding:8px 0;"><div><strong>'+fmt(d.deliveryDate)+'</strong> N°prod '+esc(d.productionNo||'—')+' - '+esc(d.client||'')+' '+lineQty(d)+' '+esc(d.type||'')+'</div><div style="margin-top:4px;font-size:11px;line-height:1.8;"><label>Contrat '+esc(d.maintenance||'Non')+' : '+m+'€ <input type="checkbox" class="comm-check-v37" data-id="'+esc(d.id)+'" data-k="rcvMaint" '+(d.rcvMaint?'checked':'')+'> perçue</label><br><label>Prime marge : '+pr+'€ <input type="checkbox" class="comm-check-v37" data-id="'+esc(d.id)+'" data-k="rcvPrime" '+(d.rcvPrime?'checked':'')+'> perçue</label><br><label>PACCAR Fi. : '+p+'€ <input type="checkbox" class="comm-check-v37" data-id="'+esc(d.id)+'" data-k="rcvPaccar" '+(d.rcvPaccar?'checked':'')+'> perçue</label><br><button class="btn btn-secondary btn-sm open-deal-v37" data-id="'+esc(d.dealId||'')+'">Ouvrir affaire</button></div></div>'});
-          if(!hasLiv)html+='<div style="font-size:11px;color:var(--text3);">Aucune livraison sur ce mois.</div>';
-        }
-        html+='</div>';
-      });
-      cont.innerHTML=html;
-      var se=$('comm-search-v37'); if(se)se.oninput=function(){window.commSearchV37=this.value;renderCommissionsV37()};
-      var st=$('comm-sort-toggle-v37'); if(st)st.onclick=function(){window.commSortV37=(sort==='asc'?'desc':'asc');localStorage.setItem('commSortV37',window.commSortV37);renderCommissionsV37()};
-      qsa('.comm-month-v37').forEach(function(x){x.onclick=function(){var k=this.dataset.k;var curOpen=Object.prototype.hasOwnProperty.call(window.commOpenStateV37,k)?!!window.commOpenStateV37[k]:(k===currentYm());window.commOpenStateV37[k]=!curOpen;renderCommissionsV37()}});
-      qsa('.comm-check-v37').forEach(function(c){c.onchange=function(){var list=deliveries();var d=list.find(function(x){return String(x.id)===String(c.dataset.id)});if(!d)return;d[c.dataset.k]=c.checked;saveDeliveries(list);renderCommissionsV37()}});
-      qsa('.open-deal-v37').forEach(function(b){b.onclick=function(e){e.stopPropagation();if(b.dataset.id)openDealSafe(b.dataset.id)}});
-    }catch(e){
-      console.error('Erreur COMMISSIONS V37',e);
-      var cont=$('livraisons-content'); if(cont)cont.innerHTML='<div class="card"><div class="card-title">Erreur COMMISSIONS</div><div style="color:var(--red);font-size:12px;line-height:1.5;">La page a rencontré une erreur, mais l’application reste utilisable.<br>'+esc(e.message||e)+'</div></div>';
-    }
-  }
-  window.renderCommissions=renderCommissionsV37;
-  window.renderLivraisons=renderCommissionsV37;
-  var prevRS=window.renderScreen;
-  window.renderScreen=function(name){if(name==='livraisons'||name==='commissions'){renderCommissionsV37();return}return prevRS?prevRS(name):undefined};
-  var prevShow=window.showScreen;
-  window.showScreen=function(name){var r=prevShow?prevShow(name):undefined;if(name==='livraisons'||name==='commissions'){setTimeout(renderCommissionsV37,20);setTimeout(renderCommissionsV37,150)}return r};
-  window.renderCommissionsV37=renderCommissionsV37;
-
-
-/* === V38 — COMMISSIONS PERFECTION FINAL FULL APP === */
-(function(){
-  function renderCommissionsV38(){
-    try{
-      syncAllDeliveriesSafe();
-      var cont=$('livraisons-content'); if(!cont)return;
-      var all=deliveries();
-      var cy=String(new Date().getFullYear());
-      var cur=currentYm();
-      var q=String(window.commSearchV38||'').toLowerCase().trim();
-      var list=all.filter(function(d){
-        var hay=[d.client,d.model,d.type,d.bodybuilder,d.productionNo,d.maintenance,d.paccar,d.carrosserie,d.lessor].join(' ').toLowerCase();
-        return !q||hay.indexOf(q)>=0;
-      });
-      var yearRows=all.filter(function(d){return inCurrentYear(d.orderDate)||inCurrentYear(d.deliveryDate)});
-      var yearTheo=yearRows.reduce(function(a,d){return a+totalComm(d)},0);
-      var yearRec=yearRows.reduce(function(a,d){return a+receivedComm(d)},0);
-      var yearRest=yearTheo-yearRec;
-      var avgAll=avgMargin(all), avgYear=avgMargin(yearRows);
-      var currentMonthTheo=0,currentMonthRec=0;
-      all.forEach(function(d){var a=monthAmountFor(d,cur);currentMonthTheo+=a.theo;currentMonthRec+=a.rec});
-      var currentMonthRest=currentMonthTheo-currentMonthRec;
-      var sort=window.commSortV38||localStorage.getItem('commSortV38')||'asc';
-      var html='<div class="kpi-grid kpi-grid-3" style="margin-top:4px;">'
-        +'<div class="kpi-card c-green"><div class="kpi-val">'+yearRec+'€</div><div class="kpi-lbl">Touchées '+cy+'</div></div>'
-        +'<div class="kpi-card c-orange"><div class="kpi-val">'+yearRest+'€</div><div class="kpi-lbl">Restantes '+cy+'</div></div>'
-        +'<div class="kpi-card c-daf"><div class="kpi-val">'+currentMonthTheo+'€</div><div class="kpi-lbl">Total mois</div></div>'
-        +'<div class="kpi-card c-red"><div class="kpi-val">'+currentMonthRest+'€</div><div class="kpi-lbl">Non touchées mois</div></div>'
-        +'<div class="kpi-card c-blue"><div class="kpi-val">'+avgAll+'%</div><div class="kpi-lbl">Marge moy. totale</div></div>'
-        +'<div class="kpi-card c-purple"><div class="kpi-val">'+avgYear+'%</div><div class="kpi-lbl">Marge moy. '+cy+'</div></div>'
-        +'</div>'
-        +'<div class="search-bar"><span>🔍</span><input id="comm-search-v38" placeholder="Rechercher client, N° production, modèle, carrossier…" value="'+esc(window.commSearchV38||'')+'"></div>'
-        +'<div class="card" style="display:flex;gap:8px;align-items:center;justify-content:space-between;"><div><div class="card-title" style="margin-bottom:2px;">Tri des mois</div><div style="font-size:11px;color:var(--text3);">Par défaut : seul le mois en cours est ouvert. Les autres mois restent repliés.</div></div><button class="btn btn-secondary btn-sm" id="comm-sort-toggle-v38">'+(sort==='asc'?'Plus vieux → plus récent':'Plus récent → plus vieux')+'</button></div>';
-      var map={};
-      list.forEach(function(d){[ym(d.orderDate),ym(d.deliveryDate)].forEach(function(k){if(!k)return;if(!map[k])map[k]=[];if(map[k].indexOf(d)<0)map[k].push(d)})});
-      var keys=Object.keys(map).sort(); if(sort==='desc')keys.reverse();
-      if(!keys.length){html+='<div class="card"><div class="card-title">Commissions</div><div style="font-size:11px;color:var(--text3);">Aucune commission.</div></div>'}
-      window.commOpenStateV38=window.commOpenStateV38||{};
-      keys.forEach(function(k){
-        var rows=map[k],monthTheo=0,monthRec=0;
-        rows.forEach(function(d){var a=monthAmountFor(d,k);monthTheo+=a.theo;monthRec+=a.rec});
-        var rest=monthTheo-monthRec;
-        var open=Object.prototype.hasOwnProperty.call(window.commOpenStateV38,k)?!!window.commOpenStateV38[k]:(k===cur);
-        html+='<div class="card"><div class="sec-hdr comm-month-v38" data-k="'+esc(k)+'" style="margin:-12px -13px 10px;"><div class="sec-hdr-title">'+(open?'▼':'▶')+' '+esc(ymLabel(k))+' : '+monthTheo+'€ · restant '+rest+'€ '+(rest===0?'✅':'')+'</div></div>';
-        if(open){
-          html+='<div class="card-title">Prises de commandes</div>';
-          var hasOrder=false;
-          rows.slice().sort(function(a,b){return String(a.orderDate||'').localeCompare(String(b.orderDate||''))}).forEach(function(d){
-            if(ym(d.orderDate)!==k)return;hasOrder=true;var amount=orderComm(d);
-            html+='<div class="diag-row"><div style="display:flex;gap:8px;align-items:flex-start;"><input type="checkbox" class="comm-check-v38" data-id="'+esc(d.id)+'" data-k="rcvOrder" '+(d.rcvOrder?'checked':'')+'><div><strong>'+fmt(d.orderDate)+'</strong> N°prod '+esc(d.productionNo||'—')+' - '+esc(d.client||'')+' '+lineQty(d)+' '+esc(d.type||'')+' '+amount+'€</div></div><button class="btn btn-secondary btn-sm open-deal-v38" data-id="'+esc(d.dealId||'')+'">Affaire</button></div>';
-          });
-          if(!hasOrder)html+='<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Aucune prise d’ordre sur ce mois.</div>';
-          html+='<div class="card-title" style="margin-top:10px;">Livraisons</div>';
-          var hasLiv=false;
-          rows.slice().sort(function(a,b){return String(a.deliveryDate||'').localeCompare(String(b.deliveryDate||''))}).forEach(function(d){
-            if(ym(d.deliveryDate)!==k)return;hasLiv=true;var m=maintComm(d.maintenance,d.qty),p=paccarComm(d),pr=primeComm(d);
-            html+='<div style="border-top:1px solid var(--border);padding:8px 0;">'
-              +'<div style="font-size:12px;line-height:1.45;"><strong>'+fmt(d.deliveryDate)+'</strong> N°prod '+esc(d.productionNo||'—')+'<br>'+esc(d.client||'')+' '+lineQty(d)+' '+esc(d.type||'')+'</div>'
-              +'<div style="margin-top:6px;font-size:11px;line-height:1.9;">'
-              +'<label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" class="comm-check-v38" data-id="'+esc(d.id)+'" data-k="rcvMaint" '+(d.rcvMaint?'checked':'')+'> <span>Contrat '+esc(d.maintenance||'Non')+' : '+m+'€</span></label>'
-              +'<label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" class="comm-check-v38" data-id="'+esc(d.id)+'" data-k="rcvPrime" '+(d.rcvPrime?'checked':'')+'> <span>Prime marge : '+pr+'€</span></label>'
-              +'<label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" class="comm-check-v38" data-id="'+esc(d.id)+'" data-k="rcvPaccar" '+(d.rcvPaccar?'checked':'')+'> <span>PACCAR Fi. : '+p+'€</span></label>'
-              +'<button class="btn btn-secondary btn-sm open-deal-v38" data-id="'+esc(d.dealId||'')+'">Ouvrir affaire</button></div></div>';
-          });
-          if(!hasLiv)html+='<div style="font-size:11px;color:var(--text3);">Aucune livraison sur ce mois.</div>';
-        }
-        html+='</div>';
-      });
-      cont.innerHTML=html;
-      var se=$('comm-search-v38'); if(se)se.oninput=function(){window.commSearchV38=this.value;renderCommissionsV38()};
-      var st=$('comm-sort-toggle-v38'); if(st)st.onclick=function(){window.commSortV38=(sort==='asc'?'desc':'asc');localStorage.setItem('commSortV38',window.commSortV38);renderCommissionsV38()};
-      qsa('.comm-month-v38').forEach(function(x){x.onclick=function(){var k=this.dataset.k;var curOpen=Object.prototype.hasOwnProperty.call(window.commOpenStateV38,k)?!!window.commOpenStateV38[k]:(k===currentYm());window.commOpenStateV38[k]=!curOpen;renderCommissionsV38()}});
-      qsa('.comm-check-v38').forEach(function(c){c.onchange=function(){var list=deliveries();var d=list.find(function(x){return String(x.id)===String(c.dataset.id)});if(!d)return;d[c.dataset.k]=c.checked;saveDeliveries(list);renderCommissionsV38()}});
-      qsa('.open-deal-v38').forEach(function(b){b.onclick=function(e){e.stopPropagation();if(b.dataset.id)openDealSafe(b.dataset.id)}});
-    }catch(e){
-      console.error('Erreur COMMISSIONS V38',e);
-      var cont=$('livraisons-content'); if(cont)cont.innerHTML='<div class="card"><div class="card-title">Erreur COMMISSIONS</div><div style="color:var(--red);font-size:12px;line-height:1.5;">La page a rencontré une erreur, mais l’application reste utilisable.<br>'+esc(e.message||e)+'</div></div>';
-    }
-  }
-  window.renderCommissions=renderCommissionsV38;
-  window.renderLivraisons=renderCommissionsV38;
-  var prevRS38=window.renderScreen;
-  window.renderScreen=function(name){if(name==='livraisons'||name==='commissions'){renderCommissionsV38();return}return prevRS38?prevRS38(name):undefined};
-  var prevShow38=window.showScreen;
-  window.showScreen=function(name){var r=prevShow38?prevShow38(name):undefined;if(name==='livraisons'||name==='commissions'){setTimeout(renderCommissionsV38,20);setTimeout(renderCommissionsV38,150)}return r};
-  window.renderCommissionsV38=renderCommissionsV38;
-})();
-
-})();
-
-
-/* === V39 — COMMISSIONS PERFECTION KPI ORDER + NON TOUCHEES === */
-(function(){
-  function renderCommissionsV39(){
-    try{
-      syncAllDeliveriesSafe();
-      var cont=$('livraisons-content'); if(!cont)return;
-      var all=deliveries();
-      var cy=String(new Date().getFullYear());
-      var cur=currentYm();
-      var q=String(window.commSearchV39||'').toLowerCase().trim();
-      var list=all.filter(function(d){
-        var hay=[d.client,d.model,d.type,d.bodybuilder,d.productionNo,d.maintenance,d.paccar,d.carrosserie,d.lessor].join(' ').toLowerCase();
-        return !q||hay.indexOf(q)>=0;
-      });
-      var yearRows=all.filter(function(d){return inCurrentYear(d.orderDate)||inCurrentYear(d.deliveryDate)});
-      var yearTheo=yearRows.reduce(function(a,d){return a+totalComm(d)},0);
-      var yearRec=yearRows.reduce(function(a,d){return a+receivedComm(d)},0);
-      var yearRest=yearTheo-yearRec;
-      var avgAll=avgMargin(all), avgYear=avgMargin(yearRows);
-      var currentMonthTheo=0,currentMonthRec=0;
-      all.forEach(function(d){var a=monthAmountFor(d,cur);currentMonthTheo+=a.theo;currentMonthRec+=a.rec});
-      var allTheo=all.reduce(function(a,d){return a+totalComm(d)},0);
-      var allRec=all.reduce(function(a,d){return a+receivedComm(d)},0);
-      var allRest=allTheo-allRec;
-      var sort=window.commSortV39||localStorage.getItem('commSortV39')||'asc';
-      var html='<div class="kpi-grid kpi-grid-3" style="margin-top:4px;">'
-        +'<div class="kpi-card c-green"><div class="kpi-val">'+yearRec+'€</div><div class="kpi-lbl">Touchées '+cy+'</div></div>'
-        +'<div class="kpi-card c-daf"><div class="kpi-val">'+currentMonthTheo+'€</div><div class="kpi-lbl">Total mois en cours</div></div>'
-        +'<div class="kpi-card c-blue"><div class="kpi-val">'+avgAll+'%</div><div class="kpi-lbl">Marge moy. totale</div></div>'
-        +'<div class="kpi-card c-orange"><div class="kpi-val">'+yearRest+'€</div><div class="kpi-lbl">Restantes '+cy+'</div></div>'
-        +'<div class="kpi-card c-red"><div class="kpi-val">'+allRest+'€</div><div class="kpi-lbl">Commissions non touchées</div></div>'
-        +'<div class="kpi-card c-purple"><div class="kpi-val">'+avgYear+'%</div><div class="kpi-lbl">Marge moy. '+cy+'</div></div>'
-        +'</div>'
-        +'<div class="search-bar"><span>🔍</span><input id="comm-search-v39" placeholder="Rechercher client, N° production, modèle, carrossier…" value="'+esc(window.commSearchV39||'')+'"></div>'
-        +'<div class="card" style="display:flex;gap:8px;align-items:center;justify-content:space-between;"><div><div class="card-title" style="margin-bottom:2px;">Tri des mois</div><div style="font-size:11px;color:var(--text3);">Par défaut : seul le mois en cours est ouvert. Les autres mois restent repliés.</div></div><button class="btn btn-secondary btn-sm" id="comm-sort-toggle-v39">'+(sort==='asc'?'Plus vieux → plus récent':'Plus récent → plus vieux')+'</button></div>';
-      var map={};
-      list.forEach(function(d){[ym(d.orderDate),ym(d.deliveryDate)].forEach(function(k){if(!k)return;if(!map[k])map[k]=[];if(map[k].indexOf(d)<0)map[k].push(d)})});
-      var keys=Object.keys(map).sort(); if(sort==='desc')keys.reverse();
-      if(!keys.length){html+='<div class="card"><div class="card-title">Commissions</div><div style="font-size:11px;color:var(--text3);">Aucune commission.</div></div>'}
-      window.commOpenStateV39=window.commOpenStateV39||{};
-      keys.forEach(function(k){
-        var rows=map[k],monthTheo=0,monthRec=0;
-        rows.forEach(function(d){var a=monthAmountFor(d,k);monthTheo+=a.theo;monthRec+=a.rec});
-        var rest=monthTheo-monthRec;
-        var open=Object.prototype.hasOwnProperty.call(window.commOpenStateV39,k)?!!window.commOpenStateV39[k]:(k===cur);
-        html+='<div class="card"><div class="sec-hdr comm-month-v39" data-k="'+esc(k)+'" style="margin:-12px -13px 10px;"><div class="sec-hdr-title">'+(open?'▼':'▶')+' '+esc(ymLabel(k))+' : '+monthTheo+'€ · restant '+rest+'€ '+(rest===0?'✅':'')+'</div></div>';
-        if(open){
-          html+='<div class="card-title" style="font-size:13px;color:var(--daf);letter-spacing:1px;margin-top:2px;margin-bottom:8px;">PRISES DE COMMANDES</div>';
-          var hasOrder=false;
-          rows.slice().sort(function(a,b){return String(a.orderDate||'').localeCompare(String(b.orderDate||''))}).forEach(function(d){
-            if(ym(d.orderDate)!==k)return;hasOrder=true;var amount=orderComm(d);
-            html+='<div class="diag-row"><div style="display:flex;gap:8px;align-items:flex-start;"><input type="checkbox" class="comm-check-v39" data-id="'+esc(d.id)+'" data-k="rcvOrder" '+(d.rcvOrder?'checked':'')+'><div><strong>'+fmt(d.orderDate)+'</strong> N°prod '+esc(d.productionNo||'—')+'<br>'+esc(d.client||'')+' '+lineQty(d)+' '+esc(d.type||'')+' '+amount+'€</div></div><button class="btn btn-secondary btn-sm open-deal-v39" data-id="'+esc(d.dealId||'')+'">Affaire</button></div>';
-          });
-          if(!hasOrder)html+='<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Aucune prise d’ordre sur ce mois.</div>';
-          html+='<div class="card-title" style="font-size:13px;color:var(--daf);letter-spacing:1px;margin-top:14px;margin-bottom:8px;">LIVRAISONS</div>';
-          var hasLiv=false;
-          rows.slice().sort(function(a,b){return String(a.deliveryDate||'').localeCompare(String(b.deliveryDate||''))}).forEach(function(d){
-            if(ym(d.deliveryDate)!==k)return;hasLiv=true;var m=maintComm(d.maintenance,d.qty),p=paccarComm(d),pr=primeComm(d);
-            html+='<div style="border-top:1px solid var(--border);padding:8px 0;">'
-              +'<div style="font-size:12px;line-height:1.45;"><strong>'+fmt(d.deliveryDate)+'</strong> N°prod '+esc(d.productionNo||'—')+'<br>'+esc(d.client||'')+' '+lineQty(d)+' '+esc(d.type||'')+'</div>'
-              +'<div style="margin-top:6px;font-size:11px;line-height:1.9;">'
-              +'<label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" class="comm-check-v39" data-id="'+esc(d.id)+'" data-k="rcvMaint" '+(d.rcvMaint?'checked':'')+'> <span>Contrat '+esc(d.maintenance||'Non')+' : '+m+'€</span></label>'
-              +'<label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" class="comm-check-v39" data-id="'+esc(d.id)+'" data-k="rcvPrime" '+(d.rcvPrime?'checked':'')+'> <span>Prime marge : '+pr+'€</span></label>'
-              +'<label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" class="comm-check-v39" data-id="'+esc(d.id)+'" data-k="rcvPaccar" '+(d.rcvPaccar?'checked':'')+'> <span>PACCAR Fi. : '+p+'€</span></label>'
-              +'<button class="btn btn-secondary btn-sm open-deal-v39" data-id="'+esc(d.dealId||'')+'">Ouvrir affaire</button></div></div>';
-          });
-          if(!hasLiv)html+='<div style="font-size:11px;color:var(--text3);">Aucune livraison sur ce mois.</div>';
-        }
-        html+='</div>';
-      });
-      cont.innerHTML=html;
-      var se=$('comm-search-v39'); if(se)se.oninput=function(){window.commSearchV39=this.value;renderCommissionsV39()};
-      var st=$('comm-sort-toggle-v39'); if(st)st.onclick=function(){window.commSortV39=(sort==='asc'?'desc':'asc');localStorage.setItem('commSortV39',window.commSortV39);renderCommissionsV39()};
-      qsa('.comm-month-v39').forEach(function(x){x.onclick=function(){var k=this.dataset.k;var curOpen=Object.prototype.hasOwnProperty.call(window.commOpenStateV39,k)?!!window.commOpenStateV39[k]:(k===currentYm());window.commOpenStateV39[k]=!curOpen;renderCommissionsV39()}});
-      qsa('.comm-check-v39').forEach(function(c){c.onchange=function(){var list=deliveries();var d=list.find(function(x){return String(x.id)===String(c.dataset.id)});if(!d)return;d[c.dataset.k]=c.checked;saveDeliveries(list);renderCommissionsV39()}});
-      qsa('.open-deal-v39').forEach(function(b){b.onclick=function(e){e.stopPropagation();if(b.dataset.id)openDealSafe(b.dataset.id)}});
-    }catch(e){
-      console.error('Erreur COMMISSIONS V39',e);
-      var cont=$('livraisons-content'); if(cont)cont.innerHTML='<div class="card"><div class="card-title">Erreur COMMISSIONS</div><div style="color:var(--red);font-size:12px;line-height:1.5;">La page a rencontré une erreur, mais l’application reste utilisable.<br>'+esc(e.message||e)+'</div></div>';
-    }
-  }
-  window.renderCommissions=renderCommissionsV39;
-  window.renderLivraisons=renderCommissionsV39;
-  var prevRS39=window.renderScreen;
-  window.renderScreen=function(name){if(name==='livraisons'||name==='commissions'){renderCommissionsV39();return}return prevRS39?prevRS39(name):undefined};
-  var prevShow39=window.showScreen;
-  window.showScreen=function(name){var r=prevShow39?prevShow39(name):undefined;if(name==='livraisons'||name==='commissions'){setTimeout(renderCommissionsV39,20);setTimeout(renderCommissionsV39,150)}return r};
-  window.renderCommissionsV39=renderCommissionsV39;
-})();
-
-</script>
 
 <script>
 // Legacy commission block (superseded by v2.1.2)
@@ -10206,6 +9817,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if(typeof GF.masquerFlottesTours==='undefined')GF.masquerFlottesTours=false;
   }
   function ensureToursButtons(){
+    return;
     var row=byId('btn-mask-inactifs');
     if(!row)return;
     var parent=row.parentNode;
@@ -11807,6 +11419,7 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   function removeLegacyDateFilters(){
+    return;
     try{
       var root=byId('affaires-content'); if(!root)return;
       all('#cb-affaires-datefilters,#cb-aff-datefilters,#cb-affaires-datefilters-hard',root).forEach(function(el){try{el.remove()}catch(e){el.style.display='none'}});
@@ -11833,8 +11446,6 @@ document.addEventListener('DOMContentLoaded',function(){
 
   // Appliquer après chaque rendu / clic car d'anciens patchs recréent parfois ces blocs.
   document.addEventListener('DOMContentLoaded',function(){setTimeout(cleanAffairesUI,80);setTimeout(cleanAffairesUI,500);});
-  document.addEventListener('click',function(){setTimeout(cleanAffairesUI,80);setTimeout(cleanAffairesUI,350);},true);
-
   var oldShow=window.showScreen;
   if(typeof oldShow==='function' && !oldShow._dcb002nWrapped){
     window.showScreen=function(name){
@@ -11854,225 +11465,14 @@ document.addEventListener('DOMContentLoaded',function(){
     window.renderAffaires._dcb002nWrapped=true;
   }
 
-  // Observer ciblé sur AFFAIRES : dès qu'un ancien bloc revient, on le retire.
-  function installObserver(){
-    var root=byId('affaires-content');
-    if(!root || root._dcb002nObserver)return;
-    root._dcb002nObserver=true;
-    var mo=new MutationObserver(function(){setTimeout(cleanAffairesUI,0)});
-    mo.observe(root,{childList:true,subtree:true});
-  }
-  setTimeout(function(){installObserver();cleanAffairesUI()},300);
-  setTimeout(function(){installObserver();cleanAffairesUI()},1000);
+  setTimeout(cleanAffairesUI,300);
   window.DAF_COMMERCEBOX_B002N_AFFAIRES_FIX=cleanAffairesUI;
 })();
 </script>
 
 
 
-<script>
-// ============================================================
-// DAF_COMMERCE-Box — AUDIT KPI MARCHÉ vs TOURNÉES
-// Ajout non destructif : compare les règles sans modifier les KPI existants.
-// ============================================================
-(function(){
-  'use strict';
-  function byId(id){return document.getElementById(id);}
-  function all(sel,root){return Array.prototype.slice.call((root||document).querySelectorAll(sel));}
-  function h(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-  function nrm(s){try{return norm(s);}catch(e){return String(s||'').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}}
-  function siret(v){try{return normSiret(v&&v.siret);}catch(e){return String((v&&v.siret)||'').replace(/\D/g,'');}}
-  function vKey(v){return [siret(v),v&&v.plaque||'',v&&v.date||'',v&&v.chassis||'',marketBrand(v),v&&v.type||''].map(function(x){return nrm(x);}).join('|');}
-  function uniqVeh(list){var seen={},out=[];(list||[]).forEach(function(v){var k=vKey(v);if(!seen[k]){seen[k]=true;out.push(v);}});return out;}
-  function clientForVehicle(v){var sr=siret(v);return sr && IDX && IDX.cBySiret ? IDX.cBySiret[sr] : null;}
-  function siteKeyForClient(c){try{return c._siteKey||makeSiteKey(c);}catch(e){return c&&c._siteKey||'';}}
-  function getToursFilter(){try{return window.toursF||toursF||'all';}catch(e){return 'all';}}
-  function getToursSearch(){try{return (window.toursSearch || (typeof toursSearch!=='undefined'?toursSearch:'') || '').toLowerCase().trim();}catch(e){return '';}}
 
-  function ensureAuditScreen(){
-    if(!byId('screen-audit')){
-      var more=byId('screen-more')||all('.screen').slice(-1)[0];
-      var div=document.createElement('div');
-      div.className='screen';
-      div.id='screen-audit';
-      div.innerHTML='<div class="screen-header"><div class="screen-title">🧪 Audit KPI</div><div class="screen-sub">Comparaison MARCHÉ vs TOURNÉES</div></div><div id="audit-content" style="padding-top:6px;"></div>';
-      if(more&&more.parentNode)more.parentNode.insertBefore(div,more);else document.body.appendChild(div);
-    }
-  }
-
-  function baseToursRows(applyMasks, applyCurrentFilter){
-    var data=[];
-    try{data=buildToursData();}catch(e){data=[];}
-    var search=applyCurrentFilter?getToursSearch():'';
-    var f=applyCurrentFilter?getToursFilter():'all';
-    return data.filter(function(c){
-      if(applyMasks && typeof passesToursExclusions==='function' && !passesToursExclusions(c))return false;
-      if(search && [c.nom,c.ville,c.canton,c.vendeur,c.profil,c.tva,c.siret,c.groupement].join(' ').toLowerCase().indexOf(search)<0)return false;
-      return typeof passesToursFpill==='function'?passesToursFpill(c,f):true;
-    });
-  }
-
-  function vehiclesFromToursRows(rows){
-    try{if(typeof _dedupVehiclesFromRows==='function')return uniqVeh(_dedupVehiclesFromRows(rows)).filter(function(v){return v.possession!==false && (typeof matchesToursVehicle!=='function'||matchesToursVehicle(v));});}catch(e){}
-    var list=[];(rows||[]).forEach(function(c){
-      try{list=list.concat(getSiteVehicles(c._siteKey||siteKeyForClient(c))||[]);}catch(e){}
-    });
-    return uniqVeh(list).filter(function(v){return v.possession!==false && (typeof matchesToursVehicle!=='function'||matchesToursVehicle(v));});
-  }
-
-  function marketVehiclesCurrent(){
-    var vv=[];try{vv=(DB.getVehicles()||[]).filter(function(v){return typeof matchesMarcheVehicle!=='function'||matchesMarcheVehicle(v);});}catch(e){vv=[];}
-    return uniqVeh(vv);
-  }
-  function marketVehiclesAttached(){
-    return marketVehiclesCurrent().filter(function(v){return !!clientForVehicle(v);});
-  }
-
-  function kpisFromVehicles(label, veh, rows, mode){
-    veh=uniqVeh(veh||[]); rows=rows||[]; mode=mode||'tours';
-    var daf=veh.filter(isDaf).length;
-    var renewDafFn=mode==='marche'?isRenewDafMarche:isRenewDaf;
-    var renewHorsFn=mode==='marche'?isRenewHorsMarche:isRenewHors;
-    return {
-      label:label,
-      veh:veh,
-      rows:rows,
-      parc:veh.length,
-      daf:daf,
-      horsDaf:veh.length-daf,
-      dafRenew:veh.filter(function(v){try{return renewDafFn(v);}catch(e){return false;}}).length,
-      horsRenew:veh.filter(function(v){try{return renewHorsFn(v);}catch(e){return false;}}).length,
-      sites:rows.length,
-      sansDaf:rows.filter(function(c){return (c.dafCount||0)===0;}).length,
-      urgents:rows.filter(function(c){try{return _toursUrgentForKpi(c);}catch(e){return !!c.isUrgent;}}).length
-    };
-  }
-
-  function diffVehicles(a,b){
-    var bm={};(b||[]).forEach(function(v){bm[vKey(v)]=true;});
-    return (a||[]).filter(function(v){return !bm[vKey(v)];});
-  }
-
-  function reasonVehicleMissingFromTours(v){
-    var reasons=[];
-    var sr=siret(v);
-    var c=clientForVehicle(v);
-    if(!sr)reasons.push('SIRET absent dans immat');
-    if(sr&&!c)reasons.push('SIRET immat non trouvé dans CRM');
-    if(v.possession===false)reasons.push('véhicule marqué non possédé');
-    if(c){
-      var sk=siteKeyForClient(c);
-      var row=null;try{row=buildToursData().find(function(x){return (x._siteKey||siteKeyForClient(x))===sk;});}catch(e){}
-      try{if(typeof clientMatchesGF==='function'&&!clientMatchesGF(c))reasons.push('filtre global client/vendeur/pays/département/profil');}catch(e){}
-      try{if(typeof matchesToursVehicle==='function'&&!matchesToursVehicle(v))reasons.push('filtre véhicule Tournées');}catch(e){}
-      if(row){
-        var maskRs=toursMaskExcludeReasons(row);
-        if(maskRs.length)reasons=reasons.concat(maskRs);
-      }
-    }
-    return reasons.length?reasons.join(' + '):'à contrôler : écart non expliqué automatiquement';
-  }
-
-  function reasonVehicleMissingFromMarket(v){
-    var reasons=[];
-    try{if(typeof matchesMarcheVehicle==='function'&&!matchesMarcheVehicle(v))reasons.push('filtre Marché');}catch(e){}
-    if(v.possession===false)reasons.push('non possédé');
-    var c=clientForVehicle(v);
-    if(c){
-      try{
-        var rx=_marcheTriMissReason(GF.marcheMaskExclusion, isClientExcludedMarche(c), 'EXCLUS');
-        if(rx)reasons.push(rx);
-      }catch(e){}
-      try{
-        var ri=_marcheTriMissReason(GF.marcheMaskInactifs, isInactiveClientMarche(c.tva,siteKeyForClient(c)), 'INACTIFS');
-        if(ri)reasons.push(ri);
-      }catch(e){}
-      try{
-        var ra=_marcheTriMissReason(GF.marcheMaskAccessible, !isClientAccessible(c), 'ACCESSIBLES');
-        if(ra)reasons.push(ra);
-      }catch(e){}
-      try{if(GF.exclFlotteNationaleMarche&&isFlotteNationale(c))reasons.push('Hors Flotte NAT. Marché');}catch(e){}
-    }
-    return reasons.length?reasons.join(' + '):'à contrôler : présent Tournées mais absent Marché';
-  }
-
-  function rowForVehicle(v,reason){
-    var c=clientForVehicle(v);
-    return '<tr><td>'+h(v.plaque||'—')+'</td><td>'+h(marketBrand(v))+'</td><td>'+h(v.type||'—')+'</td><td>'+h(v.date||'—')+'</td><td>'+h(siret(v)||'—')+'</td><td>'+h(c?(c.nom||''):'—')+'</td><td>'+h(reason||'')+'</td></tr>';
-  }
-  function smallTable(list,reasonFn,max){
-    max=max||80;
-    if(!list.length)return '<div style="font-size:11px;color:var(--green);padding:8px 0;">Aucun écart détecté.</div>';
-    var rows=list.slice(0,max).map(function(v){return rowForVehicle(v,reasonFn(v));}).join('');
-    var extra=list.length>max?'<div style="font-size:10px;color:var(--orange);padding:6px 0;">Affichage limité à '+max+' lignes sur '+list.length+'.</div>':'';
-    return extra+'<div style="overflow:auto;max-height:360px;border:1px solid var(--border);border-radius:8px;"><table style="width:100%;border-collapse:collapse;font-size:10px;"><thead><tr style="color:var(--text3);"><th>Plaque</th><th>Marque</th><th>Type</th><th>Date</th><th>SIRET</th><th>Client</th><th>Raison probable</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
-  }
-
-  function renderAuditKpi(){
-    ensureAuditScreen();
-    try{buildIndex();}catch(e){}
-    var allImport=uniqVeh(DB.getVehicles()||[]);
-    var mVeh=marketVehiclesCurrent();
-    var mAttached=marketVehiclesAttached();
-    var tRowsRaw=baseToursRows(false,false);
-    var tVehRaw=vehiclesFromToursRows(tRowsRaw);
-    var tRowsCurrent=baseToursRows(true,true);
-    var tVehCurrent=vehiclesFromToursRows(tRowsCurrent);
-    var M=kpisFromVehicles('MARCHÉ (filtres actifs)',mVeh,[],'marche');
-    var MA=kpisFromVehicles('MARCHÉ rattaché SIRET',mAttached,[],'marche');
-    var TR=kpisFromVehicles('TOURNÉES brut',tVehRaw,tRowsRaw,'tours');
-    var TC=kpisFromVehicles('TOURNÉES actuel',tVehCurrent,tRowsCurrent,'tours');
-    var missTours=diffVehicles(mVeh,tVehCurrent);
-    var missMarket=diffVehicles(tVehCurrent,mVeh);
-    var structural=diffVehicles(mVeh,tVehRaw);
-    var kpiRows=[
-      ['Parc total',M.parc,TC.parc,M.parc-TC.parc],
-      ['DAF total',M.daf,TC.daf,M.daf-TC.daf],
-      ['Hors DAF total',M.horsDaf,TC.horsDaf,M.horsDaf-TC.horsDaf],
-      ['DAF à renouveler',M.dafRenew,TC.dafRenew,M.dafRenew-TC.dafRenew],
-      ['Hors DAF à renouveler',M.horsRenew,TC.horsRenew,M.horsRenew-TC.horsRenew]
-    ];
-    var kpiHtml=kpiRows.map(function(r){var cls=r[3]===0?'var(--green)':(Math.abs(r[3])>0?'var(--orange)':'var(--text2)');return '<tr><td>'+h(r[0])+'</td><td>'+r[1]+'</td><td>'+r[2]+'</td><td style="font-weight:900;color:'+cls+';">'+(r[3]>0?'+':'')+r[3]+'</td></tr>';}).join('');
-    var state='<div style="font-size:10px;color:var(--text3);line-height:1.5;">Filtres actuels : type <strong>'+h(GF.marcheTypeFilter||'tous')+'</strong> · vendeurs MARCHÉ <strong>'+h((GF.vendeursMarche&&GF.vendeursMarche.length?GF.vendeursMarche.join(', '):'tous'))+'</strong> · Tournées <strong>'+h(getToursFilter())+'</strong> · masques : '+h(_formatToursMaskStates())+' · ACCESSIBLES Marché <strong>'+h(GF.marcheMaskAccessible||'neutral')+'</strong>.</div>';
-    var html='';
-    html+='<div class="card"><div class="card-title">Méthode d’audit</div><div style="font-size:12px;color:var(--text2);line-height:1.5;">Cette page ne corrige rien : elle compare les véhicules comptés par MARCHÉ avec ceux réellement repris par TOURNÉES, puis donne la raison probable de chaque écart.</div>'+state+'<div style="display:flex;gap:6px;margin-top:8px;"><button class="btn btn-primary btn-sm" id="audit-refresh">Recalculer</button><button class="btn btn-secondary btn-sm" id="audit-export">Exporter CSV écarts</button></div></div>';
-    html+='<div class="kpi-grid"><div class="kpi-card"><div class="kpi-val">'+allImport.length+'</div><div class="kpi-lbl">Lignes immat importées</div></div><div class="kpi-card"><div class="kpi-val">'+M.parc+'</div><div class="kpi-lbl">Parc Marché (filtres)</div></div><div class="kpi-card c-blue"><div class="kpi-val">'+TC.parc+'</div><div class="kpi-lbl">Parc Tournées actuel</div></div><div class="kpi-card c-orange"><div class="kpi-val">'+missTours.length+'</div><div class="kpi-lbl">Marché absent Tournées</div></div></div>';
-    html+='<div class="card"><div class="card-title">Comparaison KPI visibles</div><div style="overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="color:var(--text3);"><th style="text-align:left;">KPI</th><th>Marché</th><th>Tournées</th><th>Écart</th></tr></thead><tbody>'+kpiHtml+'</tbody></table></div></div>';
-    html+='<div class="card"><div class="card-title">Contrôle structurel SIRET</div><div style="font-size:11px;color:var(--text2);line-height:1.5;">Marché rattaché SIRET : <strong>'+MA.parc+'</strong> véhicules. Tournées brut sans masques : <strong>'+TR.parc+'</strong> véhicules sur <strong>'+TR.sites+'</strong> sites. Écart structurel : <strong style="color:'+(structural.length?'var(--orange)':'var(--green)')+'">'+structural.length+'</strong>.</div>'+smallTable(structural,reasonVehicleMissingFromTours,50)+'</div>';
-    html+='<div class="card"><div class="card-title">Véhicules comptés dans MARCHÉ mais absents de TOURNÉES actuel</div>'+smallTable(missTours,reasonVehicleMissingFromTours,100)+'</div>';
-    html+='<div class="card"><div class="card-title">Véhicules comptés dans TOURNÉES mais absents de MARCHÉ actuel</div>'+smallTable(missMarket,reasonVehicleMissingFromMarket,80)+'</div>';
-    var root=byId('audit-content');if(root)root.innerHTML=html;
-    var ref=byId('audit-refresh');if(ref)ref.onclick=renderAuditKpi;
-    var exp=byId('audit-export');if(exp)exp.onclick=function(){exportAuditCsv(missTours,missMarket);};
-  }
-
-  function exportAuditCsv(missTours,missMarket){
-    var rows=[['Sens','Plaque','Marque','Type','Date','SIRET','Client','Raison probable']];
-    (missTours||[]).forEach(function(v){var c=clientForVehicle(v);rows.push(['Marché absent Tournées',v.plaque||'',marketBrand(v),v.type||'',v.date||'',siret(v),c?c.nom||'':'',reasonVehicleMissingFromTours(v)]);});
-    (missMarket||[]).forEach(function(v){var c=clientForVehicle(v);rows.push(['Tournées absent Marché',v.plaque||'',marketBrand(v),v.type||'',v.date||'',siret(v),c?c.nom||'':'',reasonVehicleMissingFromMarket(v)]);});
-    var csv=rows.map(function(r){return r.map(function(x){return '"'+String(x==null?'':x).replace(/"/g,'""')+'"';}).join(';');}).join('\n');
-    var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='audit_kpi_marche_tournees.csv';document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(function(){URL.revokeObjectURL(a.href);},500);try{toast('Audit CSV exporté');}catch(e){}
-  }
-
-  function injectAuditButton(){
-    var more=byId('more-content');if(!more||byId('btn-open-audit-kpi'))return;
-    var card=document.createElement('div');card.className='card';card.innerHTML='<div class="card-title">🧪 Audit KPI</div><div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.4;">Compare MARCHÉ et TOURNÉES, puis liste les véhicules qui créent les écarts.</div><button class="btn btn-primary" id="btn-open-audit-kpi" style="width:100%;">Ouvrir Audit KPI</button>';
-    more.insertBefore(card,more.firstChild);
-    byId('btn-open-audit-kpi').onclick=function(){try{showScreen('audit');}catch(e){ensureAuditScreen();all('.screen').forEach(function(s){s.classList.remove('active');});byId('screen-audit').classList.add('active');renderAuditKpi();}};
-  }
-
-  var oldRenderMore=window.renderMore;
-  if(typeof oldRenderMore==='function'){
-    window.renderMore=function(){var r=oldRenderMore.apply(this,arguments);setTimeout(function(){injectAuditButton();bindBasesEvents();if(typeof renderMoreAdminFooter==='function')renderMoreAdminFooter();},0);return r;};
-  }
-  var oldRenderScreen=window.renderScreen;
-  window.renderScreen=function(name){if(name==='audit'){renderAuditKpi();return;}return oldRenderScreen?oldRenderScreen.apply(this,arguments):undefined;};
-  var oldShow=window.showScreen;
-  window.showScreen=function(name){ensureAuditScreen();var r=oldShow?oldShow.apply(this,arguments):undefined;if(name==='audit'){all('.screen').forEach(function(s){s.classList.remove('active');});all('.nav-item').forEach(function(n){n.classList.remove('active');});byId('screen-audit').classList.add('active');renderAuditKpi();}if(name==='more')setTimeout(injectAuditButton,120);return r;};
-  document.addEventListener('DOMContentLoaded',function(){ensureAuditScreen();setTimeout(injectAuditButton,300);});
-  window.renderAuditKpi=renderAuditKpi;
-})();
-</script>
 
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"7f7b0fd8732c4326aae4b9d58d5c514a","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 <script>
