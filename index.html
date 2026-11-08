@@ -381,7 +381,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-08-bases-v93';
+const APP_BUILD='2026-11-08-bases-v94';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -1899,8 +1899,6 @@ function exportTwoOriginExcels(){
   }catch(e){console.error(e);toast('Export Excel impossible');}
 }
 function parseTableFile(file){
-  var name=String(file&&file.name||'').toLowerCase();
-  if((name.endsWith('.csv')||name.endsWith('.txt'))&&typeof window.parseCSVFile==='function')return window.parseCSVFile(file);
   return parseExcel(file);
 }
 function renderOriginExcelCard(){
@@ -1910,8 +1908,8 @@ function renderOriginExcelCard(){
   return '<div class="card"><div class="card-title">Excel clients et immatriculations</div>'
     +'<div style="font-size:11px;color:var(--text2);line-height:1.45;margin-bottom:8px;">Mêmes colonnes que les fichiers d’origine. Une cellule modifiée est en rouge. Une fiche créée ou une immatriculation ajoutée est en rouge sur toute la ligne.</div>'
     +'<div style="font-size:10px;color:var(--text3);margin-bottom:8px;">'+(okC?'Référence clients mémorisée. ':'Référence clients à mémoriser. ')+(okI?'Référence immatriculations mémorisée.':'Référence immatriculations à mémoriser.')+'</div>'
-    +'<input type="file" id="file-origin-crm" accept=".xlsx,.xls,.csv,.txt" style="display:none">'
-    +'<input type="file" id="file-origin-immat" accept=".xlsx,.xls,.csv,.txt" style="display:none">'
+    +'<input type="file" id="file-origin-crm" accept=".xlsx,.xls" style="display:none">'
+    +'<input type="file" id="file-origin-immat" accept=".xlsx,.xls" style="display:none">'
     +'<button type="button" class="btn btn-secondary" id="btn-origin-crm" style="width:100%;margin-bottom:6px;">Mémoriser le fichier clients d’origine</button>'
     +'<button type="button" class="btn btn-secondary" id="btn-origin-immat" style="width:100%;margin-bottom:6px;">Mémoriser le fichier immatriculations d’origine</button>'
     +'<button type="button" class="btn btn-primary" id="btn-export-origin-xlsx" style="width:100%;">Exporter les deux Excel</button>'
@@ -2841,7 +2839,6 @@ function bindSheetEvents(){
 
 // ===== MODAL =====
 let _modalExportGetter=null;
-function _csvEscapeCell(v){v=String(v==null?'':v);return '"'+v.replace(/"/g,'""')+'"';}
 function _sanitizeExportFilename(title){
   return String(title||'export').replace(/[^\w\s\-àâäéèêëïîôùûüçÀÂÄÉÈÊËÏÎÔÙÛÜÇ]/g,'').replace(/\s+/g,'_').slice(0,80)||'export';
 }
@@ -2894,15 +2891,8 @@ function exportRowsToExcel(filename,rows){
     XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Export');
     XLSX.writeFile(wb,base+'.xlsx');
   }else{
-    var csv='\ufeff'+rows.map(function(r){return r.map(_csvEscapeCell).join(';');}).join('\n');
-    var blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-    var a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download=base+'.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(a.href);
+    toast('Export Excel impossible');
+    return;
   }
   toast('📊 Export Excel téléchargé');
 }
@@ -3489,8 +3479,8 @@ function renderMktBars(vehicles){
 function renderImportCard(xlsxOk){
   return`<div class="card">
     <div class="card-title">📂 Import fichiers Excel</div>
-    <input type="file" id="file-crm" accept=".xlsx,.xls,.csv,.txt">
-    <input type="file" id="file-immat" accept=".xlsx,.xls,.csv,.txt">
+    <input type="file" id="file-crm" accept=".xlsx,.xls">
+    <input type="file" id="file-immat" accept=".xlsx,.xls">
     <div class="file-zone" id="zone-crm">
       <div class="fz-title">📋 BASE CRM.xlsx</div>
       <div class="fz-sub" id="crm-status">Premier chargement des clients</div>
@@ -6775,15 +6765,16 @@ renderModeEmploi = function(){
   };
 
   // 2) Export reporting projets enrichi
-  function csvEscape(v){v=String(v==null?'':v);return '"'+v.replace(/"/g,'""')+'"';}
   window.exportProjectsReporting = function(){
     var projects=DB.getProjects()||[], clients=DB.getClients()||[];
     var byTva={}; clients.forEach(function(c){if(c.tva&&!byTva[c.tva])byTva[c.tva]=c;});
     var rows=[['TVA','Client','Ville','SIRET','Statut','Camions','Type','Mois','Année','Commentaire','Date création','Date mise à jour']];
     projects.forEach(function(p){var c=byTva[p.tva]||{};rows.push([p.tva||'',c.nom||p.nom||'',c.ville||'',c.siret||'',p.status||'',p.camions||'',p.type||'',p.mois||'',p.annee||'',p.commentaire||p.comment||'',p.created||'',p.updated||'']);});
-    var csv='\ufeff'+rows.map(function(r){return r.map(csvEscape).join(';');}).join('\n');
-    var blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); var a=document.createElement('a');
-    var d=new Date().toISOString().slice(0,10); a.href=URL.createObjectURL(blob); a.download='Reporting_Projets_DAF_'+d+'.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function(){URL.revokeObjectURL(a.href);},500);
+    if(typeof XLSX==='undefined'){toast('Export Excel impossible');return;}
+    var d=new Date().toISOString().slice(0,10);
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'Projets');
+    XLSX.writeFile(wb,'Reporting_Projets_DAF_'+d+'.xlsx');
     toast('Reporting projets exporté');
   };
 
@@ -6804,7 +6795,7 @@ renderModeEmploi = function(){
     var groups=(typeof getAllGroups==='function'?getAllGroups():[]);
     var html='';
     html+='<div class="card"><div class="card-title">👥 Groupes</div><div style="font-size:10px;color:var(--text3);line-height:1.35;margin-bottom:8px;">Gestion directe des groupes sans passer par Qualité. Les groupes ne s’affichent pas dans TOURNÉES ; seuls les sites s’affichent.</div><button class="btn btn-primary" id="btn-create-group-plus" style="width:100%;margin-bottom:6px;">+ Créer un groupe</button><div style="font-size:11px;color:var(--text2);">Groupes détectés/manuels : <strong>'+groups.length+'</strong></div></div>';
-    html+='<div class="card"><div class="card-title">📋 Reporting projets</div><button class="btn btn-secondary" id="btn-export-project-report" style="width:100%;">Exporter reporting projets CSV</button><div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.35;">Export lisible dans Excel : client, TVA, site, statut, nombre de véhicules, type, période et commentaire.</div></div>';
+    html+='<div class="card"><div class="card-title">📋 Reporting projets</div><button class="btn btn-secondary" id="btn-export-project-report" style="width:100%;">Exporter reporting projets XLSX</button><div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.35;">Fichier Excel : client, TVA, site, statut, nombre de véhicules, type, période et commentaire.</div></div>';
     cont.insertAdjacentHTML('beforeend',html);
     safeOn('btn-create-group-plus','click',createManualGroup);
     safeOn('btn-export-project-report','click',exportProjectsReporting);
@@ -6823,7 +6814,7 @@ renderModeEmploi = function(){
     sec('6. Badges — définition et critère', '<p><strong>DAF :</strong> au moins un DAF actif.</p><p><strong>DAF RENOUV. :</strong> au moins un DAF renouvelable.</p><p><strong>CONC. RENOUV. :</strong> au moins un véhicule concurrent renouvelable.</p><p><strong>URGENT :</strong> priorité manuelle/information terrain.</p><p><strong>FLOTTE RÉGIO. / COORD. / NAT. :</strong> selon profil commercial.</p><p><strong>EXCLU :</strong> EXCLU_MANU = OUI (toggle ou CRM).</p><p><strong>ACC. OFF :</strong> ACCESSIBLE = NON (toggle ou CRM).</p><p><strong>INACTIF :</strong> aucun achat (immatriculation) sur les '+INACTIVE_PURCHASE_YEARS+' dernières années.</p><p><strong>GROUPE :</strong> site rattaché à un groupe.</p><p><strong>SITE PRINCIPAL / SECONDAIRE :</strong> statut dans le groupe. Influe uniquement sur l’affichage et la consolidation KPI.</p>');
     sec('7. Fiche Site', '<p><strong>Contenu :</strong> nom, ville, adresse, TVA, SIRET, profil commercial, pays, département, vendeur, groupement, état prospection, contacts, projets, historique et véhicules.</p><p><strong>Boutons rapides :</strong> Copier adresse, Copier SIRET, Waze, Voir groupe.</p><p><strong>État Prospection :</strong> liste déroulante : À prospecter, Prospecté, Ne pas prospecter. Résistant à l’import.</p><p><strong>Contacts :</strong> nom, prénom, téléphone, mail, poste. Informatif uniquement.</p><p><strong>Parc véhicules :</strong> replié par défaut ; les véhicules NON possédés restent visibles mais ne comptent pas dans le potentiel terrain.</p><p><strong>Projet détecté / Pas de projet :</strong> alimente PROJETS et le bouton Masquer clients avec projet.</p>');
     sec('8. Fiche Groupe', '<p><strong>Rôle :</strong> fiche mère consolidée de plusieurs sites.</p><p><strong>Créer groupe :</strong> PLUS → Groupes → + Créer un groupe.</p><p><strong>Ajouter sites :</strong> bouton + Ajouter, recherche par nom/ville/TVA/SIRET, sélection possible de plusieurs sites.</p><p><strong>Site principal :</strong> un seul possible. Il porte le potentiel consolidé dans TOURNÉES.</p><p><strong>Site secondaire :</strong> reste consultable, peut être masqué, mais ne double pas les KPI.</p><p><strong>Décisionnaire :</strong> informatif uniquement, n’agit sur aucun KPI ni filtre.</p><p><strong>Supprimer groupe :</strong> retire les badges Groupe/Principal/Secondaire et les sites redeviennent indépendants.</p>');
-    sec('9. Page PROJETS', '<p><strong>Rôle :</strong> suivre les affaires simples.</p><p><strong>Statuts :</strong> PROJET, FUTUR, GAGNÉ, PERDU, REPORTÉ, SANS PROJET.</p><p><strong>REPORTÉ :</strong> considéré comme potentiel futur.</p><p><strong>Champs projet :</strong> statut, nombre de véhicules, type, mois/année, commentaire.</p><p><strong>Export reporting projets :</strong> PLUS → Reporting projets → CSV.</p>');
+    sec('9. Page PROJETS', '<p><strong>Rôle :</strong> suivre les affaires simples.</p><p><strong>Statuts :</strong> PROJET, FUTUR, GAGNÉ, PERDU, REPORTÉ, SANS PROJET.</p><p><strong>REPORTÉ :</strong> considéré comme potentiel futur.</p><p><strong>Champs projet :</strong> statut, nombre de véhicules, type, mois/année, commentaire.</p><p><strong>Export reporting projets :</strong> PLUS → Reporting projets → fichier Excel.</p>');
     sec('10. Page QUALITÉ', '<p><strong>Rôle :</strong> contrôler les données et repérer les erreurs.</p><p>Contrôles : colonnes importées, clients sans vendeur/pays/département/TVA/SIRET/profil/groupement/état prospection, véhicules sans date/marque/type/plaque, doublons, immatriculations sans fiche client, flottes, exclus, inactifs, groupes, sites secondaires.</p><p>Les listes doivent permettre d’ouvrir la fiche Site concernée quand applicable.</p>');
     sec('11. Import filtré', '<p><strong>But :</strong> réduire la taille de la base en important seulement un vendeur, un pays ou un département.</p><p><strong>Aucun filtre obligatoire :</strong> si rien n’est sélectionné, tout le fichier est importé.</p><p><strong>Aperçu avant import :</strong> affiche le nombre de lignes qui seront chargées.</p><p><strong>Diagnostic colonnes :</strong> QUALITÉ indique quelles colonnes ont été reconnues.</p>');
     sec('12. Sauvegarde / iCloud', '<p><strong>Exporter sauvegarde JSON :</strong> crée un fichier de sauvegarde contenant groupes, projets, contacts, commentaires, exclusions, possessions et états prospection.</p><p><strong>Charger sauvegarde JSON :</strong> restaure ces données.</p><p><strong>Sauvegarde nom fixe :</strong> crée toujours DAF_Professional_sauvegarde.json. Limite iPhone : Safari/Chrome ne peuvent pas remplacer silencieusement un fichier iCloud sans validation utilisateur. Il faut donc confirmer l’enregistrement si iOS le demande.</p>');
@@ -7311,130 +7302,6 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 
 
-<script>
-// ============================================================
-// PATCH IMPORT CSV LÉGER IMMATRICULATIONS — GROS FICHIERS iPHONE
-// Objectif : éviter l'ouverture XLSX lourde quand un export CSV filtré est disponible.
-// ============================================================
-(function(){
-  function _toastSafe(msg,dur){try{toast(msg,dur||2600);}catch(e){console.log(msg);}}
-  function parseCSVLine(line, delimiter){
-    var out=[], cur='', inQuotes=false;
-    for(var i=0;i<line.length;i++){
-      var ch=line[i];
-      if(ch==='"'){
-        if(inQuotes && line[i+1]==='"'){cur+='"';i++;}
-        else inQuotes=!inQuotes;
-      }else if(ch===delimiter && !inQuotes){out.push(cur);cur='';}
-      else cur+=ch;
-    }
-    out.push(cur);
-    return out;
-  }
-  function detectDelimiter(sample){
-    var semi=(sample.match(/;/g)||[]).length;
-    var comma=(sample.match(/,/g)||[]).length;
-    var tab=(sample.match(/\t/g)||[]).length;
-    if(tab>semi && tab>comma)return '\t';
-    return semi>=comma?';':',';
-  }
-  function parseCSVFile(file){
-    return new Promise(function(resolve,reject){
-      var reader=new FileReader();
-      reader.onload=function(e){
-        try{
-          var txt=String(e.target.result||'');
-          // Supprime BOM UTF-8 éventuel
-          if(txt.charCodeAt(0)===0xFEFF)txt=txt.slice(1);
-          var firstLine=(txt.split(/\r?\n/,1)[0]||'');
-          var delimiter=detectDelimiter(firstLine);
-          var lines=txt.split(/\r?\n/).filter(function(l){return l.trim()!=='';});
-          var data=[];
-          for(var i=0;i<lines.length;i++){
-            data.push(parseCSVLine(lines[i], delimiter).map(function(v){return String(v||'').trim();}));
-            if(i>0 && i%20000===0){/* laisse respirer console uniquement */}
-          }
-          resolve(data);
-        }catch(err){reject(err);}
-      };
-      reader.onerror=reject;
-      reader.readAsText(file,'utf-8');
-    });
-  }
-  function enhanceImportCardCSV(){
-    try{
-      var card=document.querySelector('#zone-immat');
-      if(card && !document.getElementById('file-immat-csv')){
-        card.insertAdjacentHTML('afterend',
-          '<input type="file" id="file-immat-csv" accept=".csv,.txt" style="display:none">'+
-          '<div class="file-zone" id="zone-immat-csv" style="border-color:var(--daf);background:var(--daf-bg);">'+
-          '<div class="fz-title">⚡ IMMATRICULATIONS CSV léger recommandé</div>'+
-          '<div class="fz-sub" id="immat-csv-status">Pour gros fichiers : exporter en CSV UTF-8 filtré depuis Excel</div>'+ 
-          '</div>'+
-          '<div style="font-size:10px;color:var(--text3);margin:-3px 0 8px;line-height:1.4;">Le CSV évite d’ouvrir un gros XLSX en mémoire sur iPhone. Colonnes attendues identiques au fichier immatriculations.</div>'
-        );
-      }
-    }catch(e){}
-  }
-  var _oldRenderImportCard = window.renderImportCard;
-  if(typeof _oldRenderImportCard==='function'){
-    window.renderImportCard=function(xlsxOk){
-      var html=_oldRenderImportCard(xlsxOk);
-      // insertion directe dans HTML si possible
-      if(html.indexOf('file-immat-csv')<0){
-        html=html.replace('<div id="import-diag"></div>',
-          '<input type="file" id="file-immat-csv" accept=".csv,.txt" style="display:none">'+
-          '<div class="file-zone" id="zone-immat-csv" style="border-color:var(--daf);background:var(--daf-bg);">'+
-          '<div class="fz-title">⚡ IMMATRICULATIONS CSV léger recommandé</div>'+ 
-          '<div class="fz-sub" id="immat-csv-status">Pour gros fichiers : exporter en CSV UTF-8 filtré depuis Excel</div>'+ 
-          '</div>'+ 
-          '<div style="font-size:10px;color:var(--text3);margin:-3px 0 8px;line-height:1.4;">Le CSV évite d’ouvrir un gros XLSX en mémoire sur iPhone. Colonnes attendues identiques au fichier immatriculations.</div>'+ 
-          '<div id="import-diag"></div>');
-      }
-      return html;
-    };
-  }
-  var _oldBindImportEvents = window.bindImportEvents;
-  window.bindImportEvents=function(){
-    if(typeof _oldBindImportEvents==='function')_oldBindImportEvents();
-    enhanceImportCardCSV();
-    var z=$('zone-immat-csv'), f=$('file-immat-csv');
-    if(z&&f){
-      z.onclick=function(){f.click();};
-      f.onchange=function(e){
-        var file=e.target.files&&e.target.files[0]; if(!file)return;
-        var st=$('immat-csv-status'); if(st)st.textContent='Lecture CSV en cours…';
-        _toastSafe('Lecture du CSV léger…');
-        parseCSVFile(file).then(function(data){
-          if(st)st.textContent=Math.max(0,data.length-1)+' lignes CSV lues';
-          if(typeof showImportFilterModal==='function')showImportFilterModal(file,data,'immat');
-          else {
-            var res=importVehicles(data,DB.getPossession());
-            DB.saveVehicles(res.vehicles).then(function(ok){
-              if(!ok){_toastSafe('Sauvegarde véhicules impossible');return;}
-              buildIndex();autoSave();renderScreen(currentScreen);
-              _toastSafe(res.vehicles.length+' véhicules importés depuis CSV');
-            });
-          }
-        }).catch(function(err){console.error(err); if(st)st.textContent='Erreur lecture CSV'; _toastSafe('Erreur lecture CSV');});
-      };
-    }
-  };
-  // Renforce le mode d’emploi si la fonction existe déjà
-  var _oldMode=window.renderModeEmploi;
-  if(typeof _oldMode==='function'){
-    window.renderModeEmploi=function(){
-      _oldMode();
-      try{
-        var body=$('modal-body')||$('sheet-body')||document.querySelector('.sheet-body');
-        if(body && body.innerHTML.indexOf('Import CSV léger')<0){
-          body.insertAdjacentHTML('beforeend','<hr style="border-color:var(--border);margin:12px 0"><h3>Import CSV léger pour gros fichiers</h3><p><strong>Pourquoi :</strong> un gros XLSX peut faire planter l’iPhone car il est décompressé entièrement en mémoire avant filtrage.</p><p><strong>Solution :</strong> depuis Excel, filtrer les immatriculations utiles puis enregistrer en CSV UTF-8. Dans PLUS, utiliser le bouton <strong>IMMATRICULATIONS CSV léger recommandé</strong>.</p><p><strong>Effet :</strong> mêmes colonnes attendues, mêmes filtres année/vendeur/pays/département, mais lecture plus légère.</p>');
-        }
-      }catch(e){}
-    };
-  }
-})();
-</script>
 
 
 
