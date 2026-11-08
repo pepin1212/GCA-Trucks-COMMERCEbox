@@ -381,7 +381,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-08-bases-v95';
+const APP_BUILD='2026-11-08-bases-v97';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -1562,23 +1562,79 @@ function importVehicles(data, possession){
   const sansMarque=unique.filter(v=>!v.marque).length;
   return{vehicles:unique,cols:headers.filter(Boolean),stats:{total:rows.length,reconnus:unique.length,sansSiret:sansSiret,sansFiche:sansFiche,enrichedFromCrm:0,sansTva:sansTva,sansDate:sansDate,sansPlaque:sansPlaque,sansType:sansType,sansMarque:sansMarque,dups:dups.length}};
 }
+function plateKey(p){return String(p||'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
+function immatWhen(d){
+  if(!d)return 'date non renseignée';
+  var m=String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m?m[3]+'/'+m[2]+'/'+m[1]:String(d);
+}
+function immatWho(v){
+  var c=null;
+  try{c=resolveClientForVehicle(v);}catch(e){}
+  var nom=(c&&c.nom)||(v&&v.client)||(v&&v.tva)||'client non nommé';
+  var bits=[nom];
+  if(v&&v.marque)bits.push(v.marque);
+  if(v&&v.type)bits.push(v.type);
+  bits.push(immatWhen(v&&v.date));
+  bits.push(v&&v.siret?('SIRET '+v.siret):'SIRET non renseigné');
+  return bits.join(' · ');
+}
+function immatChanges(oldV, neu){
+  var out=[];
+  function add(label,a,b){a=a||'—';b=b||'—';if(String(a)!==String(b))out.push(label+' : '+a+' → '+b);}
+  add('Date', immatWhen(oldV.date)==='date non renseignée'?'':immatWhen(oldV.date), immatWhen(neu.date)==='date non renseignée'?'':immatWhen(neu.date));
+  add('Marque', oldV.marque, neu.marque);
+  add('Type', oldV.type, neu.type);
+  add('SIRET', oldV.siret, neu.siret);
+  add('TVA', oldV.tva, neu.tva);
+  return out;
+}
 function appendImmatRows(data){
   var res=importVehicles(data, null);
-  var have={};
-  (DB.getVehicles()||[]).forEach(function(v){have[vehicleIdentity(v)]=1;});
-  var add=[], skipped=0, sansFiche=0;
+  var byPlate={};
+  (DB.getVehicles()||[]).forEach(function(v){
+    var k=plateKey(v&&v.plaque);
+    if(!k)return;
+    if(!byPlate[k])byPlate[k]=[];
+    byPlate[k].push(v);
+  });
+  var add=[], matches=[], noPlate=0, sansFiche=0, seenFile={};
   res.vehicles.forEach(function(v){
-    var k=vehicleIdentity(v);
-    if(have[k]){skipped++;return;}
-    have[k]=1;
+    var k=plateKey(v.plaque);
+    if(!k){noPlate++;return;}
+    if(seenFile[k])return;
+    seenFile[k]=1;
+    if(byPlate[k]){matches.push({file:v, existing:byPlate[k]});return;}
     v.fromOrigin=false;
     add.push(v);
     if(isSansFicheVehicle(v))sansFiche++;
   });
-  openModal('Ajouter les immatriculations','<p style="font-size:12px;color:var(--text2);line-height:1.55;">Lignes lues : <strong>'+res.stats.total+'</strong><br>Nouvelles : <strong>'+add.length+'</strong><br>Déjà présentes : <strong>'+(skipped+(res.stats.dups||0))+'</strong><br>Sans fiche parmi les nouvelles : <strong>'+sansFiche+'</strong><br>Sans TVA, ignorées : <strong>'+(res.stats.sansTva||0)+'</strong></p><p style="font-size:12px;color:var(--text2);">Le parc déjà enregistré ne change pas.</p>',[
+  var html='<p style="font-size:12px;color:var(--text2);line-height:1.55;">Lignes lues : <strong>'+res.stats.total+'</strong><br>Plaques nouvelles : <strong>'+add.length+'</strong><br>Déjà dans l’application : <strong>'+matches.length+'</strong><br>Sans plaque, ignorées : <strong>'+noPlate+'</strong><br>Sans fiche parmi les nouvelles : <strong>'+sansFiche+'</strong><br>Sans TVA, ignorées : <strong>'+(res.stats.sansTva||0)+'</strong></p>';
+  if(matches.length){
+    html+='<p style="font-size:12px;color:var(--text2);margin:8px 0;">Ces plaques sont déjà enregistrées. Elles ne sont pas ajoutées une seconde fois. Le véhicule déjà là reste inchangé.</p>';
+    html+='<div style="max-height:46vh;overflow:auto;">';
+    var shown=Math.min(matches.length,40);
+    for(var i=0;i<shown;i++){
+      var m=matches[i];
+      var plaque=m.existing[0].plaque||m.file.plaque;
+      html+='<div style="margin:0 0 8px;padding:8px;background:var(--bg3);border-radius:8px;">';
+      html+='<div style="font-size:14px;font-weight:800;">'+escH(plaque)+'</div>';
+      m.existing.forEach(function(oldV){
+        html+='<div style="font-size:12px;color:var(--text2);margin-top:3px;">Déjà dans l’application : '+escH(immatWho(oldV))+'</div>';
+        var ch=immatChanges(oldV, m.file);
+        if(ch.length)html+='<div style="font-size:12px;margin-top:2px;">Dans le fichier : '+escH(ch.join(' · '))+'</div>';
+        else html+='<div style="font-size:12px;color:var(--text3);margin-top:2px;">Le fichier indique la même chose.</div>';
+      });
+      html+='</div>';
+    }
+    if(matches.length>shown)html+='<div style="font-size:12px;color:var(--text3);">Et '+(matches.length-shown)+' autre(s) plaque(s) déjà présente(s).</div>';
+    html+='</div>';
+  }
+  html+='<p style="font-size:12px;color:var(--text2);">Valider ajoute seulement les plaques nouvelles.</p>';
+  openModal(matches.length?'Plaques déjà présentes':'Ajouter les immatriculations', html, [
     {label:'Annuler',cls:'btn-ghost'},
-    {label:'Ajouter',cls:'btn-primary',action:function(){
-      if(!add.length){toast('Aucune ligne nouvelle');return;}
+    {label:add.length?('Ajouter les '+add.length+' nouvelles'):'Aucune plaque nouvelle',cls:'btn-primary',action:function(){
+      if(!add.length){toast('Aucune plaque nouvelle');return;}
       DB.saveVehicles((DB.getVehicles()||[]).concat(add)).then(function(ok){
         if(!ok){toast('Sauvegarde impossible');return;}
         buildIndex();autoSave();
@@ -3490,7 +3546,7 @@ function renderImportCard(xlsxOk){
       <div class="fz-sub" id="immat-status">Ajoute les lignes nouvelles. Le parc déjà présent reste en place.</div>
     </div>
     <button type="button" class="btn btn-ghost" id="btn-replace-immat" style="width:100%;margin-top:6px;">Remplacer tout le parc</button>
-    <div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Parc vide : le fichier charge l’historique. Parc déjà rempli : seules les lignes nouvelles sont ajoutées. Une ligne déjà connue est ignorée. Avec SIRET, le camion va sur ce site. Sans SIRET, il va sur la fiche seulement si la TVA n’a qu’un site.</div>
+    <div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Parc vide : le fichier charge l’historique. Parc déjà rempli : une plaque nouvelle est ajoutée. Une plaque déjà là est montrée, avec le véhicule déjà enregistré, avant validation. Elle n’est pas ajoutée une seconde fois. Avec SIRET, le camion va sur ce site. Sans SIRET, il va sur la fiche seulement si la TVA n’a qu’un site.</div>
     <div id="import-diag"></div>
   </div>`;
 }
@@ -4297,7 +4353,7 @@ function bindEvents(){
   QA('.nav-item[data-screen]').forEach(function(el){el.onclick=function(){showScreen(el.dataset.screen);};});
   safeOn('sheet-close','click',closeSheet);
   safeOn('sheet-ov','click',function(e){if(e.target===$('sheet-ov'))closeSheet();});
-  safeOn('modal-ov','click',function(e){if(e.target===$('modal-ov'))closeModal();});
+  safeOn('modal-ov','click',function(e){if(e.target===$('modal-ov')&&!$('modal-ov').getAttribute('data-lock'))closeModal();});
   safeOn('tours-search','input',function(){toursSearch=this.value;debouncedTours();});
   QA('#tours-fpills .fpill').forEach(function(el){
     el.onclick=function(){
@@ -8461,14 +8517,14 @@ document.addEventListener('DOMContentLoaded',function(){
     var html='<div style="padding:10px 12px 20px;"><h3 style="margin-bottom:8px;">Mode d’emploi — DAF CommerceBox</h3><div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Build '+APP_BUILD+'</div>';
     html+=sec('1. Principe','<p>L’application travaille sur sa propre copie : fiches clients et immatriculations. Marché analyse le parc. IMMAT liste les immatriculations par site. Tournées prépare les visites. Affaires suit les projets et les affaires chaudes. Commissions suit les commandes et les livraisons. Activité est le journal de l’appareil. Plus réunit l’import, le JSON, le coffre et Qualité.</p><p>Les filtres de Marché, de Tournées et d’IMMAT sont indépendants.</p>');
     html+=sec('2. Enregistrer','<p>Le bouton <strong>Enregistrer</strong> en bas de l’écran télécharge le fichier <strong>DAF_Professional_sauvegarde.json</strong> puis propose l’envoi au coffre. Sur iPhone, iOS peut demander où ranger le fichier. L’application n’écrit pas dans le fichier Excel d’origine.</p><p>Plus → <strong>Exporter sauvegarde JSON</strong> crée un fichier daté, sans envoi au coffre. Plus → <strong>Charger sauvegarde JSON</strong> remplace la base de cet appareil après confirmation.</p><p>Il n’y a plus de téléchargement automatique.</p>');
-    html+=sec('3. Coffre','<p>Le coffre transporte une copie entre iPhone, iPad et Mac. Chaque envoi remplace la copie déjà là : une seule reste. Rien ne remplace un appareil sans confirmation, avec la date, le nom de l’appareil, le nombre de clients et le nombre de véhicules. Un envoi sans client est refusé. Une base beaucoup plus petite demande une seconde confirmation. Si deux appareils ont changé chacun de leur côté, vous choisissez avant que le coffre soit remplacé.</p><p>Le coffre a besoin d’une connexion et d’un compte. S’il est injoignable, le JSON reste le moyen de récupérer la base.</p>');
+    html+=sec('3. Coffre','<p>Le coffre transporte une copie entre iPhone, iPad et Mac. Chaque envoi remplace la copie déjà là : une seule reste. La fenêtre d’envoi montre deux lignes en gris : <strong>Nouvelle copie enregistrée</strong>, puis <strong>Ancienne copie effacée</strong>. Chacune passe en blanc gras avec une coche verte quand elle est finie. <strong>Fermer</strong> apparaît ensuite. Rien ne remplace un appareil sans confirmation, avec la date, le nom de l’appareil, le nombre de clients et le nombre de véhicules. Un envoi sans client est refusé. Une base beaucoup plus petite demande une seconde confirmation. Si deux appareils ont changé chacun de leur côté, vous choisissez avant que le coffre soit remplacé.</p><p>Le coffre a besoin d’une connexion et d’un compte. S’il est injoignable, le JSON reste le moyen de récupérer la base.</p>');
     html+=sec('4. Marché','<p>Recherche client, ville, TVA ou immatriculation. Périmètre : site seul ou tout le groupe. Filtres EXCLUS, ACCESSIBLES, INACTIFS, en trois états : neutre, OFF (retire), ON (ne garde que). <strong>Sites sec.</strong> est neutre à l’ouverture : les sites secondaires restent visibles. Profils commerciaux, type tracteur ou porteur, cantons et villes. Un clic sur un chiffre du tableau ouvre la liste, avec export Excel. Cet export contient la colonne <strong>Possession</strong>, OUI ou NON.</p>');
     html+=sec('5. IMMAT','<p>Une ligne par site, avec les volumes par année et le score. La recherche, les filtres de page, les tris et les filtres de colonnes sont enregistrés avec le JSON et le coffre. Le défilement n’est pas enregistré.</p><p>Le filtre <strong>PROJET</strong> en OFF retire les projets de l’année en cours, les projets <strong>FUTUR</strong> quelle que soit leur date, et les pas de projet de l’année en cours. En ON, il ne garde que ces fiches.</p><p>La colonne visite distingue A visiter, Visité et Ne pas visiter. Le bouton <strong>P</strong> propose Projet, Pas de projet et Simple visite.</p><p>L’export Excel d’une case contient la colonne Possession.</p>');
     html+=sec('6. Tournées','<p>Mêmes masques en trois états : EXCLUS, ACCESSIBLES, INACTIFS, Projets, Sites sec., Sans fiche. Le filtre Projets suit la même règle que sur IMMAT. Types : tous, tracteurs, porteurs. Profils commerciaux à la place des anciens boutons Flotte. Le bouton <strong>P</strong> ouvre Projet, Pas de projet ou Simple visite. + Créer groupe, Ouvrir et Fermer agissent sur la liste.</p>');
     html+=sec('7. Fiche client','<p><strong>Modifier la fiche</strong> change le nom, l’adresse, la ville, le canton, le département, le pays, le vendeur et le téléphone de ce site. La TVA et le SIRET d’une fiche déjà créée restent fixes. Un client créé dans l’application et ces modifications sont dans le JSON et le coffre. Un import CRM les réapplique.</p><p><strong>Projet détecté</strong> ouvre une affaire. <strong>Pas de projet</strong> concerne l’année en cours. <strong>Simple visite</strong> enregistre la date du jour et un commentaire. Elle ne crée ni projet, ni affaire, ni commission, et ne retire pas le client des tournées.</p><p>L’historique affiche ces trois événements, du plus récent au plus ancien, avec Supprimer après confirmation. Supprimer un projet retire aussi l’affaire et les commissions liées. Supprimer Pas de projet retire le masquage de l’année. Supprimer une simple visite ne retire que la ligne.</p><p>Possession OUI ou NON se règle sur chaque véhicule du parc. NON le sort des opportunités de renouvellement. Le véhicule reste exportable, avec Possession = NON.</p>');
     html+=sec('8. Affaires et Commissions','<p>Affaires regroupe les projets et les affaires chaudes. Le bouton Créer un projet client ouvre le même formulaire que sur la fiche.</p><p>Commissions regroupe les livraisons. Le tableau de suivi, replié au départ, compte les camions en commande et en livraison, mois par mois. Un clic sur le client ouvre la fiche. Un clic sur le nombre de commandes ouvre l’affaire. Un clic sur le nombre de livraisons filtre les commissions de ce client pour ce mois.</p>');
     html+=sec('9. Activité','<p>Le journal liste les actions de cet appareil. Chaque ligne a <strong>Fiche client</strong> et <strong>Supprimer</strong>. Le filtre <strong>Projet / Pas de projet / Visite</strong> garde aussi le résultat d’un projet. La création d’un projet laisse une ligne. Le passage de EN COURS à GAGNÉ, ou vers un autre résultat, laisse une deuxième ligne.</p><p>Le journal part dans le JSON et dans le coffre. Un appareil neuf le retrouve avec le reste de la base.</p>');
-    html+=sec('10. Plus','<p><strong>BASE CRM</strong> charge les clients. <strong>Nouvelles immatriculations</strong> ajoute seulement les lignes qui ne sont pas déjà dans le parc. Une ligne déjà connue est ignorée. Avec un SIRET, le camion va sur ce site. Sans SIRET, il va sur la fiche seulement si la TVA a un seul site. Sinon il reste sans fiche. <strong>Remplacer tout le parc</strong> est à part et demande confirmation.</p><p><strong>Mémoriser les fichiers d’origine</strong> se fait une fois. Cela ne change pas les fiches ni le parc. <strong>Exporter les deux Excel</strong> reprend les colonnes de ces fichiers. Une cellule modifiée est en rouge. Une fiche créée ou une immatriculation ajoutée est en rouge sur toute la ligne. Les fichiers d’origine ne sont pas réécrits. Projets, affaires, commissions et journal restent dans le JSON et le coffre.</p><p><strong>Créer un client</strong> ajoute une fiche. <strong>Qualité</strong> signale les écarts de TVA, de SIRET et de rattachement. <strong>Forcer la mise à jour</strong> recharge la version de l’application. <strong>Tout effacer</strong> vide la base de cet appareil après confirmation. La copie déjà envoyée au coffre reste en ligne.</p>');
+    html+=sec('10. Plus','<p><strong>BASE CRM</strong> charge les clients. <strong>Nouvelles immatriculations</strong> ajoute une plaque qui n’est pas encore dans le parc. Si la plaque existe déjà, la fenêtre montre le véhicule déjà enregistré avant la validation. Cette plaque n’est pas ajoutée une seconde fois. Avec un SIRET, le camion va sur ce site. Sans SIRET, il va sur la fiche seulement si la TVA a un seul site. Sinon il reste sans fiche. <strong>Remplacer tout le parc</strong> est à part et demande confirmation.</p><p><strong>Mémoriser les fichiers d’origine</strong> se fait une fois. Cela ne change pas les fiches ni le parc. <strong>Exporter les deux Excel</strong> reprend les colonnes de ces fichiers. Une cellule modifiée est en rouge. Une fiche créée ou une immatriculation ajoutée est en rouge sur toute la ligne. Les fichiers d’origine ne sont pas réécrits. Projets, affaires, commissions et journal restent dans le JSON et le coffre.</p><p><strong>Créer un client</strong> ajoute une fiche. <strong>Qualité</strong> signale les écarts de TVA, de SIRET et de rattachement. <strong>Forcer la mise à jour</strong> recharge la version de l’application. <strong>Tout effacer</strong> vide la base de cet appareil après confirmation. La copie déjà envoyée au coffre reste en ligne.</p>');
     html+=sec('11. Récupérer un appareil neuf','<p>Installez l’application, puis Plus → Charger sauvegarde JSON, ou récupérez le coffre. La base revient telle qu’elle était à l’enregistrement : clients, fiches modifiées, clients créés, immatriculations, possession OUI/NON, projets, affaires, commissions, archives, groupes, contacts, exclusions, accessibles, réglages d’IMMAT et journal Activité.</p><p>Le coffre et le JSON portent le même contenu. Si le coffre est injoignable, le JSON suffit. La connexion au coffre, elle, se refait sur le nouvel appareil.</p>');
     html+='</div>';
     openSheet('Mode d’emploi complet',html);
@@ -13824,25 +13880,58 @@ document.addEventListener('DOMContentLoaded',function(){
   function deleteExcept(token, keepId){
     return api('/rest/v1/coffre_snapshots?id=neq.'+encodeURIComponent(keepId),{method:'DELETE',token:token,prefer:'return=minimal'}).catch(function(){return null;});
   }
-  function sendReplacing(token, data, previous){
+  function coffreStepRow(id, label){
+    return '<div id="'+id+'" style="display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--text3);font-size:16px;"><span class="coffre-mark" style="width:28px;text-align:center;font-size:22px;font-weight:800;line-height:1;">○</span><span>'+label+'</span></div>';
+  }
+  function openSendProgress(){
+    var ov=$('modal-ov'); if(ov)ov.setAttribute('data-lock','1');
+    openModal('Envoi vers le coffre', coffreStepRow('coffre-step-1','Nouvelle copie enregistrée')+coffreStepRow('coffre-step-2','Ancienne copie effacée')+'<div id="coffre-step-detail" style="font-size:12px;color:var(--text2);line-height:1.45;"></div>', []);
+  }
+  function markSendStep(id, ok){
+    var el=document.getElementById(id); if(!el)return;
+    el.style.color='var(--text)';
+    el.style.fontWeight='800';
+    var mark=el.querySelector('.coffre-mark');
+    if(mark){mark.textContent=ok?'✓':'!'; mark.style.color=ok?'var(--green)':'var(--red)';}
+  }
+  function sendDetail(html){
+    var d=document.getElementById('coffre-step-detail');
+    if(d)d.innerHTML=html||'';
+  }
+  function unlockSend(){
+    var foot=$('modal-foot'); if(!foot)return;
+    foot.innerHTML='<button class="btn btn-primary" id="coffre-send-close" style="width:100%;">Fermer</button>';
+    var b=$('coffre-send-close');
+    if(b)b.onclick=function(){
+      var ov=$('modal-ov'); if(ov)ov.removeAttribute('data-lock');
+      closeModal(); paint();
+    };
+  }
+  function beginSend(token, data, previous){
+    openSendProgress();
     var keep=previous&&previous.id;
     var prep=keep?deleteExcept(token, keep):Promise.resolve();
-    return prep.then(function(){return upload(token, data, keep||null);}).then(function(snap){
-      if(!keep)return snap;
-      return deleteExcept(token, snap.id).then(function(){return listSnapshots(token);}).then(function(rows){
+    prep.then(function(){return upload(token, data, keep||null);}).then(function(snap){
+      markSynced(snap.id);
+      markSendStep('coffre-step-1', true);
+      var done=function(msg){sendDetail('<p>'+msg+'</p>'); unlockSend();};
+      if(!keep){markSendStep('coffre-step-2', true); done('Aucune ancienne copie. Tu peux quitter l’application.'); return;}
+      deleteExcept(token, snap.id).then(function(){return listSnapshots(token);}).then(function(rows){
         rows=rows||[];
-        snap.replaced=rows.length===1&&rows[0]&&rows[0].id===snap.id;
-        return snap;
+        var ok=rows.length===1&&rows[0]&&rows[0].id===snap.id;
+        markSendStep('coffre-step-2', ok);
+        if(ok)done('Tu peux quitter l’application.');
+        else done('La nouvelle copie est enregistrée. L’ancienne copie est encore dans le coffre.');
+      }).catch(function(){
+        markSendStep('coffre-step-2', false);
+        done('La nouvelle copie est enregistrée. L’effacement de l’ancienne copie n’a pas abouti.');
       });
+    }).catch(function(err){
+      markSendStep('coffre-step-1', false);
+      var msg=tableMissing(err)?'Le coffre n’est pas encore préparé dans Supabase.':(err&&err.message?err.message:'Coffre indisponible');
+      sendDetail('<p>'+escH(msg)+'</p><p>La copie précédente du coffre est toujours là.</p>');
+      unlockSend();
     });
-  }
-  function finishSend(snap){
-    markSynced(snap.id);closeModal();paint();
-    if(snap.replaced===false){
-      openModal('Anciennes copies encore là','<p style="font-size:12px;color:var(--text2);line-height:1.5;">La nouvelle copie est enregistrée. Supabase refuse encore d’effacer les précédentes. Dans <strong>SQL Editor</strong>, nouvelle requête, collez ce script, sélectionnez tout, puis <strong>Run</strong>. L’envoi suivant ne gardera qu’une copie.</p><pre style="font-size:10px;white-space:pre-wrap;background:var(--bg3);padding:8px;border-radius:8px;">drop policy if exists "snap delete" on public.coffre_snapshots;\ncreate policy "snap delete" on public.coffre_snapshots for delete to authenticated using (user_id = auth.uid());\ngrant delete on public.coffre_snapshots to authenticated;</pre>',[{label:'Compris',cls:'btn-primary'}]);
-      return;
-    }
-    toast(snap.replaced?'Coffre remplacé':'Envoyé au coffre');
   }
   function markSynced(id){lsSet('daf_coffre_base',id||'');lsDel('daf_coffre_dirty');}
   function isDirty(){return lsGet('daf_coffre_dirty')==='1';}
@@ -13888,7 +13977,7 @@ document.addEventListener('DOMContentLoaded',function(){
         openModal('Envoyer vers le coffre', localBlock()+snapBlock('Dernière copie du coffre', latest)+'<p style="font-size:12px;color:var(--text2);">Cet envoi remplace la copie du coffre. L’ancienne est effacée quand la nouvelle est complète. La base de cet appareil ne change pas.</p>',[
           {label:'Annuler',cls:'btn-ghost'},
           {label:'Envoyer',cls:'btn-primary',close:false,action:function(){
-            sendReplacing(s.access_token, data, latest).then(finishSend).catch(function(err){guard(err);});
+            beginSend(s.access_token, data, latest);
           }}
         ]);
       });
@@ -13906,8 +13995,8 @@ document.addEventListener('DOMContentLoaded',function(){
       {label:'Prendre le coffre',cls:'btn-secondary',close:false,action:function(){applySnap(token, latest).then(closeModal).catch(guard);}},
       {label:'Garder cet appareil',cls:'btn-primary',close:false,action:function(){
         var local=countsOf(data);
-        if(tooSmall(local, latest)){closeModal();showSmall(latest, function(){sendReplacing(token, data, latest).then(finishSend).catch(guard);});return;}
-        sendReplacing(token, data, latest).then(finishSend).catch(guard);
+        if(tooSmall(local, latest)){closeModal();showSmall(latest, function(){beginSend(token, data, latest);});return;}
+        beginSend(token, data, latest);
       }}
     ]);
   }
