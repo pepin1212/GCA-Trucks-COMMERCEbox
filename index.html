@@ -450,7 +450,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-fix-ui-freeze-v1';
+const APP_BUILD='2026-11-10-plan-perf-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -14450,6 +14450,9 @@ document.addEventListener('DOMContentLoaded',function(){
   var SORT={key:'client', dir:1};
   var COLF={};
   var RH=40;
+  var PLAN_CACHE_VER=0;
+  var PLAN_INCL_CACHE={ver:-1, year:0, map:null};
+  var PLAN_MODEL_CACHE={ver:-1, sig:'', rows:null};
   var DEFAULT_ACTIONS=[
     {id:'demo_tracteur', label:'DEMO TRACTEUR'},
     {id:'electrique', label:'ÉLECTRIQUE'},
@@ -14459,18 +14462,26 @@ document.addEventListener('DOMContentLoaded',function(){
   function attr(s){return escH(s).replace(/"/g,'&quot;');}
   function seedYear(){return YEAR + 1;}
   function loadSettings(){return getAppSettings()||{};}
+  function bumpPlanCaches(){
+    PLAN_CACHE_VER++;
+    PLAN_INCL_CACHE={ver:-1, year:0, map:null};
+    PLAN_MODEL_CACHE={ver:-1, sig:'', rows:null};
+  }
 
   function ensureIn(st){
-    if(!st.planVentes || typeof st.planVentes!=='object')st.planVentes={activeYear:seedYear(), years:{}};
-    if(!st.planVentes.years || typeof st.planVentes.years!=='object')st.planVentes.years={};
+    var created=false;
+    if(!st.planVentes || typeof st.planVentes!=='object'){st.planVentes={activeYear:seedYear(), years:{}}; created=true;}
+    if(!st.planVentes.years || typeof st.planVentes.years!=='object'){st.planVentes.years={}; created=true;}
     var y=parseInt(st.planVentes.activeYear,10);
-    if(!y){y=seedYear(); st.planVentes.activeYear=y;}
+    if(!y){y=seedYear(); st.planVentes.activeYear=y; created=true;}
     if(!st.planVentes.years[String(y)]){
       st.planVentes.years[String(y)]={
         actions:DEFAULT_ACTIONS.map(function(a){return {id:a.id,label:a.label};}),
         rows:{}
       };
+      created=true;
     }
+    st._planCreated=created;
     return st.planVentes;
   }
 
@@ -14478,13 +14489,24 @@ document.addEventListener('DOMContentLoaded',function(){
     var st=loadSettings();
     var pv=ensureIn(st);
     var out=fn(pv, st);
+    bumpPlanCaches();
     saveAppSettings(st);
     return out;
   }
 
   function read(){
     var st=loadSettings();
-    return ensureIn(st);
+    var pv=ensureIn(st);
+    if(st._planCreated){delete st._planCreated; bumpPlanCaches(); saveAppSettings(st);}
+    return pv;
+  }
+
+  function ensurePlanReady(){
+    var st=loadSettings();
+    var pv=ensureIn(st);
+    yearDataOf(pv, pv.activeYear);
+    if(st._planCreated){delete st._planCreated; bumpPlanCaches(); saveAppSettings(st);}
+    return pv;
   }
 
   function activeYear(){
@@ -14615,29 +14637,39 @@ document.addEventListener('DOMContentLoaded',function(){
     return {hasProjet:has, pasProjet:pas && !has, simpleVisite:(!has && !pas && hasSimpleVisite(entity, YEAR))};
   }
 
-  function portefeuilleForEntity(entity, n){
-    var keys={}, i;
-    for(i=0;i<(entity.siteKeys||[]).length;i++)keys[entity.siteKeys[i]]=true;
-    var dels=(typeof getDeliveries==='function'?getDeliveries():[])||[];
-    var total=0;
-    dels.forEach(function(d){
-      if(!d)return;
-      if(String(d.vnvo||'VN').toUpperCase()!=='VN')return;
-      if(getYear(d.deliveryDate)!==n)return;
-      var sk=d.siteKey||'';
-      if(sk&&keys[sk]){total++; return;}
-      if(!sk&&d.tva&&String(d.tva)===String(entity.tva||''))total++;
-    });
+  function portefeuilleMapForYear(n){
+    var bySk={}, byTva={}, dels=(typeof getDeliveries==='function'?getDeliveries():[])||[], i, d, sk;
+    for(i=0;i<dels.length;i++){
+      d=dels[i]; if(!d)continue;
+      if(String(d.vnvo||'VN').toUpperCase()!=='VN')continue;
+      if(getYear(d.deliveryDate)!==n)continue;
+      sk=d.siteKey||'';
+      if(sk)bySk[sk]=(bySk[sk]||0)+1;
+      else if(d.tva)byTva[String(d.tva)]=(byTva[String(d.tva)]||0)+1;
+    }
+    return {bySk:bySk, byTva:byTva};
+  }
+  function portefeuilleForEntity(entity, n, map){
+    if(!map)map=portefeuilleMapForYear(n);
+    var total=0, i, sk;
+    for(i=0;i<(entity.siteKeys||[]).length;i++){
+      sk=entity.siteKeys[i];
+      total+=map.bySk[sk]||0;
+    }
+    if(!total && entity.tva)total+=map.byTva[String(entity.tva)]||0;
     return total;
   }
 
   function includedSiteMap(y){
-    var map={}, entities=buildEntities(), pv=read(), yd=yearDataOf(pv, y||pv.activeYear), i, ent, key, st;
+    y=parseInt(y,10)||activeYear();
+    if(PLAN_INCL_CACHE.map && PLAN_INCL_CACHE.ver===PLAN_CACHE_VER && PLAN_INCL_CACHE.year===y)return PLAN_INCL_CACHE.map;
+    var map={}, entities=buildEntities(), pv=read(), yd=yearDataOf(pv, y), i, ent, key, st;
     for(i=0;i<entities.length;i++){
       ent=entities[i]; key=entityKey(ent); st=rowStateOf(yd, key);
       if(!st.included)continue;
       (ent.siteKeys||[]).forEach(function(sk){map[sk]=true;});
     }
+    PLAN_INCL_CACHE={ver:PLAN_CACHE_VER, year:y, map:map};
     return map;
   }
 
@@ -14645,6 +14677,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if(!sk)return false;
     try{return !!includedSiteMap(activeYear())[sk];}catch(e){return false;}
   };
+  window.invalidatePlanCaches=bumpPlanCaches;
 
   function ensureGF(){
     if(GF.planSearch==null)GF.planSearch='';
@@ -14779,12 +14812,10 @@ document.addEventListener('DOMContentLoaded',function(){
     var f=GF.planF||'all';
     if(f==='daf_with'&&!(model.dafCount>0))return false;
     if(f==='no_daf'&&!(model.parc>0&&model.dafCount===0))return false;
-    if(ent.kind==='solo'&&typeof getSitePrincipalInfo==='function'){
-      var info=getSitePrincipalInfo(sk);
-      var sec=!!(info&&info.hasGroup&&!info.principal);
+    if(ent.kind==='solo'){
       var ss=GF.planMaskSitesSec||'exclude';
-      if(ss==='only'&&!sec)return false;
-      if(ss==='exclude'&&sec)return false;
+      if(ss==='only'&&!model.sec)return false;
+      if(ss==='exclude'&&model.sec)return false;
     }
     var d3=GF.planMaskDaf3Ans||'neutral';
     if(d3!=='neutral'&&typeof siteHasDafInLast36Months==='function'){
@@ -14794,34 +14825,74 @@ document.addEventListener('DOMContentLoaded',function(){
     return true;
   }
 
+  function statsFromVehicles(veh, n, yearType){
+    var n3={d:0,h:0}, n2={d:0,h:0}, n1={d:0,h:0}, n0={d:0,h:0}, tr={d:0,h:0}, po={d:0,h:0}, tot={d:0,h:0};
+    var parc=0, dafCount=0, cp=false, i, v, y, daf, age;
+    for(i=0;i<veh.length;i++){
+      v=veh[i];
+      y=getYear(v.date);
+      daf=isDaf(v);
+      if(yearType==='tracteur'&&!isTracteur(v)){/* skip typed counts */}
+      else if(yearType==='porteur'&&!isPorteur(v)){/* skip */}
+      else {
+        parc++;
+        if(daf)dafCount++;
+        if(y){
+          age=n-y;
+          if(age===3){if(daf)n3.d++; else n3.h++;}
+          else if(age===2){if(daf)n2.d++; else n2.h++;}
+          else if(age===1){if(daf)n1.d++; else n1.h++;}
+          else if(age===0){if(daf)n0.d++; else n0.h++;}
+          if(age>=1&&age<=10){if(daf)tot.d++; else tot.h++;}
+        }
+      }
+      if(y&&isTracteur(v)){
+        age=n-y;
+        if(age>=4&&age<=6){if(daf)tr.d++; else tr.h++;}
+      }
+      if(y&&isPorteur(v)){
+        age=n-y;
+        if(age>=5&&age<=7){if(daf)po.d++; else po.h++;}
+      }
+      if(!cp&&daf&&y&&y>=n-5&&y<=n-1)cp=true;
+    }
+    return {n3:n3,n2:n2,n1:n1,n0:n0,tr:tr,po:po,tot:tot,parc:parc,dafCount:dafCount,cp:cp?'C':'P'};
+  }
+  function modelSig(){
+    var nc=0, nv=0, ng=0;
+    try{nc=(DB.getClients()||[]).length; nv=(DB.getVehicles()||[]).length; ng=(getAllGroups()||[]).length;}catch(e){}
+    return String(activeYear())+'|'+(GF.planTypeFilter||'tous')+'|'+PLAN_CACHE_VER+'|'+nc+'|'+nv+'|'+ng;
+  }
   function buildModels(){
     ensureGF();
+    var sig=modelSig();
+    if(PLAN_MODEL_CACHE.rows && PLAN_MODEL_CACHE.ver===PLAN_CACHE_VER && PLAN_MODEL_CACHE.sig===sig)return PLAN_MODEL_CACHE.rows;
     var pv=read(), n=parseInt(pv.activeYear,10)||seedYear(), yd=yearDataOf(pv, n);
-    var entities=buildEntities(), rows=[], i, ent, key, st, veh, flags, tf, yearType;
-    var yN3=yearWindow(n,-3,-3), yN2=yearWindow(n,-2,-2), yN1=yearWindow(n,-1,-1), yN=yearWindow(n,0,0);
-    var yTr=yearWindow(n,-6,-4), yPo=yearWindow(n,-7,-5), y10=yearWindow(n,-10,-1);
+    var entities=buildEntities(), rows=[], i, ent, key, st, veh, flags, tf, stats, pfMap;
     tf=GF.planTypeFilter||'tous';
-    yearType=tf==='tous'?null:tf;
+    var yearType=tf==='tous'?null:tf;
+    pfMap=portefeuilleMapForYear(n);
     for(i=0;i<entities.length;i++){
-      ent=entities[i]; key=entityKey(ent); st=rowStateOf(yd, key); veh=vehiclesForEntity(ent); flags=projectFlags(ent);
-      var parc=0, dafCount=0, vi, vv;
-      for(vi=0;vi<veh.length;vi++){
-        vv=veh[vi];
-        if(tf==='tracteur'&&!isTracteur(vv))continue;
-        if(tf==='porteur'&&!isPorteur(vv))continue;
-        parc++;
-        if(isDaf(vv))dafCount++;
+      ent=entities[i]; key=entityKey(ent); st=rowStateOf(yd, key);
+      veh=vehiclesForEntity(ent);
+      flags=projectFlags(ent);
+      stats=statsFromVehicles(veh, n, yearType);
+      var sk=ent.principal?(ent.principal._siteKey||makeSiteKey(ent.principal)):'';
+      var sec=false;
+      if(ent.kind==='solo'&&sk&&typeof getSitePrincipalInfo==='function'){
+        var info=getSitePrincipalInfo(sk);
+        sec=!!(info&&info.hasGroup&&!info.principal);
       }
       rows.push({
         ent:ent, key:key, included:!!st.included, objectif:parseInt(st.objectif,10)||0, actions:Object.assign({}, st.actions||{}),
-        cp:isClientC(veh,n)?'C':'P',
-        n3:countPair(veh,yN3,yearType), n2:countPair(veh,yN2,yearType), n1:countPair(veh,yN1,yearType), n0:countPair(veh,yN,yearType),
-        tr:countPair(veh,yTr,'tracteur'), po:countPair(veh,yPo,'porteur'), tot:countPair(veh,y10,yearType),
-        pf:portefeuilleForEntity(ent,n), flags:flags, nom:ent.nom, ville:ent.ville, canton:ent.canton,
-        sk:ent.principal?(ent.principal._siteKey||makeSiteKey(ent.principal)):'',
-        parc:parc, dafCount:dafCount
+        cp:stats.cp,
+        n3:stats.n3, n2:stats.n2, n1:stats.n1, n0:stats.n0,
+        tr:stats.tr, po:stats.po, tot:stats.tot,
+        pf:portefeuilleForEntity(ent,n,pfMap), flags:flags, nom:ent.nom, ville:ent.ville, canton:ent.canton,
+        sk:sk, parc:stats.parc, dafCount:stats.dafCount, sec:sec
       });
     }
+    PLAN_MODEL_CACHE={ver:PLAN_CACHE_VER, sig:sig, rows:rows};
     return rows;
   }
 
@@ -15332,8 +15403,8 @@ document.addEventListener('DOMContentLoaded',function(){
     });
     safeOn('plan-search','input',debounce(function(){
       GF.planSearch=($('plan-search')||{}).value||'';
-      renderPlanVentes({keepScroll:true});
-    },180));
+      renderPlanVentes({keepScroll:true, soft:true});
+    },200));
     safeOn('plan-search-clear','click',function(){
       GF.planSearch=''; var i=$('plan-search'); if(i)i.value='';
       renderPlanVentes();
@@ -15408,7 +15479,7 @@ document.addEventListener('DOMContentLoaded',function(){
         COLF[col].q=e.target.value||'';
         if(!COLF[col].q&&(!COLF[col].mode||COLF[col].mode==='all'))delete COLF[col];
         clearTimeout(pop._t);
-        pop._t=setTimeout(function(){renderPlanVentes({keepScroll:true});},140);
+        pop._t=setTimeout(function(){renderPlanVentes({keepScroll:true, soft:true});},120);
       });
     }
     document.addEventListener('click',function(e){
@@ -15418,9 +15489,10 @@ document.addEventListener('DOMContentLoaded',function(){
     });
   }
 
-  window.renderPlanVentes=function(opts){
+  var _planRenderTimer=null;
+  function renderPlanVentesNow(opts){
     opts=opts||{};
-    mutate(function(pv){yearDataOf(pv, pv.activeYear);});
+    ensurePlanReady();
     ensureGF(); bindStatic();
     var keep=!!opts.keepScroll;
     var scTop=keep&&$('plan-scroll')?$('plan-scroll').scrollTop:0;
@@ -15447,6 +15519,17 @@ document.addEventListener('DOMContentLoaded',function(){
     paintKpi(rows); paintBody();
     syncPlanPanel();
     if(keep&&$('plan-scroll'))$('plan-scroll').scrollTop=scTop;
+  }
+  window.renderPlanVentes=function(opts){
+    opts=opts||{};
+    // Filtre/tri : debounce pour ne pas saturer le thread (sensation de plantage)
+    if(opts.keepScroll || opts.soft){
+      clearTimeout(_planRenderTimer);
+      _planRenderTimer=setTimeout(function(){renderPlanVentesNow(opts);}, opts.soft?180:40);
+      return;
+    }
+    clearTimeout(_planRenderTimer);
+    renderPlanVentesNow(opts);
   };
 })();
 </script>
