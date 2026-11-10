@@ -83,6 +83,39 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 #immat-detail:empty{display:none;}
 #immat-detail{flex:0 1 auto;max-height:38vh;overflow:auto;background:var(--bg);border-bottom:1px solid var(--border);}
 #immat-visit-menu,#immat-col-pop{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
+#screen-plan.screen.active{display:flex;flex-direction:column;overflow:hidden;}
+#plan-filters{flex:0 1 auto;max-height:36vh;overflow:auto;background:var(--bg2);border-bottom:1px solid var(--border);}
+#plan-filters.collapsed{display:none;}
+#plan-kpi{flex:0 0 auto;padding:6px 10px;border-bottom:1px solid var(--border);background:var(--bg);}
+#plan-scroll{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;}
+.plan-table{border-collapse:separate;border-spacing:0;font-size:10px;min-width:max-content;}
+.plan-table th,.plan-table td{border-bottom:1px solid var(--border);border-right:1px solid var(--border);padding:3px 4px;text-align:center;white-space:nowrap;background:var(--bg);vertical-align:middle;}
+.plan-table thead th{position:sticky;background:var(--bg3);color:var(--text3);font-size:8px;font-weight:800;letter-spacing:.2px;z-index:3;}
+.plan-table thead tr:first-child th{top:0;}
+.plan-table thead tr:nth-child(2) th{top:20px;}
+.plan-table .c-inc{position:sticky;left:0;z-index:2;min-width:34px;background:var(--bg2);}
+.plan-table .c-prj{position:sticky;left:34px;z-index:2;min-width:36px;background:var(--bg2);}
+.plan-table .c-cp{position:sticky;left:70px;z-index:2;min-width:28px;background:var(--bg2);font-weight:800;}
+.plan-table .c-nom{position:sticky;left:98px;z-index:2;min-width:148px;max-width:180px;text-align:left;background:var(--bg2);box-shadow:6px 0 8px rgba(0,0,0,.28);}
+.plan-table thead .c-inc,.plan-table thead .c-prj,.plan-table thead .c-cp,.plan-table thead .c-nom{z-index:6;background:var(--bg3);}
+.plan-table tbody tr{height:40px;}
+.plan-table tbody td{height:40px;max-height:40px;}
+.plan-table tr.plan-pad td{height:auto;max-height:none;padding:0;border:none;background:transparent;}
+.plan-table input[type=checkbox]{width:16px;height:16px;accent-color:var(--daf);}
+.plan-name{background:none;border:none;color:var(--daf);font-weight:800;font-size:12px;cursor:pointer;padding:0;text-align:left;max-width:168px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;}
+.plan-ville{font-size:9px;color:var(--text3);font-weight:600;max-width:168px;overflow:hidden;text-overflow:ellipsis;}
+.plan-daf{color:var(--daf);font-weight:800;}
+.plan-hors{color:var(--text2);font-weight:700;}
+.plan-zero{color:var(--text3);font-weight:600;}
+.plan-obj{width:42px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--green);font-weight:800;font-size:11px;text-align:center;padding:4px 2px;}
+.plan-act{min-width:34px;height:28px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);font-weight:800;font-size:12px;cursor:pointer;padding:0 4px;}
+.plan-act.x{color:var(--daf);border-color:var(--daf-border);background:var(--daf-bg);}
+.plan-act.done{color:var(--green);border-color:rgba(58,184,122,.45);background:var(--green-bg);}
+.plan-cp-c{color:var(--daf);}
+.plan-cp-p{color:var(--blue);}
+.plan-included td{background:rgba(232,160,32,.04);}
+.badge.b-pv{background:rgba(232,160,32,.22);color:var(--daf);border:1px solid rgba(232,160,32,.55);font-weight:800;}
+.immat-pv{display:inline-block;margin-left:4px;font-size:8px;font-weight:800;color:var(--daf);border:1px solid rgba(232,160,32,.45);border-radius:4px;padding:1px 3px;vertical-align:middle;}
 .c-info{flex:1;min-width:0}
 .c-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .c-sub{font-size:10px;color:var(--text3);margin-top:1px}
@@ -348,9 +381,35 @@ input[type=file]{display:none}
   <div id="immat-col-pop" style="display:none;"></div>
 </div>
 
+<div class="screen" id="screen-plan">
+  <div class="screen-header">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+      <div>
+        <div class="screen-title">🎯 Plan de ventes</div>
+        <div class="screen-sub" id="plan-sub">Sélection commerciale annuelle</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <select id="plan-year-select" class="form-input" style="width:auto;min-width:88px;padding:5px 8px;font-size:12px;font-weight:800;"></select>
+        <button type="button" class="gf-chip" id="plan-year-add">+ Ajouter</button>
+        <button type="button" class="gf-chip" id="plan-filter-toggle">Filtres</button>
+        <button type="button" class="gf-chip" id="plan-action-add">+ Action</button>
+      </div>
+    </div>
+  </div>
+  <div class="search-bar" id="plan-search-bar" style="position:relative;z-index:12;margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;">
+    <span>🔍</span>
+    <input type="text" id="plan-search" placeholder="Client, ville, canton…" autocomplete="off">
+    <button type="button" class="btn btn-ghost btn-sm" id="plan-search-clear" title="Effacer la recherche" style="min-width:30px;height:30px;padding:0;border-radius:50%;font-size:13px;line-height:1;">✕</button>
+  </div>
+  <div id="plan-filters" class="collapsed"></div>
+  <div id="plan-kpi"></div>
+  <div id="plan-scroll"></div>
+</div>
+
 <nav id="nav">
   <div class="nav-item active" data-screen="marche"><span class="nav-icon">&#128202;</span><span class="nav-label">March&#233;</span></div>
   <div class="nav-item" data-screen="immat"><span class="nav-icon">&#128290;</span><span class="nav-label">IMMAT</span></div>
+  <div class="nav-item" data-screen="plan"><span class="nav-icon">🎯</span><span class="nav-label">Plan</span></div>
   <div class="nav-item" data-screen="tours"><span class="nav-icon">&#128506;</span><span class="nav-label">Tourn&#233;es</span></div>
   <div class="nav-item" data-screen="affaires"><span class="nav-icon">🔥</span><span class="nav-label">Affaires</span></div>
   <div class="nav-item" data-screen="livraisons"><span class="nav-icon">🚚</span><span class="nav-label">Livraisons</span></div>
@@ -381,7 +440,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-08-bases-v97';
+const APP_BUILD='2026-11-10-plan-ventes-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -4332,6 +4391,7 @@ function renderScreen(name){
     case 'more': renderMore(); break;
     case 'activite': if(typeof window.renderActivitePage==='function')window.renderActivitePage(); break;
     case 'immat': if(typeof renderImmat==='function')renderImmat(); break;
+    case 'plan': if(typeof window.renderPlanVentes==='function')window.renderPlanVentes(); break;
   }
 }
 const debouncedTours=debounce(renderTours,200);
@@ -5479,6 +5539,7 @@ function renderClientRow(c, quick){
     if(c.isUrgent)badges.push('<span class="badge b-urgent">URGENT</span>');
     if(c.hasProjet)badges.push('<span class="badge b-projet">PROJET</span>');
     if(c.pasProjet)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">SANS PROJET</span>');
+    try{if(typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(c._siteKey||makeSiteKey(c)))badges.push('<span class="badge b-pv">PV</span>');}catch(e){}
     if(c.isFlotteRegionale)badges.push('<span class="badge b-flotte">FLOTTE RÉGIO.</span>');
     if(c.isFlotteCoordonnee)badges.push('<span class="badge b-flotte">FLOTTE COORD.</span>');
     if(c.isFlotteNationale)badges.push('<span class="badge b-flotte">FLOTTE NAT.</span>');
@@ -6370,7 +6431,7 @@ function exportBackupJSONDirect(){
 function renderMore(){
   const xlsxOk=typeof XLSX!=='undefined';var html='';html+=renderXlsxStatus(xlsxOk);html+=renderImportCard(xlsxOk);html+=renderOriginExcelCard();html+=renderBasesCard();
   html+=`<div class="card"><div class="card-title">Nouveau client</div><button class="btn btn-primary" id="btn-new-client" style="width:100%;">Créer un client</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Le client et les fiches modifiées (adresse, ville, téléphone…) sont inclus dans le JSON et le coffre. Un import CRM ne les efface pas.</div></div>`;
-  html+=`<div class="card"><div class="card-title">💾 Sauvegarde iCloud</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Sauvegarde complète : clients, fiches, immatriculations, possession, projets, affaires, commissions, archives, groupes, contacts, exclusions, journal Activité. Le même contenu part dans le coffre. Un ancien JSON, enregistré avant cette version, ne contient pas encore le journal.</div></div>`;
+  html+=`<div class="card"><div class="card-title">💾 Sauvegarde iCloud</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Sauvegarde complète : clients, fiches, immatriculations, possession, projets, affaires, commissions, archives, groupes, contacts, exclusions, Plan de ventes, journal Activité. Le même contenu part dans le coffre. Un ancien JSON, enregistré avant cette version, ne contient pas encore le journal.</div></div>`;
   html+=`<div class="card"><div class="card-title">🔍 Qualité</div><button class="btn btn-secondary" id="btn-open-qualite" style="width:100%;">Ouvrir Qualité complète</button></div>`;
   html+=`<div class="card"><div class="card-title">📖 Mode d'emploi</div><button class="btn btn-secondary" id="btn-mode-emploi" style="width:100%;">Ouvrir le mode d'emploi complet</button></div>`;
   $('more-content').innerHTML=html;bindImportEvents();bindBasesEvents();
@@ -13255,7 +13316,9 @@ document.addEventListener('DOMContentLoaded',function(){
     var html='<tr data-sk="'+attr(sk)+'">';
     html+='<td class="c-aff"><input type="checkbox" class="immat-aff" data-sk="'+attr(sk)+'"'+(r.aff?' checked':'')+'></td>';
     html+='<td class="c-prj">'+quick+'</td>';
-    html+='<td class="c-nom"><button type="button" class="immat-name" data-sk="'+attr(sk)+'">'+escH(r.nom||'—')+'</button><div class="immat-ville">'+escH(r.ville||'')+'</div></td>';
+    var pvMark='';
+    try{if(typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(sk))pvMark='<span class="immat-pv" title="Inclus au Plan de ventes">PV</span>';}catch(e){}
+    html+='<td class="c-nom"><button type="button" class="immat-name" data-sk="'+attr(sk)+'">'+escH(r.nom||'—')+'</button>'+pvMark+'<div class="immat-ville">'+escH(r.ville||'')+'</div></td>';
     ys.forEach(function(y){
       var slot=st.by[y]||{d:0,h:0};
       html+=numCell(r,y,'d',slot.d)+numCell(r,y,'h',slot.h);
@@ -14163,5 +14226,530 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 })();
 </script>
+
+<script>
+/* DAF_COMMERCE-Box — Plan de ventes (concept validé 2026-11-09) */
+(function(){
+  var UI={filtersOpen:false};
+  var VIEW={start:-1, rows:[]};
+  var RH=40;
+  var DEFAULT_ACTIONS=[
+    {id:'demo_tracteur', label:'DEMO TRACTEUR'},
+    {id:'electrique', label:'ÉLECTRIQUE'},
+    {id:'visite_daf_france', label:'VISITE DAF France'}
+  ];
+
+  function attr(s){return escH(s).replace(/"/g,'&quot;');}
+  function seedYear(){return YEAR + 1;}
+
+  function loadSettings(){return getAppSettings()||{};}
+
+  function ensureIn(st){
+    if(!st.planVentes || typeof st.planVentes!=='object')st.planVentes={activeYear:seedYear(), years:{}};
+    if(!st.planVentes.years || typeof st.planVentes.years!=='object')st.planVentes.years={};
+    var y=parseInt(st.planVentes.activeYear,10);
+    if(!y){y=seedYear(); st.planVentes.activeYear=y;}
+    if(!st.planVentes.years[String(y)]){
+      st.planVentes.years[String(y)]={
+        actions:DEFAULT_ACTIONS.map(function(a){return {id:a.id,label:a.label};}),
+        rows:{}
+      };
+    }
+    return st.planVentes;
+  }
+
+  function mutate(fn){
+    var st=loadSettings();
+    var pv=ensureIn(st);
+    var out=fn(pv, st);
+    saveAppSettings(st);
+    return out;
+  }
+
+  function read(){
+    var st=loadSettings();
+    return ensureIn(st);
+  }
+
+  function activeYear(){
+    return parseInt(read().activeYear,10)||seedYear();
+  }
+
+  function yearDataOf(pv, y){
+    y=String(y||pv.activeYear||seedYear());
+    if(!pv.years[y]){
+      pv.years[y]={actions:DEFAULT_ACTIONS.map(function(a){return {id:a.id,label:a.label};}), rows:{}};
+    }
+    if(!pv.years[y].rows)pv.years[y].rows={};
+    if(!Array.isArray(pv.years[y].actions)||!pv.years[y].actions.length){
+      pv.years[y].actions=DEFAULT_ACTIONS.map(function(a){return {id:a.id,label:a.label};});
+    }
+    return pv.years[y];
+  }
+
+  function rowStateOf(yd, key){
+    if(!yd.rows[key])yd.rows[key]={included:false, objectif:0, actions:{}};
+    if(!yd.rows[key].actions)yd.rows[key].actions={};
+    return yd.rows[key];
+  }
+
+  function listYears(){
+    return Object.keys(read().years||{}).map(function(x){return parseInt(x,10);}).filter(Boolean).sort(function(a,b){return a-b;});
+  }
+
+  function entityKey(entity){
+    return entity.kind==='group' ? ('G:'+entity.id) : ('S:'+entity.id);
+  }
+
+  function principalOfGroup(group){
+    var sites=_groupSites(group)||[];
+    var p=sites.find(function(c){return groupSiteIsPrincipal(group.id, makeSiteKey(c));});
+    return p||sites[0]||null;
+  }
+
+  function buildEntities(){
+    var grouped={}, entities=[];
+    (getAllGroups()||[]).forEach(function(g){
+      var sites=_groupSites(g)||[];
+      if(!sites.length)return;
+      sites.forEach(function(c){grouped[makeSiteKey(c)]=true;});
+      var principal=principalOfGroup(g);
+      entities.push({
+        kind:'group', id:g.id, group:g,
+        siteKeys:(g.siteKeys||[]).slice(),
+        principal:principal,
+        nom:(typeof getGroupDisplayName==='function'?getGroupDisplayName(g):(g.name||''))||((principal&&principal.nom)||'Groupe'),
+        ville:(principal&&principal.ville)||'',
+        canton:(principal&&principal.canton)||'',
+        tva:(principal&&principal.tva)||g.tva||''
+      });
+    });
+    (DB.getClients()||[]).forEach(function(c){
+      var sk=c._siteKey||makeSiteKey(c);
+      if(!sk||grouped[sk])return;
+      entities.push({
+        kind:'solo', id:sk, group:null, siteKeys:[sk], principal:c,
+        nom:c.nom||'', ville:c.ville||'', canton:c.canton||'', tva:c.tva||''
+      });
+    });
+    return entities;
+  }
+
+  function vehiclesForEntity(entity){
+    var seen={}, out=[], i, sk, list, j, v, k;
+    for(i=0;i<(entity.siteKeys||[]).length;i++){
+      sk=entity.siteKeys[i];
+      list=(IDX.vBySite&&IDX.vBySite[sk])||[];
+      for(j=0;j<list.length;j++){
+        v=list[j];
+        k=(v.tva||'')+'|'+(v.plaque||'')+'|'+(v.date||'')+'|'+(v.chassis||'')+'|'+(v.siret||'');
+        if(seen[k])continue; seen[k]=true; out.push(v);
+      }
+    }
+    return out;
+  }
+
+  function countPair(veh, yearsSet, typeFilter){
+    var d=0,h=0,i,v,y;
+    for(i=0;i<veh.length;i++){
+      v=veh[i]; y=getYear(v.date);
+      if(!y||!yearsSet[y])continue;
+      if(typeFilter==='tracteur'&&!isTracteur(v))continue;
+      if(typeFilter==='porteur'&&!isPorteur(v))continue;
+      if(isDaf(v))d++; else h++;
+    }
+    return {d:d,h:h};
+  }
+
+  function yearWindow(n, from, to){
+    var set={}, y; for(y=n+from;y<=n+to;y++)set[y]=true; return set;
+  }
+
+  function isClientC(veh, n){
+    var y0=n-5, y1=n-1, i,v,y;
+    for(i=0;i<veh.length;i++){
+      v=veh[i]; if(!isDaf(v))continue; y=getYear(v.date);
+      if(y&&y>=y0&&y<=y1)return true;
+    }
+    return false;
+  }
+
+  function hasSimpleVisite(entity, calYear){
+    var i, sk, list, j, e, y;
+    for(i=0;i<(entity.siteKeys||[]).length;i++){
+      sk=entity.siteKeys[i];
+      list=typeof getHistoryEntries==='function'?getHistoryEntries({_siteKey:sk}, sk):[];
+      for(j=0;j<list.length;j++){
+        e=list[j];
+        if(!e||!/SIMPLE\s*VISITE/i.test(String(e.type||'')))continue;
+        y=getYear(e.date); if(y===calYear)return true;
+      }
+    }
+    return false;
+  }
+
+  function projectFlags(entity){
+    var has=false, pas=false, i, sk, c;
+    for(i=0;i<(entity.siteKeys||[]).length;i++){
+      sk=entity.siteKeys[i];
+      c=(IDX.cBySite&&IDX.cBySite[sk])||entity.principal||{};
+      if(typeof hasOpenProject==='function'&&hasOpenProject(c.tva||entity.tva, sk))has=true;
+      if(typeof hasPasProjet==='function'&&hasPasProjet(c, sk))pas=true;
+    }
+    return {hasProjet:has, pasProjet:pas && !has, simpleVisite:(!has && !pas && hasSimpleVisite(entity, YEAR))};
+  }
+
+  function portefeuilleForEntity(entity, n){
+    var keys={}, i;
+    for(i=0;i<(entity.siteKeys||[]).length;i++)keys[entity.siteKeys[i]]=true;
+    var dels=(typeof getDeliveries==='function'?getDeliveries():[])||[];
+    var total=0;
+    dels.forEach(function(d){
+      if(!d)return;
+      if(String(d.vnvo||'VN').toUpperCase()!=='VN')return;
+      if(getYear(d.deliveryDate)!==n)return;
+      var sk=d.siteKey||'';
+      if(sk&&keys[sk]){total++; return;}
+      if(!sk&&d.tva&&String(d.tva)===String(entity.tva||''))total++;
+    });
+    return total;
+  }
+
+  function includedSiteMap(y){
+    var map={}, entities=buildEntities(), pv=read(), yd=yearDataOf(pv, y||pv.activeYear), i, ent, key, st;
+    for(i=0;i<entities.length;i++){
+      ent=entities[i]; key=entityKey(ent); st=rowStateOf(yd, key);
+      if(!st.included)continue;
+      (ent.siteKeys||[]).forEach(function(sk){map[sk]=true;});
+    }
+    return map;
+  }
+
+  window.isSiteInPlanVentes=function(sk){
+    if(!sk)return false;
+    try{return !!includedSiteMap(activeYear())[sk];}catch(e){return false;}
+  };
+
+  function ensureGF(){
+    if(GF.planSearch==null)GF.planSearch='';
+    if(!GF.planShow)GF.planShow='tous';
+    if(!GF.planMaskExclusion)GF.planMaskExclusion='neutral';
+    if(!GF.planMaskInactifs)GF.planMaskInactifs='neutral';
+  }
+
+  function passesFilters(ent, model){
+    ensureGF();
+    var q=String(GF.planSearch||'').trim().toLowerCase();
+    if(q){
+      var hay=[ent.nom,ent.ville,ent.canton,ent.tva].join(' ').toLowerCase();
+      if(hay.indexOf(q)<0)return false;
+    }
+    if(GF.planShow==='inclus'&&!model.included)return false;
+    if(GF.planShow==='non'&&model.included)return false;
+    var c=ent.principal;
+    if(c){
+      if(typeof passesTriMask==='function'){
+        if(!passesTriMask(GF.planMaskExclusion, typeof isClientExcludedMarche==='function'?isClientExcludedMarche(c):false))return false;
+        if(!passesTriMask(GF.planMaskInactifs, typeof isInactiveClient==='function'?isInactiveClient(c.tva, makeSiteKey(c)):false))return false;
+      }
+    }
+    return true;
+  }
+
+  function buildModels(){
+    var pv=read(), n=parseInt(pv.activeYear,10)||seedYear(), yd=yearDataOf(pv, n);
+    var entities=buildEntities(), rows=[], i, ent, key, st, veh, flags;
+    var yN3=yearWindow(n,-3,-3), yN2=yearWindow(n,-2,-2), yN1=yearWindow(n,-1,-1), yN=yearWindow(n,0,0);
+    var yTr=yearWindow(n,-6,-4), yPo=yearWindow(n,-7,-5), y10=yearWindow(n,-10,-1);
+    for(i=0;i<entities.length;i++){
+      ent=entities[i]; key=entityKey(ent); st=rowStateOf(yd, key); veh=vehiclesForEntity(ent); flags=projectFlags(ent);
+      rows.push({
+        ent:ent, key:key, included:!!st.included, objectif:parseInt(st.objectif,10)||0, actions:Object.assign({}, st.actions||{}),
+        cp:isClientC(veh,n)?'C':'P',
+        n3:countPair(veh,yN3,null), n2:countPair(veh,yN2,null), n1:countPair(veh,yN1,null), n0:countPair(veh,yN,null),
+        tr:countPair(veh,yTr,'tracteur'), po:countPair(veh,yPo,'porteur'), tot:countPair(veh,y10,null),
+        pf:portefeuilleForEntity(ent,n), flags:flags, nom:ent.nom, ville:ent.ville, canton:ent.canton,
+        sk:ent.principal?(ent.principal._siteKey||makeSiteKey(ent.principal)):''
+      });
+    }
+    return rows;
+  }
+
+  function numTd(pair, kind){
+    var n=pair?(pair[kind]||0):0;
+    if(!n)return '<td class="plan-zero">0</td>';
+    return '<td class="'+(kind==='d'?'plan-daf':'plan-hors')+'">'+n+'</td>';
+  }
+  function actLabel(state){return state==='X'?'X':(state==='done'?'✓':'');}
+  function actClass(state){return state==='X'?' x':(state==='done'?' done':'');}
+
+  function projectCell(r){
+    var f=r.flags||{};
+    var cls=f.hasProjet?' has':(f.pasProjet?' none':'');
+    var label=f.hasProjet?'PRJ':(f.pasProjet?'NON':(f.simpleVisite?'VIS':'P'));
+    var c=r.ent.principal||{};
+    return '<button type="button" class="tours-proj-quick'+cls+' plan-proj-btn" data-sk="'+attr(r.sk)+'" data-tva="'+attr(c.tva||r.ent.tva||'')+'" data-nom="'+attr(r.nom||'')+'" title="PROJET / PAS DE PROJET / SIMPLE VISITE">'+label+'</button>';
+  }
+
+  function actionsList(){
+    return yearDataOf(read(), activeYear()).actions||[];
+  }
+
+  function colSpan(){return 4 + 8 + 6 + 1 + actionsList().length + 2;}
+
+  function headHtml(){
+    var n=activeYear(), acts=actionsList(), html='<tr>';
+    html+='<th class="c-inc" rowspan="2">INCL.</th><th class="c-prj" rowspan="2"></th><th class="c-cp" rowspan="2">C/P</th><th class="c-nom" rowspan="2">CLIENT</th>';
+    html+='<th colspan="2">'+(n-3)+'</th><th colspan="2">'+(n-2)+'</th><th colspan="2">'+(n-1)+'</th><th colspan="2">'+n+'</th>';
+    html+='<th colspan="2" title="Tracteurs immat. N-6 → N-4">TRACT. 4-6</th>';
+    html+='<th colspan="2" title="Porteurs immat. N-7 → N-5">PORT. 5-7</th>';
+    html+='<th colspan="2" title="Total immat. N-10 → N-1">TOTAL 10 ANS</th>';
+    html+='<th rowspan="2">OBJECTIF</th>';
+    acts.forEach(function(a){html+='<th rowspan="2" title="'+attr(a.label)+'">'+escH(a.label)+'</th>';});
+    html+='<th rowspan="2">CANTON</th><th rowspan="2">VILLE</th></tr><tr>';
+    [0,1,2,3,4,5,6].forEach(function(){html+='<th>DAF</th><th>HORS</th>';});
+    html+='</tr>';
+    return html;
+  }
+
+  function rowHtml(r){
+    var acts=actionsList(), html='<tr class="'+(r.included?'plan-included':'')+'" data-key="'+attr(r.key)+'">';
+    html+='<td class="c-inc"><input type="checkbox" class="plan-inc" data-key="'+attr(r.key)+'"'+(r.included?' checked':'')+'></td>';
+    html+='<td class="c-prj">'+projectCell(r)+'</td>';
+    html+='<td class="c-cp '+(r.cp==='C'?'plan-cp-c':'plan-cp-p')+'">'+r.cp+'</td>';
+    html+='<td class="c-nom"><button type="button" class="plan-name" data-sk="'+attr(r.sk)+'">'+escH(r.nom||'—')+'</button><div class="plan-ville">'+escH(r.ville||'')+'</div></td>';
+    html+=numTd(r.n3,'d')+numTd(r.n3,'h')+numTd(r.n2,'d')+numTd(r.n2,'h')+numTd(r.n1,'d')+numTd(r.n1,'h')+numTd(r.n0,'d')+numTd(r.n0,'h');
+    html+=numTd(r.tr,'d')+numTd(r.tr,'h')+numTd(r.po,'d')+numTd(r.po,'h')+numTd(r.tot,'d')+numTd(r.tot,'h');
+    html+='<td><input class="plan-obj" type="number" min="0" step="1" data-key="'+attr(r.key)+'" value="'+(r.objectif||0)+'"></td>';
+    acts.forEach(function(a){
+      var st=r.actions[a.id]||'';
+      html+='<td><button type="button" class="plan-act'+actClass(st)+'" data-key="'+attr(r.key)+'" data-aid="'+attr(a.id)+'">'+actLabel(st)+'</button></td>';
+    });
+    html+='<td style="text-align:left;">'+escH(r.canton||'—')+'</td><td style="text-align:left;">'+escH(r.ville||'—')+'</td>';
+    return html+'</tr>';
+  }
+
+  function paintBody(){
+    var sc=$('plan-scroll'), body=$('plan-body');
+    if(!sc||!body)return;
+    var rows=VIEW.rows||[], span=colSpan();
+    if(!(DB.getClients()||[]).length){
+      body.innerHTML='<tr><td colspan="'+span+'" style="text-align:left;padding:14px;color:var(--text2);height:auto;">Aucun client. Importez le CRM et les immatriculations dans Plus.</td></tr>';
+      return;
+    }
+    if(!rows.length){
+      body.innerHTML='<tr><td colspan="'+span+'" style="text-align:left;padding:14px;color:var(--text2);height:auto;">Aucune ligne avec ces filtres.</td></tr>';
+      VIEW.start=-2; return;
+    }
+    var vh=sc.clientHeight||640, count=Math.ceil(vh/RH)+14;
+    var start=Math.max(0, Math.floor(sc.scrollTop/RH)-6);
+    if(start>rows.length-1)start=Math.max(0, rows.length-1);
+    if(start===VIEW.start)return;
+    var slice=rows.slice(start, start+count);
+    var top=start*RH, bot=Math.max(0,(rows.length-start-slice.length)*RH), html='';
+    if(top)html+='<tr class="plan-pad"><td colspan="'+span+'" style="height:'+top+'px"></td></tr>';
+    slice.forEach(function(r){html+=rowHtml(r);});
+    if(bot)html+='<tr class="plan-pad"><td colspan="'+span+'" style="height:'+bot+'px"></td></tr>';
+    body.innerHTML=html; VIEW.start=start;
+  }
+
+  function ensureTable(){
+    var sc=$('plan-scroll'); if(!sc)return;
+    sc.innerHTML='<table class="plan-table"><thead id="plan-head">'+headHtml()+'</thead><tbody id="plan-body"></tbody></table>';
+  }
+
+  function paintKpi(rows){
+    var box=$('plan-kpi'); if(!box)return;
+    var inclus=rows.filter(function(r){return r.included;});
+    var obj=0, pf=0;
+    inclus.forEach(function(r){obj+=r.objectif||0; pf+=r.pf||0;});
+    var ecart=pf-obj, pct=obj>0?Math.round((pf/obj)*1000)/10:0;
+    box.innerHTML='<div class="kpi-grid kpi-grid-3" style="margin:0;">'
+      +'<div class="kpi-card"><div class="kpi-val">'+inclus.length+'</div><div class="kpi-lbl">Inclus</div></div>'
+      +'<div class="kpi-card c-daf"><div class="kpi-val">'+obj+'</div><div class="kpi-lbl">Σ Objectifs</div></div>'
+      +'<div class="kpi-card c-green"><div class="kpi-val">'+pf+'</div><div class="kpi-lbl">Portefeuille N</div></div>'
+      +'<div class="kpi-card '+(ecart>=0?'c-green':'c-orange')+'"><div class="kpi-val">'+(ecart>=0?'+':'')+ecart+'</div><div class="kpi-lbl">Écart</div></div>'
+      +'<div class="kpi-card c-blue"><div class="kpi-val">'+pct+'%</div><div class="kpi-lbl">Avancement</div></div>'
+      +'<div class="kpi-card"><div class="kpi-val">'+activeYear()+'</div><div class="kpi-lbl">Année plan</div></div></div>';
+  }
+
+  function paintYearSelect(){
+    var sel=$('plan-year-select'); if(!sel)return;
+    var years=listYears(), cur=activeYear();
+    if(years.indexOf(cur)<0)years.push(cur);
+    years.sort(function(a,b){return a-b;});
+    sel.innerHTML=years.map(function(y){return '<option value="'+y+'"'+(y===cur?' selected':'')+'>'+y+'</option>';}).join('');
+  }
+
+  function paintFilters(){
+    var box=$('plan-filters'); if(!box)return;
+    ensureGF();
+    var show=GF.planShow||'tous';
+    function chip(id,label,on){return '<button type="button" class="gf-chip'+(on?' on':'')+'" data-plan-show="'+id+'">'+label+'</button>';}
+    function mask(id,label,st){
+      var cls=st==='exclude'?' mask-exclude':(st==='only'?' mask-only':'');
+      var lab=typeof _toursMaskLabel==='function'?_toursMaskLabel(st):'';
+      return '<button type="button" class="gf-chip'+cls+'" id="'+id+'">'+escH(label)+(st==='neutral'?'':(' '+lab))+'</button>';
+    }
+    box.innerHTML='<div style="padding:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">'
+      +'<span style="font-size:9px;font-weight:800;color:var(--text3);">AFFICHAGE</span>'
+      +chip('tous','Tous',show==='tous')+chip('inclus','Inclus',show==='inclus')+chip('non','Non inclus',show==='non')
+      +mask('plan-mask-exclu','Exclus',GF.planMaskExclusion||'neutral')
+      +mask('plan-mask-ina','Inactifs',GF.planMaskInactifs||'neutral')+'</div>';
+  }
+
+  function nextTri(cur){return cur==='neutral'?'exclude':(cur==='exclude'?'only':'neutral');}
+
+  function refreshMarkers(){
+    try{if(typeof renderImmat==='function'&&currentScreen==='immat')renderImmat({keepScroll:true});}catch(e){}
+    try{if(typeof renderTours==='function'&&currentScreen==='tours')renderTours();}catch(e){}
+  }
+
+  function cycleAction(key, aid){
+    var cur;
+    mutate(function(pv){
+      var st=rowStateOf(yearDataOf(pv, pv.activeYear), key);
+      cur=st.actions[aid]||'';
+      if(cur==='done')return;
+      st.actions[aid]=(!cur)?'X':'done';
+    });
+    if(cur==='done'){
+      openModal('Effacer l’action','<p style="font-size:12px;color:var(--text2);">Remettre cette case à vide ?</p>',[
+        {label:'Annuler',cls:'btn-ghost'},
+        {label:'Effacer',cls:'btn-red',action:function(){
+          mutate(function(pv){rowStateOf(yearDataOf(pv, pv.activeYear), key).actions[aid]='';});
+          renderPlanVentes({keepScroll:true});
+        }}
+      ]);
+      return;
+    }
+    renderPlanVentes({keepScroll:true});
+  }
+
+  function addYearModal(){
+    var cur=activeYear(), next=cur+1;
+    while(listYears().indexOf(next)>=0)next++;
+    openModal('Ajouter une année de Plan','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Créer le Plan <strong>'+next+'</strong> ?</p>'
+      +'<label style="display:flex;gap:8px;align-items:center;font-size:12px;margin-top:10px;"><input type="checkbox" id="plan-copy-prev" checked> Reprendre inclusions, objectifs et actions depuis '+cur+'</label>',[
+      {label:'Annuler',cls:'btn-ghost'},
+      {label:'Créer '+next,cls:'btn-primary',action:function(){
+        var copy=!($('plan-copy-prev')&&!$('plan-copy-prev').checked);
+        mutate(function(pv){
+          var src=yearDataOf(pv, cur);
+          pv.years[String(next)]={
+            actions:(src.actions||[]).map(function(a){return {id:a.id,label:a.label};}),
+            rows:{}
+          };
+          if(copy){
+            Object.keys(src.rows||{}).forEach(function(k){
+              var r=src.rows[k]||{};
+              pv.years[String(next)].rows[k]={included:!!r.included, objectif:parseInt(r.objectif,10)||0, actions:Object.assign({}, r.actions||{})};
+            });
+          }
+          pv.activeYear=next;
+        });
+        toast('Plan '+next+' créé');
+        renderPlanVentes();
+      }}
+    ]);
+  }
+
+  function addActionModal(){
+    openModal('Nouvelle action à mener','<div class="form-group"><label class="form-label">Nom de l’action</label><input class="form-input" id="plan-act-name" placeholder="Ex : CASTELLET"></div>',[
+      {label:'Annuler',cls:'btn-ghost'},
+      {label:'Ajouter',cls:'btn-primary',action:function(){
+        var name=(($('plan-act-name')||{}).value||'').trim();
+        if(!name){toast('Nom obligatoire');return;}
+        mutate(function(pv){yearDataOf(pv, pv.activeYear).actions.push({id:'act_'+Date.now(), label:name});});
+        toast('Action ajoutée');
+        renderPlanVentes({keepScroll:true});
+      }}
+    ]);
+  }
+
+  function bindStatic(){
+    if(bindStatic._done)return; bindStatic._done=true;
+    safeOn('plan-filter-toggle','click',function(){
+      UI.filtersOpen=!UI.filtersOpen;
+      var f=$('plan-filters'); if(f)f.classList.toggle('collapsed', !UI.filtersOpen);
+    });
+    safeOn('plan-search','input',debounce(function(){
+      GF.planSearch=($('plan-search')||{}).value||'';
+      renderPlanVentes({keepScroll:true});
+    },180));
+    safeOn('plan-search-clear','click',function(){
+      GF.planSearch=''; var i=$('plan-search'); if(i)i.value='';
+      renderPlanVentes();
+    });
+    safeOn('plan-year-select','change',function(){
+      mutate(function(pv){
+        pv.activeYear=parseInt(($('plan-year-select')||{}).value,10)||seedYear();
+        yearDataOf(pv, pv.activeYear);
+      });
+      renderPlanVentes(); refreshMarkers();
+    });
+    safeOn('plan-year-add','click',addYearModal);
+    safeOn('plan-action-add','click',addActionModal);
+    var sc=$('plan-scroll');
+    if(sc&&!sc._planScroll){
+      sc._planScroll=true;
+      sc.addEventListener('scroll',function(){VIEW.start=-1; paintBody();},{passive:true});
+      sc.addEventListener('change',function(e){
+        var t=e.target; if(!t||!sc.contains(t))return;
+        if(t.classList.contains('plan-inc')){
+          mutate(function(pv){rowStateOf(yearDataOf(pv, pv.activeYear), t.dataset.key).included=!!t.checked;});
+          renderPlanVentes({keepScroll:true}); refreshMarkers();
+        }
+        if(t.classList.contains('plan-obj')){
+          var objVal=Math.max(0, parseInt(t.value,10)||0);
+          mutate(function(pv){rowStateOf(yearDataOf(pv, pv.activeYear), t.dataset.key).objectif=objVal;});
+          (VIEW.rows||[]).forEach(function(r){if(r.key===t.dataset.key)r.objectif=objVal;});
+          paintKpi(VIEW.rows||[]);
+        }
+      });
+      sc.addEventListener('click',function(e){
+        var name=e.target.closest&&e.target.closest('.plan-name');
+        if(name&&sc.contains(name)){if(name.dataset.sk&&typeof openSiteSheet==='function')openSiteSheet(name.dataset.sk);return;}
+        var act=e.target.closest&&e.target.closest('.plan-act');
+        if(act&&sc.contains(act)){cycleAction(act.dataset.key, act.dataset.aid);return;}
+        var quick=e.target.closest&&e.target.closest('.plan-proj-btn');
+        if(quick&&sc.contains(quick)){
+          e.preventDefault(); e.stopPropagation();
+          if(typeof openToursProjectShortcut==='function')openToursProjectShortcut(quick.dataset.tva, quick.dataset.nom, quick.dataset.sk);
+        }
+      });
+    }
+    document.addEventListener('click',function(e){
+      var btn=e.target&&e.target.closest?e.target.closest('[data-plan-show],#plan-mask-exclu,#plan-mask-ina'):null;
+      if(!btn)return;
+      if(btn.dataset.planShow){GF.planShow=btn.dataset.planShow; renderPlanVentes({keepScroll:true}); return;}
+      if(btn.id==='plan-mask-exclu'){GF.planMaskExclusion=nextTri(GF.planMaskExclusion); renderPlanVentes({keepScroll:true});}
+      if(btn.id==='plan-mask-ina'){GF.planMaskInactifs=nextTri(GF.planMaskInactifs); renderPlanVentes({keepScroll:true});}
+    });
+  }
+
+  window.renderPlanVentes=function(opts){
+    opts=opts||{};
+    mutate(function(pv){yearDataOf(pv, pv.activeYear);});
+    ensureGF(); bindStatic();
+    var keep=!!opts.keepScroll;
+    var scTop=keep&&$('plan-scroll')?$('plan-scroll').scrollTop:0;
+    var rows=buildModels().filter(function(r){return passesFilters(r.ent,r);});
+    rows.sort(function(a,b){
+      if(!!b.included!==!!a.included)return (b.included?1:0)-(a.included?1:0);
+      return String(a.nom||'').localeCompare(String(b.nom||''),'fr');
+    });
+    VIEW.rows=rows; VIEW.start=-1;
+    paintYearSelect(); paintFilters();
+    var f=$('plan-filters'); if(f)f.classList.toggle('collapsed', !UI.filtersOpen);
+    var search=$('plan-search'); if(search)search.value=GF.planSearch||'';
+    var sub=$('plan-sub'); if(sub)sub.textContent='Année '+activeYear()+' · '+rows.length+' ligne(s)';
+    ensureTable(); paintKpi(rows); paintBody();
+    if(keep&&$('plan-scroll'))$('plan-scroll').scrollTop=scTop;
+  };
+})();
+</script>
+
+
 </body>
 </html>
