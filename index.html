@@ -445,7 +445,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-plan-ventes-v4';
+const APP_BUILD='2026-11-10-coffre-enregistrer-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -955,12 +955,20 @@ function scheduleAutoBackup(){
 }
 
 function enregistrerJsonEtCoffre(){
+  var data=null;
+  try{data=(typeof getBackupData==='function')?getBackupData():null;}catch(e){data=null;}
+  if(!data){toast('Lecture de la base impossible');return;}
+  // 1) JSON d'abord (demande iOS Fichiers éventuelle)
   try{
-    if(typeof exportBackupJSONFixed==='function')exportBackupJSONFixed();
+    if(typeof exportBackupJSONFixed==='function')exportBackupJSONFixed(data);
     else triggerBackupDownload(true);
   }catch(e){toast('JSON non téléchargé');}
-  if(typeof window.coffreEnvoyer==='function')window.coffreEnvoyer();
-  else toast('Coffre indisponible sur cette version');
+  // 2) Puis coffre en auto (sans 2e confirmation « Envoyer ») — délai pour laisser iOS digérer le download
+  setTimeout(function(){
+    if(typeof window.coffreEnvoyerAuto==='function')window.coffreEnvoyerAuto(data);
+    else if(typeof window.coffreEnvoyer==='function')window.coffreEnvoyer();
+    else toast('Coffre indisponible sur cette version');
+  },560);
 }
 function showBackupInstructions(){
   openModal('💾 Backup — '+BACKUP_FOLDER,`
@@ -6985,12 +6993,14 @@ renderModeEmploi = function(){
   };
 
   // 3) Sauvegarde au nom fixe : même nom de fichier, mais le navigateur iPhone peut demander où enregistrer.
-  window.exportBackupJSONFixed = function(){
-    try{var data=(typeof getBackupData==='function')?getBackupData():{clients:DB.getClients(),vehicles:DB.getVehicles(),projects:DB.getProjects(),settings:DB.getSettings(),exportDate:new Date().toISOString()};
+  window.exportBackupJSONFixed = function(data){
+    try{
+      if(!data)data=(typeof getBackupData==='function')?getBackupData():{clients:DB.getClients(),vehicles:DB.getVehicles(),projects:DB.getProjects(),settings:DB.getSettings(),exportDate:new Date().toISOString()};
       var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); var a=document.createElement('a');
       a.href=URL.createObjectURL(blob); a.download='DAF_Professional_sauvegarde.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function(){URL.revokeObjectURL(a.href);},500);
+      try{_unsavedChanges=false;DB.setLastSave(new Date().toISOString());updateSaveStatus();}catch(e){}
       toast('Sauvegarde téléchargée avec nom fixe');
-    }catch(e){toast('Sauvegarde impossible');console.error(e);} 
+    }catch(e){toast('Sauvegarde impossible');console.error(e);}
   };
 
   // 4) PLUS : ajouter encart Groupes directement + reporting + sauvegarde fixe
@@ -14113,8 +14123,11 @@ document.addEventListener('DOMContentLoaded',function(){
     if(tableMissing(err)){toast('Le coffre n’est pas encore préparé dans Supabase');return;}
     toast(err&&err.message?err.message:'Coffre indisponible');
   }
-  function doUpload(forceSmall){
-    var data; try{data=getBackupData();}catch(e){toast('Lecture de la base impossible');return;}
+  function doUpload(forceSmall, opts){
+    opts=opts||{};
+    var auto=!!opts.auto;
+    var data=opts.data;
+    try{if(!data)data=getBackupData();}catch(e){toast('Lecture de la base impossible');return;}
     var local=countsOf(data);
     if(!local.clients){openModal('Envoi refusé','<p style="font-size:12px;color:var(--text2);">Cet appareil n’a aucun client. Rien n’a été envoyé.</p>',[{label:'Fermer',cls:'btn-primary'}]);return;}
     ensureAuth().then(function(s){
@@ -14125,7 +14138,9 @@ document.addEventListener('DOMContentLoaded',function(){
           openModal('Le coffre est plus récent', snapBlock('Coffre', latest)+localBlock()+'<p style="font-size:12px;color:var(--text2);">Cet appareil n’a pas de modification locale. Rien n’a été envoyé. Récupérez le coffre pour prendre la copie la plus récente.</p>',[{label:'Fermer',cls:'btn-primary'}]);
           return;
         }
-        if(!forceSmall && tooSmall(local, latest)){showSmall(latest, function(){doUpload(true);});return;}
+        if(!forceSmall && tooSmall(local, latest)){showSmall(latest, function(){doUpload(true, opts);});return;}
+        // Enregistrer (JSON+coffre) : envoi direct sans 2e clic — le bouton Enregistrer a déjà confirmé
+        if(auto){beginSend(s.access_token, data, latest);return;}
         openModal('Envoyer vers le coffre', localBlock()+snapBlock('Dernière copie du coffre', latest)+'<p style="font-size:12px;color:var(--text2);">Cet envoi remplace la copie du coffre. L’ancienne est effacée quand la nouvelle est complète. La base de cet appareil ne change pas.</p>',[
           {label:'Annuler',cls:'btn-ghost'},
           {label:'Envoyer',cls:'btn-primary',close:false,action:function(){
@@ -14133,7 +14148,15 @@ document.addEventListener('DOMContentLoaded',function(){
           }}
         ]);
       });
-    }).catch(guard);
+    }).catch(function(err){
+      if(auto){
+        openModal('JSON téléchargé — coffre non envoyé',
+          '<p style="font-size:12px;color:var(--text2);line-height:1.5;">Le fichier JSON a bien été téléchargé. L’envoi vers le coffre a échoué : <strong>'+escH(err&&err.message?err.message:'Coffre indisponible')+'</strong></p><p style="font-size:12px;color:var(--text2);">Ouvrez <strong>Plus → Coffre</strong>, connectez-vous, puis réessayez <strong>Enregistrer</strong>.</p>',
+          [{label:'Fermer',cls:'btn-primary'}]);
+        return;
+      }
+      guard(err);
+    });
   }
   function showSmall(latest, again){
     openModal('Cette base est plus petite', snapBlock('Coffre', latest)+localBlock()+'<p style="font-size:12px;color:var(--text2);">L’envoi est arrêté parce que cette base a beaucoup moins de clients ou plus aucun véhicule. Confirmez seulement si c’est voulu.</p>',[
@@ -14270,6 +14293,7 @@ document.addEventListener('DOMContentLoaded',function(){
     autoSave._coffre=true;
   }
   window.coffreEnvoyer=function(){doUpload(false);};
+  window.coffreEnvoyerAuto=function(data){doUpload(false,{auto:true,data:data||null});};
 })();
 </script>
 <script>
