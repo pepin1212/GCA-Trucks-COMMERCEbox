@@ -46,9 +46,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .b-projet{background:var(--green-bg);color:var(--green);border:1px solid rgba(58,184,122,.3)}
 .client-row{display:flex;align-items:center;padding:10px 13px;background:var(--bg2);border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
 .client-row:active{background:var(--bg3)}
-.tours-proj-quick{flex:0 0 34px;width:34px;height:34px;margin-right:8px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:9px;font-weight:800;letter-spacing:.2px;cursor:pointer;padding:0}
+.tours-proj-quick,.tours-pv-mark{flex:0 0 34px;width:34px;height:34px;margin-right:6px;border-radius:8px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:9px;font-weight:800;letter-spacing:.2px;cursor:pointer;padding:0;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;vertical-align:middle}
 .tours-proj-quick.has{background:var(--green-bg);color:var(--green);border-color:rgba(58,184,122,.45)}
 .tours-proj-quick.none{background:var(--bg4);color:var(--text3);border-color:var(--border)}
+.tours-pv-mark{cursor:default;color:var(--text3)}
+.tours-pv-mark.on{background:var(--daf-bg);color:var(--daf);border-color:var(--daf-border)}
 #screen-immat.screen.active{display:flex;flex-direction:column;overflow:hidden;}
 #immat-filters{flex:0 1 auto;max-height:42vh;overflow:auto;background:var(--bg2);border-bottom:1px solid var(--border);}
 #immat-scroll{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;}
@@ -57,10 +59,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .immat-table thead th{position:sticky;background:var(--bg3);color:var(--text3);font-size:8px;font-weight:800;letter-spacing:.2px;z-index:3;}
 .immat-table thead tr:first-child th{top:0;}
 .immat-table thead tr:nth-child(2) th{top:20px;}
-.immat-table .c-aff{position:sticky;left:0;z-index:2;min-width:52px;background:var(--bg2);}
-.immat-table .c-prj{position:sticky;left:52px;z-index:2;min-width:36px;background:var(--bg2);}
-.immat-table .c-nom{position:sticky;left:88px;z-index:2;min-width:148px;max-width:180px;text-align:left;background:var(--bg2);box-shadow:6px 0 8px rgba(0,0,0,.28);}
-.immat-table thead .c-aff,.immat-table thead .c-prj,.immat-table thead .c-nom{z-index:6;background:var(--bg3);}
+.immat-table .c-aff{position:sticky;left:0;z-index:2;min-width:32px;width:32px;max-width:36px;padding:2px;background:var(--bg2);}
+.immat-table .c-prj{position:sticky;left:32px;z-index:2;min-width:34px;width:34px;max-width:38px;padding:2px;background:var(--bg2);}
+.immat-table .c-pv{position:sticky;left:66px;z-index:2;min-width:34px;width:34px;max-width:38px;padding:2px;background:var(--bg2);}
+.immat-table .c-nom{position:sticky;left:100px;z-index:2;min-width:148px;max-width:180px;text-align:left;background:var(--bg2);box-shadow:6px 0 8px rgba(0,0,0,.28);}
+.immat-table thead .c-aff,.immat-table thead .c-prj,.immat-table thead .c-pv,.immat-table thead .c-nom{z-index:6;background:var(--bg3);}
+.immat-table .tours-proj-quick,.immat-table .tours-pv-mark{width:30px;height:30px;margin:0;flex:none}
 .immat-name{background:none;border:none;color:var(--daf);font-weight:800;font-size:12px;cursor:pointer;padding:0;text-align:left;max-width:168px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;}
 .immat-ville{font-size:9px;color:var(--text3);font-weight:600;max-width:168px;overflow:hidden;text-overflow:ellipsis;}
 .immat-daf{color:var(--daf);font-weight:800;}
@@ -119,7 +123,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .plan-cp-p{color:var(--blue);}
 .plan-included td{background:rgba(232,160,32,.04);}
 .badge.b-pv{background:rgba(232,160,32,.22);color:var(--daf);border:1px solid rgba(232,160,32,.55);font-weight:800;}
-.immat-pv{display:inline-block;margin-left:4px;font-size:8px;font-weight:800;color:var(--daf);border:1px solid rgba(232,160,32,.45);border-radius:4px;padding:1px 3px;vertical-align:middle;}
 .c-info{flex:1;min-width:0}
 .c-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .c-sub{font-size:10px;color:var(--text3);margin-top:1px}
@@ -446,7 +449,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-badge-pv-tournees-v1';
+const APP_BUILD='2026-11-10-pv-logo-ok-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -5443,6 +5446,9 @@ function _bindToursListEvents(){
       openToursProjectShortcut(btn.dataset.tva, btn.dataset.nom, btn.dataset.sk);
     };
   });
+  QA('#tours-list .tours-pv-mark').forEach(function(btn){
+    btn.onclick=function(e){e.preventDefault();e.stopPropagation();};
+  });
   var ob=$('tours-orphan-banner');
   if(ob){ob.onclick=function(){ensureToursMaskTriState();GF.toursMaskSansFiche='only';if(toursF==='orphan_immat')toursF='all';renderTours();};}
 }
@@ -5625,6 +5631,11 @@ function _toursProjectQuickHtml(c){
   var label=c.hasProjet?'PRJ':(c.pasProjet?'NON':'P');
   return '<button type="button" class="tours-proj-quick'+cls+'" data-sk="'+escH(c._siteKey||'')+'" data-tva="'+escH(c.tva||'')+'" data-nom="'+escH(c.nom||'')+'" title="PROJET, PAS DE PROJET ou SIMPLE VISITE">'+label+'</button>';
 }
+function _toursPvMarkHtml(sk){
+  var on=false;
+  try{on=!!(typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(sk));}catch(e){on=false;}
+  return '<span class="tours-pv-mark'+(on?' on':'')+'" title="'+(on?'Inclus au Plan de ventes':'Hors Plan de ventes')+'">PV</span>';
+}
 function renderClientRow(c, quick){
   const badges=[];
   const isSecondary=!!(c.groupInfo&&c.groupInfo.hasGroup&&!c.groupInfo.principal);
@@ -5643,7 +5654,6 @@ function renderClientRow(c, quick){
     if(c.isUrgent)badges.push('<span class="badge b-urgent">URGENT</span>');
     if(c.hasProjet)badges.push('<span class="badge b-projet">PROJET</span>');
     if(c.pasProjet)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">SANS PROJET</span>');
-    try{if(typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(c._siteKey||makeSiteKey(c)))badges.push('<span class="badge b-pv">PV</span>');}catch(e){}
     if(c.isFlotteRegionale)badges.push('<span class="badge b-flotte">FLOTTE RÉGIO.</span>');
     if(c.isFlotteCoordonnee)badges.push('<span class="badge b-flotte">FLOTTE COORD.</span>');
     if(c.isFlotteNationale)badges.push('<span class="badge b-flotte">FLOTTE NAT.</span>');
@@ -5654,8 +5664,10 @@ function renderClientRow(c, quick){
   const sub=isSecondary
     ? `Site secondaire · infos locales · Parc local:${c.parc} · DAF:${c.dafCount}`
     : `Parc:${c.parc} · DAF:${c.dafCount} · Renouv.:${c.dafRenew+c.horsRenew}${c._isGroupPrincipal?' · consolidé groupe':''}`;
+  var sk=c._siteKey||(typeof makeSiteKey==='function'?makeSiteKey(c):'');
+  var pvMark=quick?_toursPvMarkHtml(sk):'';
   var quickBtn=quick?_toursProjectQuickHtml(c):'';
-  return`<div class="client-row" data-sk="${escH(c._siteKey)}">${quickBtn}<div class="c-info"><div class="c-name">${escH(c.nom)}</div><div class="c-badges">${badges.join('')}</div><div class="c-sub">${sub}</div></div><div class="c-score"><div class="score-val">${isSecondary?'—':c.score}</div><div class="score-lbl">${isSecondary?'info':'pts'}</div></div></div>`;
+  return`<div class="client-row" data-sk="${escH(c._siteKey)}">${pvMark}${quickBtn}<div class="c-info"><div class="c-name">${escH(c.nom)}</div><div class="c-badges">${badges.join('')}</div><div class="c-sub">${sub}</div></div><div class="c-score"><div class="score-val">${isSecondary?'—':c.score}</div><div class="score-lbl">${isSecondary?'info':'pts'}</div></div></div>`;
 }
 function renderSiteGroupInfoBox(info){
   if(!info||!info.hasGroup||!info.group)return '';
@@ -8109,7 +8121,6 @@ document.addEventListener('DOMContentLoaded',function(){
       if(c.isUrgent)badges.push('<span class="badge b-urgent">URGENT</span>');
       if(c.hasProjet)badges.push('<span class="badge b-projet">PROJET</span>');
       if(c.pasProjet)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">SANS PROJET</span>');
-      try{if(typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(c._siteKey||(typeof makeSiteKey==='function'?makeSiteKey(c):'')))badges.push('<span class="badge b-pv" title="Inclus au Plan de ventes">PV</span>');}catch(e){}
       if(c.isFlotteRegionale)badges.push('<span class="badge b-flotte">FLOTTE RÉGIO.</span>');
       if(c.isFlotteCoordonnee)badges.push('<span class="badge b-flotte">FLOTTE COORD.</span>');
       if(c.isFlotteNationale)badges.push('<span class="badge b-flotte">FLOTTE NAT.</span>');
@@ -8118,9 +8129,11 @@ document.addEventListener('DOMContentLoaded',function(){
       if(c.isInactif)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">INACTIF</span>');
     }
     const sub=isSecondary?`Site secondaire · infos locales · Parc local:${c.parc} · DAF:${c.dafCount}`:`Parc:${c.parc} · DAF:${c.dafCount} · Renouv.:${c.dafRenew+c.horsRenew}${c._isGroupPrincipal?' · consolidé groupe':''}`;
+    var sk=c._siteKey||(typeof makeSiteKey==='function'?makeSiteKey(c):'');
+    var pvMark=(quick&&typeof _toursPvMarkHtml==='function')?_toursPvMarkHtml(sk):'';
     var quickBtn='';
     if(quick&&typeof _toursProjectQuickHtml==='function') quickBtn=_toursProjectQuickHtml(c);
-    return`<div class="client-row" data-sk="${esc(c._siteKey)}">${quickBtn}<div class="c-info"><div class="c-name">${esc(c.nom)}</div><div class="c-badges">${badges.join('')}</div><div class="c-sub">${sub}</div></div><div class="c-score"><div class="score-val">${isSecondary?'—':c.score}</div><div class="score-lbl">${isSecondary?'info':'pts'}</div></div></div>`;
+    return`<div class="client-row" data-sk="${esc(c._siteKey)}">${pvMark}${quickBtn}<div class="c-info"><div class="c-name">${esc(c.nom)}</div><div class="c-badges">${badges.join('')}</div><div class="c-sub">${sub}</div></div><div class="c-score"><div class="score-val">${isSecondary?'—':c.score}</div><div class="score-lbl">${isSecondary?'info':'pts'}</div></div></div>`;
   };
 
   // renderTours : implémentation canonique dans le script principal (function renderTours).
@@ -13269,6 +13282,7 @@ document.addEventListener('DOMContentLoaded',function(){
         daf3:siteHasDafInLast36Months(sk),
         visit:normalizeEtatProspection((snap.etat&&snap.etat[sk])||c.etatProspection||''),
         proj:proj, pas:pas, marked:!!(projYear||pas),
+        pv:(function(){try{return !!(typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(sk));}catch(e){return false;}})(),
         score:rowScore(sk, urg, c)
       });
     });
@@ -13293,8 +13307,14 @@ document.addEventListener('DOMContentLoaded',function(){
       r.proj=hasOpenProject(r.c.tva, r.sk);
       r.pas=crmRecOf(crm,r.c,r.sk).pas_projet_year===YEAR;
       r.marked=!!((typeof hasProjetFilter==='function'?hasProjetFilter(r.c.tva, r.sk):(typeof hasProjectForYear==='function'?hasProjectForYear(r.c.tva, r.sk, YEAR):r.proj))||r.pas);
+      try{r.pv=!!(typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(r.sk));}catch(e){r.pv=false;}
       r.score=rowScore(r.sk, r.urg, r.c);
     });
+  }
+  function immatPrjCode(r){
+    if(r&&r.proj)return 'prj';
+    if(r&&r.pas)return 'pas';
+    return '';
   }
   function pagePass(r){
     var c=r.c;
@@ -13342,6 +13362,8 @@ document.addEventListener('DOMContentLoaded',function(){
   function sortVal(r,key){
     if(key==='client')return r.nom||'';
     if(key==='aff')return r.aff?1:0;
+    if(key==='pv')return r.pv?1:0;
+    if(key==='prj')return immatPrjCode(r)==='prj'?2:(immatPrjCode(r)==='pas'?1:0);
     if(key==='acc')return r.acc?1:0;
     if(key==='exc')return r.exc?1:0;
     if(key==='ina')return r.ina?1:0;
@@ -13374,8 +13396,12 @@ document.addEventListener('DOMContentLoaded',function(){
         }
         continue;
       }
-      if(col==='aff'||col==='acc'||col==='exc'||col==='ina'){
-        v=!!r[col==='aff'?'aff':col];
+      if(col==='prj'){
+        if(f.vals&&f.vals.length&&f.vals.indexOf(immatPrjCode(r))<0)return false;
+        continue;
+      }
+      if(col==='aff'||col==='pv'||col==='acc'||col==='exc'||col==='ina'){
+        v=!!r[col];
         if(f.mode==='on'&&!v)return false;
         if(f.mode==='off'&&v)return false;
         continue;
@@ -13410,7 +13436,7 @@ document.addEventListener('DOMContentLoaded',function(){
     var mark=SORT.key===col?(SORT.dir>0?' ▲':' ▼'):'';
     return '<button type="button" class="immat-col'+(on?' on':'')+'" data-col="'+col+'">'+label+mark+'</button>';
   }
-  function colSpan(){return 3+years().length*2+2+6;}
+  function colSpan(){return 4+years().length*2+2+6;}
   function numCell(r,year,kind,n){
     if(!n)return '<td class="immat-zero">0</td>';
     var cls=kind==='d'?'immat-daf':'immat-hors';
@@ -13420,12 +13446,12 @@ document.addEventListener('DOMContentLoaded',function(){
     var c=r.c, sk=r.sk, st=r.stats, ys=years();
     var quick='';
     try{quick=_toursProjectQuickHtml({hasProjet:!!r.proj,pasProjet:!!r.pas,_siteKey:sk,tva:c.tva,nom:c.nom});}catch(e){quick='';}
+    var pvMark=typeof _toursPvMarkHtml==='function'?_toursPvMarkHtml(sk):(r.pv?'<span class="tours-pv-mark on">PV</span>':'<span class="tours-pv-mark">PV</span>');
     var html='<tr data-sk="'+attr(sk)+'">';
     html+='<td class="c-aff"><input type="checkbox" class="immat-aff" data-sk="'+attr(sk)+'"'+(r.aff?' checked':'')+'></td>';
     html+='<td class="c-prj">'+quick+'</td>';
-    var pvMark='';
-    try{if(typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(sk))pvMark='<span class="immat-pv" title="Inclus au Plan de ventes">PV</span>';}catch(e){}
-    html+='<td class="c-nom"><button type="button" class="immat-name" data-sk="'+attr(sk)+'">'+escH(r.nom||'—')+'</button>'+pvMark+'<div class="immat-ville">'+escH(r.ville||'')+'</div></td>';
+    html+='<td class="c-pv">'+pvMark+'</td>';
+    html+='<td class="c-nom"><button type="button" class="immat-name" data-sk="'+attr(sk)+'">'+escH(r.nom||'—')+'</button><div class="immat-ville">'+escH(r.ville||'')+'</div></td>';
     ys.forEach(function(y){
       var slot=st.by[y]||{d:0,h:0};
       html+=numCell(r,y,'d',slot.d)+numCell(r,y,'h',slot.h);
@@ -13443,7 +13469,7 @@ document.addEventListener('DOMContentLoaded',function(){
   }
   function headHtml(){
     var ys=years();
-    var html='<tr><th class="c-aff" rowspan="2">'+colBtn('aff','AFFICHAGE')+'</th><th class="c-prj" rowspan="2"></th><th class="c-nom" rowspan="2">'+colBtn('client','CLIENT')+'</th>';
+    var html='<tr><th class="c-aff" rowspan="2">'+colBtn('aff','OK')+'</th><th class="c-prj" rowspan="2">'+colBtn('prj','Projet')+'</th><th class="c-pv" rowspan="2">'+colBtn('pv','Plan')+'</th><th class="c-nom" rowspan="2">'+colBtn('client','CLIENT')+'</th>';
     ys.forEach(function(y){html+='<th colspan="2" title="DAF + HORS de cette année">'+colBtn('y'+y, String(y))+'</th>';});
     html+='<th colspan="2" title="DAF + HORS sur les 10 ans">'+colBtn('total','TOTAL')+'</th><th rowspan="2">'+colBtn('pct','% DAF')+'</th><th rowspan="2">'+colBtn('acc','ACCESSIBLE')+'</th><th rowspan="2">'+colBtn('exc','EXCLUS')+'</th><th rowspan="2" title="Calculé : aucune immatriculation sur les '+INACTIVE_PURCHASE_YEARS+' dernières années, ou parc vide.">'+colBtn('ina','INACTIFS')+'</th><th rowspan="2" title="VISITÉ / A VISITER / NE PAS VISITER">'+colBtn('visit','VISITE')+'</th><th rowspan="2" title="Même score que la fiche : renouvelables, actifs, DAF, urgent.">'+colBtn('score','SCORE')+'</th></tr><tr>';
     ys.forEach(function(y){html+='<th>'+colBtn('y'+y+'d','DAF')+'</th><th>'+colBtn('y'+y+'h','HORS')+'</th>';});
@@ -13768,14 +13794,22 @@ document.addEventListener('DOMContentLoaded',function(){
     var col=btn.getAttribute('data-col'), pop=$('immat-col-pop');
     if(!pop)return;
     var f=COLF[col]||{};
-    var kind=col==='client'?'text':(col==='visit'?'visit':((col==='aff'||col==='acc'||col==='exc'||col==='ina')?'check':'num'));
+    var kind=col==='client'?'text':(col==='visit'?'visit':(col==='prj'?'prj':((col==='aff'||col==='pv'||col==='acc'||col==='exc'||col==='ina')?'check':'num')));
     var html='<div style="padding:8px;">';
     html+='<button type="button" class="btn btn-secondary btn-sm immat-sort-go" data-dir="1" style="width:100%;margin-bottom:4px;">Trier croissant</button>';
     html+='<button type="button" class="btn btn-secondary btn-sm immat-sort-go" data-dir="-1" style="width:100%;margin-bottom:8px;">Trier décroissant</button>';
     if(kind==='text')html+='<input id="immat-col-q" class="form-input" placeholder="Le nom contient…" value="'+attr(f.q||'')+'" style="font-size:13px;margin-bottom:6px;">';
-    else if(kind==='check')html+='<button type="button" class="gf-chip immat-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip immat-fmode" data-mode="on">Cochés</button> <button type="button" class="gf-chip immat-fmode" data-mode="off">Non cochés</button>';
-    else if(kind==='num')html+='<button type="button" class="gf-chip immat-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip immat-fmode" data-mode="pos">&gt; 0</button> <button type="button" class="gf-chip immat-fmode" data-mode="zero">= 0</button>';
-    else{
+    else if(kind==='check'){
+      var onLab=col==='aff'?'OK':(col==='pv'?'Au Plan':'Cochés');
+      var offLab=col==='aff'?'Non OK':(col==='pv'?'Hors Plan':'Non cochés');
+      html+='<button type="button" class="gf-chip immat-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip immat-fmode" data-mode="on">'+onLab+'</button> <button type="button" class="gf-chip immat-fmode" data-mode="off">'+offLab+'</button>';
+    }else if(kind==='num')html+='<button type="button" class="gf-chip immat-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip immat-fmode" data-mode="pos">&gt; 0</button> <button type="button" class="gf-chip immat-fmode" data-mode="zero">= 0</button>';
+    else if(kind==='prj'){
+      [['prj','PROJET'],['pas','PAS DE PROJET'],['','Vide']].forEach(function(o){
+        html+='<label style="display:flex;gap:6px;padding:4px 0;font-size:12px;"><input type="checkbox" class="immat-vfilt" value="'+attr(o[0])+'"'+((f.vals||[]).indexOf(o[0])>=0?' checked':'')+'> '+escH(o[1])+'</label>';
+      });
+      html+='<button type="button" class="btn btn-primary btn-sm" id="immat-vfilt-apply" style="width:100%;margin-top:6px;">Filtrer</button>';
+    }else{
       html+='<label style="display:flex;gap:6px;padding:4px 0;font-size:12px;"><input type="checkbox" class="immat-vfilt" value=""'+((f.vals||[]).indexOf('')>=0?' checked':'')+'> —</label>';
       VISIT.forEach(function(o){html+='<label style="display:flex;gap:6px;padding:4px 0;font-size:12px;"><input type="checkbox" class="immat-vfilt" value="'+attr(o[0])+'"'+((f.vals||[]).indexOf(o[0])>=0?' checked':'')+'> '+o[1]+'</label>';});
       html+='<button type="button" class="btn btn-primary btn-sm" id="immat-vfilt-apply" style="width:100%;margin-top:6px;">Filtrer</button>';
@@ -15115,7 +15149,7 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   function refreshMarkers(){
-    try{if(typeof renderImmat==='function'&&currentScreen==='immat')renderImmat({keepScroll:true});}catch(e){}
+    try{if(typeof renderImmat==='function'&&currentScreen==='immat')renderImmat({keepScroll:true, tableOnly:true, refreshFlags:true});}catch(e){}
     try{if(typeof renderTours==='function'&&currentScreen==='tours')renderTours();}catch(e){}
   }
 
