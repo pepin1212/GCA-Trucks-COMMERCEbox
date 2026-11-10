@@ -88,6 +88,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 #immat-detail{flex:0 1 auto;max-height:38vh;overflow:auto;background:var(--bg);border-bottom:1px solid var(--border);}
 #immat-visit-menu,#immat-col-pop,#plan-col-pop{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
 #screen-plan.screen.active{display:flex;flex-direction:column;overflow:hidden;}
+/* iOS : les menus position:fixed dans Plan peuvent rester cliquables après changement d’onglet */
+#screen-plan:not(.active){pointer-events:none!important;visibility:hidden!important;}
 #plan-filters{flex:0 1 auto;max-height:28vh;overflow:auto;background:var(--bg2);border-bottom:1px solid var(--border);}
 #plan-filters.collapsed{display:none;}
 #plan-kpi{flex:0 0 auto;padding:6px 10px;border-bottom:1px solid var(--border);background:var(--bg);}
@@ -450,7 +452,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-plan-perf-v1';
+const APP_BUILD='2026-11-10-plan-nav-fix-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -2864,7 +2866,11 @@ function getDistinctCarrosseries(){const s=new Set();DB.getVehicles().forEach(v=
 // ===== NAVIGATION =====
 var currentScreen='marche';
 function showScreen(name){
+  var leaving=currentScreen;
   try{dismissBlockingOverlays();}catch(e){}
+  if(leaving==='plan'&&name!=='plan'){
+    try{if(typeof window.leavePlanScreen==='function')window.leavePlanScreen();}catch(e){}
+  }
   if(currentScreen==='marche'&&name!=='marche')clearMarcheClientFocus(false);
   if(name==='activite'&&typeof window.openActiviteScreen==='function'){window.openActiviteScreen();return;}
   QA('.screen').forEach(s=>s.classList.remove('active'));
@@ -2874,8 +2880,12 @@ function showScreen(name){
   const ni=document.querySelector('.nav-item[data-screen="'+name+'"]');
   if(ni)ni.classList.add('active');
   currentScreen=name;
-  renderScreen(name);
-  if(name==='marche')renderGFBar(name);
+  // Laisser le changement d’onglet s’afficher avant un rendu lourd (évite le gel au départ de Plan)
+  requestAnimationFrame(function(){
+    if(currentScreen!==name)return;
+    try{renderScreen(name);}catch(err){console.error(err);}
+    if(name==='marche')try{renderGFBar(name);}catch(e2){}
+  });
 }
 
 // ===== GLOBAL FILTER BAR =====
@@ -13324,10 +13334,17 @@ document.addEventListener('DOMContentLoaded',function(){
         daf3:siteHasDafInLast36Months(sk),
         visit:normalizeEtatProspection((snap.etat&&snap.etat[sk])||c.etatProspection||''),
         proj:proj, pas:pas, marked:!!(projYear||pas),
-        pv:(function(){try{return !!(typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(sk));}catch(e){return false;}})(),
+        pv:false,
         score:rowScore(sk, urg, c)
       });
     });
+    // Une seule lecture du Plan pour toutes les lignes (évite N rebuilds)
+    try{
+      if(typeof window.isSiteInPlanVentes==='function'&&rows.length){
+        window.isSiteInPlanVentes(rows[0].sk); // warm cache
+        rows.forEach(function(r){r.pv=!!window.isSiteInPlanVentes(r.sk);});
+      }
+    }catch(e){}
     MODEL.sig=dataSig();
     MODEL.rows=rows;
     return rows;
@@ -15490,13 +15507,28 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   var _planRenderTimer=null;
+  function hidePlanFloating(){
+    UI.vend=false; UI.geo=false;
+    ['plan-col-pop','plan-vend-drop','plan-geo-drop'].forEach(function(id){
+      var el=$(id); if(el)el.style.display='none';
+    });
+  }
+  window.leavePlanScreen=function(){
+    clearTimeout(_planRenderTimer); _planRenderTimer=null;
+    hidePlanFloating();
+    try{
+      var pop=$('plan-col-pop'); if(pop){pop.style.display='none'; pop.innerHTML='';}
+    }catch(e){}
+  };
   function renderPlanVentesNow(opts){
     opts=opts||{};
+    if(typeof currentScreen!=='undefined'&&currentScreen!=='plan')return;
     ensurePlanReady();
     ensureGF(); bindStatic();
     var keep=!!opts.keepScroll;
     var scTop=keep&&$('plan-scroll')?$('plan-scroll').scrollTop:0;
     var rows=buildModels().filter(function(r){return passesFilters(r.ent,r);});
+    if(typeof currentScreen!=='undefined'&&currentScreen!=='plan')return;
     var key=SORT.key||'client', dir=SORT.dir||1;
     rows.sort(function(a,b){
       var va=sortVal(a,key), vb=sortVal(b,key);
@@ -15522,6 +15554,7 @@ document.addEventListener('DOMContentLoaded',function(){
   }
   window.renderPlanVentes=function(opts){
     opts=opts||{};
+    if(typeof currentScreen!=='undefined'&&currentScreen!=='plan')return;
     // Filtre/tri : debounce pour ne pas saturer le thread (sensation de plantage)
     if(opts.keepScroll || opts.soft){
       clearTimeout(_planRenderTimer);
