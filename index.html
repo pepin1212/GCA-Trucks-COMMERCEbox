@@ -400,6 +400,7 @@ input[type=file]{display:none}
         <button type="button" class="gf-chip" id="plan-year-add">+ Ajouter</button>
         <button type="button" class="gf-chip" id="plan-filter-toggle" title="Afficher ou réduire Filtres + KPI">Réduire</button>
         <button type="button" class="gf-chip" id="plan-action-add">+ Action</button>
+        <button type="button" class="gf-chip" id="plan-export-xlsx" title="Exporter le tableau filtré vers Excel">Excel</button>
       </div>
     </div>
   </div>
@@ -449,7 +450,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-pv-logo-ok-v1';
+const APP_BUILD='2026-11-10-plan-export-xlsx-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -14785,6 +14786,56 @@ document.addEventListener('DOMContentLoaded',function(){
     return yearDataOf(read(), activeYear()).actions||[];
   }
 
+  function pairVal(pair, kind){return pair?(pair[kind]||0):0;}
+  function prjExportLabel(r){
+    var f=r&&r.flags||{};
+    if(f.hasProjet)return 'PRJ';
+    if(f.pasProjet)return 'NON';
+    if(f.simpleVisite)return 'VIS';
+    return 'P';
+  }
+  function exportPlanExcel(){
+    if(typeof XLSX==='undefined'){toast('Export Excel impossible — xlsx.full.min.js absent');return;}
+    var rows=VIEW.rows||[];
+    if(!rows.length){toast('Aucune ligne à exporter avec ces filtres');return;}
+    var n=activeYear(), acts=actionsList();
+    var headers=['INCL.','Projet','C/P','CLIENT',
+      (n-3)+' DAF',(n-3)+' HORS',(n-2)+' DAF',(n-2)+' HORS',(n-1)+' DAF',(n-1)+' HORS',n+' DAF',n+' HORS',
+      'TRACT. 4-6 DAF','TRACT. 4-6 HORS','PORT. 5-7 DAF','PORT. 5-7 HORS','TOTAL 10 ANS DAF','TOTAL 10 ANS HORS',
+      'OBJECTIF'];
+    acts.forEach(function(a){headers.push(a.label||a.id);});
+    headers.push('CANTON','VILLE');
+    var aoa=[headers];
+    rows.forEach(function(r){
+      var line=[
+        r.included?'X':'',
+        prjExportLabel(r),
+        r.cp||'',
+        r.nom||'',
+        pairVal(r.n3,'d'),pairVal(r.n3,'h'),
+        pairVal(r.n2,'d'),pairVal(r.n2,'h'),
+        pairVal(r.n1,'d'),pairVal(r.n1,'h'),
+        pairVal(r.n0,'d'),pairVal(r.n0,'h'),
+        pairVal(r.tr,'d'),pairVal(r.tr,'h'),
+        pairVal(r.po,'d'),pairVal(r.po,'h'),
+        pairVal(r.tot,'d'),pairVal(r.tot,'h'),
+        r.objectif||0
+      ];
+      acts.forEach(function(a){
+        var st=(r.actions&&r.actions[a.id])||'';
+        line.push(st==='done'?'X':(st==='X'?'X':''));
+      });
+      line.push(r.canton||'', r.ville||'');
+      aoa.push(line);
+    });
+    try{
+      var wb=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Plan '+n);
+      XLSX.writeFile(wb,'Plan_de_ventes_'+n+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+      toast('Plan '+n+' exporté · '+rows.length+' ligne(s)');
+    }catch(e){console.error(e);toast('Export Excel impossible');}
+  }
+
   function colSpan(){return 4 + 8 + 6 + 1 + actionsList().length + 2;}
 
   function headHtml(){
@@ -15237,6 +15288,7 @@ document.addEventListener('DOMContentLoaded',function(){
     });
     safeOn('plan-year-add','click',addYearModal);
     safeOn('plan-action-add','click',addActionModal);
+    safeOn('plan-export-xlsx','click',exportPlanExcel);
     var sc=$('plan-scroll');
     if(sc&&!sc._planScroll){
       sc._planScroll=true;
