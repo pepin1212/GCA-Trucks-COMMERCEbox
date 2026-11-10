@@ -440,7 +440,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-plan-ventes-v1';
+const APP_BUILD='2026-11-10-plan-ventes-v2';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -14230,7 +14230,7 @@ document.addEventListener('DOMContentLoaded',function(){
 <script>
 /* DAF_COMMERCE-Box — Plan de ventes (concept validé 2026-11-09) */
 (function(){
-  var UI={filtersOpen:false};
+  var UI={filtersOpen:false, geo:false, vend:false, q:''};
   var VIEW={start:-1, rows:[]};
   var RH=40;
   var DEFAULT_ACTIONS=[
@@ -14241,7 +14241,6 @@ document.addEventListener('DOMContentLoaded',function(){
 
   function attr(s){return escH(s).replace(/"/g,'&quot;');}
   function seedYear(){return YEAR + 1;}
-
   function loadSettings(){return getAppSettings()||{};}
 
   function ensureIn(st){
@@ -14435,41 +14434,93 @@ document.addEventListener('DOMContentLoaded',function(){
     if(!GF.planShow)GF.planShow='tous';
     if(!GF.planMaskExclusion)GF.planMaskExclusion='neutral';
     if(!GF.planMaskInactifs)GF.planMaskInactifs='neutral';
+    if(!GF.planMaskAccessible)GF.planMaskAccessible='neutral';
+    if(!GF.planFUrgent)GF.planFUrgent='neutral';
+    if(!GF.planFProtocole)GF.planFProtocole='neutral';
+    if(!GF.planFProjet)GF.planFProjet='neutral';
+    if(!GF.planMaskSitesSec)GF.planMaskSitesSec='exclude';
+    if(!GF.planMaskSansFiche)GF.planMaskSansFiche='neutral';
+    if(!GF.planMaskDaf3Ans)GF.planMaskDaf3Ans='neutral';
+    if(!GF.planF)GF.planF='all';
+    if(!GF.planTypeFilter)GF.planTypeFilter='tous';
+    if(!Array.isArray(GF.planProfils))GF.planProfils=[];
+    if(!Array.isArray(GF.planVendeurs))GF.planVendeurs=[];
+    if(!Array.isArray(GF.planCantons))GF.planCantons=[];
+    if(!Array.isArray(GF.planVilles))GF.planVilles=[];
   }
 
   function passesFilters(ent, model){
     ensureGF();
     var q=String(GF.planSearch||'').trim().toLowerCase();
     if(q){
-      var hay=[ent.nom,ent.ville,ent.canton,ent.tva].join(' ').toLowerCase();
+      var hay=[ent.nom,ent.ville,ent.canton,ent.tva,(ent.principal&&ent.principal.vendeur)||'',(ent.principal&&ent.principal.profil)||''].join(' ').toLowerCase();
       if(hay.indexOf(q)<0)return false;
     }
     if(GF.planShow==='inclus'&&!model.included)return false;
     if(GF.planShow==='non'&&model.included)return false;
     var c=ent.principal;
-    if(c){
-      if(typeof passesTriMask==='function'){
-        if(!passesTriMask(GF.planMaskExclusion, typeof isClientExcludedMarche==='function'?isClientExcludedMarche(c):false))return false;
-        if(!passesTriMask(GF.planMaskInactifs, typeof isInactiveClient==='function'?isInactiveClient(c.tva, makeSiteKey(c)):false))return false;
-      }
+    if(!c)return true;
+    var sk=c._siteKey||makeSiteKey(c);
+    var profils=GF.planProfils||[];
+    if(profils.length&&!profils.some(function(p){return norm(p)===norm(c.profil||'');}))return false;
+    var vends=GF.planVendeurs||[];
+    if(vends.length&&!vends.some(function(v){return norm(v)===norm(c.vendeur||'');}))return false;
+    if(typeof passesTriMask==='function'){
+      if(!passesTriMask(GF.planMaskExclusion, typeof isClientExcludedMarche==='function'?isClientExcludedMarche(c):false))return false;
+      if(!passesTriMask(GF.planMaskInactifs, typeof isInactiveClient==='function'?isInactiveClient(c.tva, sk):false))return false;
+      if(!passesTriMask(GF.planMaskAccessible, typeof isClientAccessible==='function'?!isClientAccessible(c):false))return false;
+      if(!passesTriMask(GF.planFUrgent, typeof isClientUrgent==='function'?isClientUrgent(c):false))return false;
+      if(!passesTriMask(GF.planFProtocole, !!String(c.groupement||'').trim()))return false;
+      var projetHit=!!(model.flags&&(model.flags.hasProjet||model.flags.pasProjet));
+      if(!passesTriMask(GF.planFProjet, projetHit))return false;
+    }
+    var cantons=GF.planCantons||[], villes=GF.planVilles||[];
+    if(cantons.length&&cantons.indexOf(String(ent.canton||'').trim()||'Sans canton')<0)return false;
+    if(villes.length&&villes.indexOf(String(ent.ville||'').trim()||'Sans ville')<0)return false;
+    var f=GF.planF||'all';
+    if(f==='daf_with'&&!(model.dafCount>0))return false;
+    if(f==='no_daf'&&!(model.parc>0&&model.dafCount===0))return false;
+    if(ent.kind==='solo'&&typeof getSitePrincipalInfo==='function'){
+      var info=getSitePrincipalInfo(sk);
+      var sec=!!(info&&info.hasGroup&&!info.principal);
+      var ss=GF.planMaskSitesSec||'exclude';
+      if(ss==='only'&&!sec)return false;
+      if(ss==='exclude'&&sec)return false;
+    }
+    var d3=GF.planMaskDaf3Ans||'neutral';
+    if(d3!=='neutral'&&typeof siteHasDafInLast36Months==='function'){
+      var hitD3=(ent.siteKeys||[]).some(function(x){return siteHasDafInLast36Months(x);});
+      if(!passesTriMask(d3, hitD3))return false;
     }
     return true;
   }
 
   function buildModels(){
+    ensureGF();
     var pv=read(), n=parseInt(pv.activeYear,10)||seedYear(), yd=yearDataOf(pv, n);
-    var entities=buildEntities(), rows=[], i, ent, key, st, veh, flags;
+    var entities=buildEntities(), rows=[], i, ent, key, st, veh, flags, tf, yearType;
     var yN3=yearWindow(n,-3,-3), yN2=yearWindow(n,-2,-2), yN1=yearWindow(n,-1,-1), yN=yearWindow(n,0,0);
     var yTr=yearWindow(n,-6,-4), yPo=yearWindow(n,-7,-5), y10=yearWindow(n,-10,-1);
+    tf=GF.planTypeFilter||'tous';
+    yearType=tf==='tous'?null:tf;
     for(i=0;i<entities.length;i++){
       ent=entities[i]; key=entityKey(ent); st=rowStateOf(yd, key); veh=vehiclesForEntity(ent); flags=projectFlags(ent);
+      var parc=0, dafCount=0, vi, vv;
+      for(vi=0;vi<veh.length;vi++){
+        vv=veh[vi];
+        if(tf==='tracteur'&&!isTracteur(vv))continue;
+        if(tf==='porteur'&&!isPorteur(vv))continue;
+        parc++;
+        if(isDaf(vv))dafCount++;
+      }
       rows.push({
         ent:ent, key:key, included:!!st.included, objectif:parseInt(st.objectif,10)||0, actions:Object.assign({}, st.actions||{}),
         cp:isClientC(veh,n)?'C':'P',
-        n3:countPair(veh,yN3,null), n2:countPair(veh,yN2,null), n1:countPair(veh,yN1,null), n0:countPair(veh,yN,null),
-        tr:countPair(veh,yTr,'tracteur'), po:countPair(veh,yPo,'porteur'), tot:countPair(veh,y10,null),
+        n3:countPair(veh,yN3,yearType), n2:countPair(veh,yN2,yearType), n1:countPair(veh,yN1,yearType), n0:countPair(veh,yN,yearType),
+        tr:countPair(veh,yTr,'tracteur'), po:countPair(veh,yPo,'porteur'), tot:countPair(veh,y10,yearType),
         pf:portefeuilleForEntity(ent,n), flags:flags, nom:ent.nom, ville:ent.ville, canton:ent.canton,
-        sk:ent.principal?(ent.principal._siteKey||makeSiteKey(ent.principal)):''
+        sk:ent.principal?(ent.principal._siteKey||makeSiteKey(ent.principal)):'',
+        parc:parc, dafCount:dafCount
       });
     }
     return rows;
@@ -14581,24 +14632,214 @@ document.addEventListener('DOMContentLoaded',function(){
     sel.innerHTML=years.map(function(y){return '<option value="'+y+'"'+(y===cur?' selected':'')+'>'+y+'</option>';}).join('');
   }
 
+  function triBtn(id,label,st){
+    return '<button type="button" class="gf-chip'+_triChipClass(st)+'" id="'+id+'">'+_triLabel(label,st)+'</button>';
+  }
+  function maskBtn(id,label,st){
+    var cls=st==='exclude'?' mask-exclude':(st==='only'?' mask-only':'');
+    return '<button type="button" class="gf-chip'+cls+'" id="'+id+'">'+escH(label)+(st==='neutral'?'':(' '+_toursMaskLabel(st)))+'</button>';
+  }
+  function vendHtml(){
+    var arr=GF.planVendeurs||[], vals=[];
+    try{vals=getDistinctVendeurs();}catch(e){vals=[];}
+    if(!vals.length)return '';
+    var label=arr.length?('Vendeur ('+arr.length+')'):'Vendeur ▼';
+    return '<div id="plan-vend-wrap" style="position:relative;display:inline-block;">'
+      +'<button type="button" class="gf-chip'+(arr.length?' on':'')+'" id="btn-plan-vend">'+escH(label)+'</button>'
+      +'<div id="plan-vend-drop" style="display:none;position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);min-width:200px;max-height:280px;overflow:auto;box-shadow:0 8px 24px rgba(0,0,0,.5);">'
+      +'<div style="padding:6px 10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;"><span style="font-size:10px;font-weight:700;color:var(--text3);">VENDEURS</span><button type="button" id="plan-vend-reset" style="background:none;border:none;color:var(--daf);font-size:10px;font-weight:700;cursor:pointer;">Tous</button></div>'
+      +vals.map(function(v){
+        return '<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;"><input type="checkbox" data-plan-vend="'+attr(v)+'"'+(arr.indexOf(v)>=0?' checked':'')+' style="accent-color:var(--daf);width:14px;height:14px;"><span>'+escH(v)+'</span></label>';
+      }).join('')
+      +'</div></div>';
+  }
+  function geoHtml(){
+    var n=(GF.planCantons||[]).length+(GF.planVilles||[]).length;
+    var label=n?('Cantons / Villes ('+n+')'):'Cantons / Villes ▼';
+    return '<div id="plan-geo-wrap" style="position:relative;display:inline-block;">'
+      +'<button type="button" class="gf-chip'+(n?' on':'')+'" id="btn-plan-geo">'+escH(label)+'</button>'
+      +'<div id="plan-geo-drop" style="display:none;position:fixed;z-index:9999;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);width:280px;max-height:340px;box-shadow:0 8px 24px rgba(0,0,0,.5);">'
+      +'<div style="padding:8px;border-bottom:1px solid var(--border);"><input id="plan-geo-search" class="form-input" placeholder="Canton ou ville…" autocomplete="off" style="font-size:13px;padding:7px 8px;"></div>'
+      +'<div style="display:flex;justify-content:space-between;padding:4px 8px;border-bottom:1px solid var(--border);"><span style="font-size:9px;color:var(--text3);">Plusieurs choix · canton et ville se cumulent</span><button type="button" id="plan-geo-reset" style="background:none;border:none;color:var(--daf);font-size:10px;font-weight:700;cursor:pointer;">Effacer</button></div>'
+      +'<div id="plan-geo-list" style="max-height:250px;overflow:auto;"></div></div></div>';
+  }
+  function fillGeo(){
+    var box=$('plan-geo-list'); if(!box)return;
+    var q=norm(UI.q||'');
+    function rows(kind,label,all,selected){
+      var html='<div style="padding:6px 10px 2px;font-size:9px;font-weight:800;color:var(--text3);">'+label+'</div>', shown=0;
+      all.forEach(function(name){
+        var on=selected.indexOf(name)>=0;
+        if(!on&&(!q||norm(name).indexOf(q)<0))return;
+        if(shown>=40)return;
+        shown++;
+        html+='<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;"><input type="checkbox" data-plan-geo-kind="'+kind+'" data-plan-geo-value="'+attr(name)+'"'+(on?' checked':'')+' style="accent-color:var(--daf);width:14px;height:14px;"><span>'+escH(name)+'</span></label>';
+      });
+      if(!shown)html+='<div style="font-size:10px;color:var(--text3);padding:4px 10px 8px;">'+(q?'Aucun résultat':'Écrivez pour chercher')+'</div>';
+      return html;
+    }
+    var cantons=[], villes=[];
+    try{cantons=getDistinctCantons();villes=getDistinctVilles();}catch(e){}
+    box.innerHTML=rows('canton','CANTONS',cantons,GF.planCantons||[])+rows('ville','VILLES',villes,GF.planVilles||[]);
+    box.querySelectorAll('input[type=checkbox]').forEach(function(cb){
+      cb.onchange=function(e){
+        e.stopPropagation();
+        var key=this.getAttribute('data-plan-geo-kind')==='canton'?'planCantons':'planVilles';
+        var value=this.getAttribute('data-plan-geo-value');
+        var arr=(GF[key]||[]).slice(), ix=arr.indexOf(value);
+        if(this.checked&&ix<0)arr.push(value);
+        if(!this.checked&&ix>=0)arr.splice(ix,1);
+        GF[key]=arr; UI.geo=true;
+        renderPlanVentes({keepScroll:true});
+      };
+    });
+  }
+  function placeDrop(btn,drop){
+    if(!btn||!drop)return;
+    var r=btn.getBoundingClientRect();
+    drop.style.display='block';
+    drop.style.top=(r.bottom+4)+'px';
+    drop.style.left=Math.max(8, Math.min(r.left, window.innerWidth-296))+'px';
+  }
+  function openPlanProfils(){
+    var set={}, list=[];
+    (DB.getClients()||[]).forEach(function(c){var p=String(c.profil||'').trim(); if(p)set[p]=1;});
+    list=Object.keys(set).sort(function(a,b){return a.localeCompare(b,'fr');});
+    var sel=(GF.planProfils||[]).map(norm);
+    var body='<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">Sélection multiple. Aucun choix = tous les profils.</div><div style="max-height:50vh;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--bg3);padding:8px;">';
+    if(!list.length)body+='<div style="font-size:12px;color:var(--text3);padding:8px;">Aucun profil commercial.</div>';
+    list.forEach(function(p){
+      body+='<label style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);font-size:12px;"><input type="checkbox" class="plan-prof-choice" value="'+attr(p)+'"'+(sel.indexOf(norm(p))>=0?' checked':'')+' style="width:17px;height:17px;"><span>'+escH(p)+'</span></label>';
+    });
+    body+='</div>';
+    openModal('Profils commerciaux', body, [
+      {label:'Tous les profils',cls:'btn-secondary',close:false,action:function(){GF.planProfils=[]; try{closeModal();}catch(e){} renderPlanVentes({keepScroll:true});}},
+      {label:'Appliquer',cls:'btn-primary',close:false,action:function(){GF.planProfils=Array.prototype.slice.call(document.querySelectorAll('.plan-prof-choice:checked')).map(function(c){return c.value;}); try{closeModal();}catch(e){} renderPlanVentes({keepScroll:true});}},
+      {label:'Annuler',cls:'btn-ghost'}
+    ]);
+  }
+  function bindPlanVend(){
+    var btn=$('btn-plan-vend'), drop=$('plan-vend-drop');
+    if(!btn||!drop)return;
+    btn.onclick=function(e){
+      e.stopPropagation();
+      UI.vend=drop.style.display!=='block';
+      if(UI.vend)placeDrop(btn,drop); else drop.style.display='none';
+    };
+    var reset=$('plan-vend-reset');
+    if(reset)reset.onclick=function(e){e.stopPropagation(); GF.planVendeurs=[]; UI.vend=true; renderPlanVentes({keepScroll:true});};
+    drop.querySelectorAll('input[type=checkbox]').forEach(function(cb){
+      cb.onchange=function(e){
+        e.stopPropagation();
+        var v=this.getAttribute('data-plan-vend');
+        var arr=(GF.planVendeurs||[]).slice(), ix=arr.indexOf(v);
+        if(this.checked&&ix<0)arr.push(v);
+        if(!this.checked&&ix>=0)arr.splice(ix,1);
+        GF.planVendeurs=arr; UI.vend=true;
+        renderPlanVentes({keepScroll:true});
+      };
+    });
+    if(UI.vend)placeDrop(btn,drop);
+  }
+  function bindPlanGeo(){
+    var btn=$('btn-plan-geo'), drop=$('plan-geo-drop'), inp=$('plan-geo-search');
+    if(!btn||!drop)return;
+    btn.onclick=function(e){
+      e.stopPropagation();
+      UI.geo=drop.style.display!=='block';
+      if(UI.geo){placeDrop(btn,drop); fillGeo(); if(inp){inp.value=UI.q||''; inp.focus();}}
+      else drop.style.display='none';
+    };
+    if(inp){
+      inp.oninput=function(e){e.stopPropagation(); UI.q=this.value||''; fillGeo();};
+      inp.onclick=function(e){e.stopPropagation();};
+    }
+    var reset=$('plan-geo-reset');
+    if(reset)reset.onclick=function(e){e.stopPropagation(); GF.planCantons=[]; GF.planVilles=[]; UI.q=''; UI.geo=true; renderPlanVentes({keepScroll:true});};
+    if(UI.geo){placeDrop(btn,drop); fillGeo(); if(inp)inp.value=UI.q||'';}
+  }
+  function bindPlanFilters(){
+    QA('#plan-filters [data-plan-show]').forEach(function(b){
+      b.onclick=function(){GF.planShow=this.getAttribute('data-plan-show')||'tous'; renderPlanVentes({keepScroll:true});};
+    });
+    QA('#plan-filters [data-plan-type]').forEach(function(b){
+      b.onclick=function(){GF.planTypeFilter=this.getAttribute('data-plan-type')||'tous'; renderPlanVentes({keepScroll:true});};
+    });
+    var mapCycle={
+      'btn-plan-exclus':'planMaskExclusion',
+      'btn-plan-inactifs':'planMaskInactifs',
+      'btn-plan-access':'planMaskAccessible',
+      'btn-plan-sec':'planMaskSitesSec',
+      'btn-plan-sans':'planMaskSansFiche',
+      'btn-plan-d3':'planMaskDaf3Ans'
+    };
+    Object.keys(mapCycle).forEach(function(id){
+      var el=$(id); if(!el)return;
+      el.onclick=function(){
+        GF[mapCycle[id]]=cycleToursMaskState(GF[mapCycle[id]]||'neutral');
+        renderPlanVentes({keepScroll:true});
+      };
+    });
+    QA('#plan-fpills .fpill').forEach(function(el){
+      el.onclick=function(){
+        if(el.getAttribute('data-tri')==='1'){
+          var triMap={urgent:'planFUrgent',protocole:'planFProtocole',projet:'planFProjet'};
+          var key=triMap[el.getAttribute('data-plan-f')]||'planFUrgent';
+          GF[key]=cycleToursMaskState(GF[key]||'neutral');
+        }else GF.planF=el.getAttribute('data-plan-f')||'all';
+        renderPlanVentes({keepScroll:true});
+      };
+    });
+    var pb=$('btn-plan-profils'); if(pb)pb.onclick=function(e){e.preventDefault();e.stopPropagation();openPlanProfils();};
+    bindPlanVend();
+    bindPlanGeo();
+  }
   function paintFilters(){
     var box=$('plan-filters'); if(!box)return;
     ensureGF();
     var show=GF.planShow||'tous';
-    function chip(id,label,on){return '<button type="button" class="gf-chip'+(on?' on':'')+'" data-plan-show="'+id+'">'+label+'</button>';}
-    function mask(id,label,st){
-      var cls=st==='exclude'?' mask-exclude':(st==='only'?' mask-only':'');
-      var lab=typeof _toursMaskLabel==='function'?_toursMaskLabel(st):'';
-      return '<button type="button" class="gf-chip'+cls+'" id="'+id+'">'+escH(label)+(st==='neutral'?'':(' '+lab))+'</button>';
+    var tf=GF.planTypeFilter||'tous';
+    var f=GF.planF||'all';
+    var profils=GF.planProfils||[];
+    var pLabel=!profils.length?'Profils commerciaux : Tous':(profils.length===1?('Profil : '+profils[0]):('Profils commerciaux : '+profils.length));
+    function pill(key,label){return '<div class="fpill'+(f===key?' active':'')+'" data-plan-f="'+key+'">'+label+'</div>';}
+    function triPill(key,label,st,title){
+      var cls=st==='exclude'?' tri-off':(st==='only'?' tri-on':'');
+      return '<div class="fpill'+cls+'" data-plan-f="'+key+'" data-tri="1"'+(title?' title="'+attr(title)+'"':'')+'>'+_triLabel(label,st)+'</div>';
     }
-    box.innerHTML='<div style="padding:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">'
-      +'<span style="font-size:9px;font-weight:800;color:var(--text3);">AFFICHAGE</span>'
-      +chip('tous','Tous',show==='tous')+chip('inclus','Inclus',show==='inclus')+chip('non','Non inclus',show==='non')
-      +mask('plan-mask-exclu','Exclus',GF.planMaskExclusion||'neutral')
-      +mask('plan-mask-ina','Inactifs',GF.planMaskInactifs||'neutral')+'</div>';
+    var html='<div style="display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;align-items:center;background:var(--bg2);">'
+      +'<span style="font-size:9px;font-weight:800;color:var(--text3);">AFFICHAGE PLAN</span>'
+      +'<button type="button" class="gf-btn'+(show==='tous'?' gf-on':'')+'" data-plan-show="tous">Tous</button>'
+      +'<button type="button" class="gf-btn'+(show==='inclus'?' gf-on':'')+'" data-plan-show="inclus">Inclus</button>'
+      +'<button type="button" class="gf-btn'+(show==='non'?' gf-on':'')+'" data-plan-show="non">Non inclus</button>'
+      +'</div>';
+    html+='<div style="display:flex;gap:5px;padding:5px 12px;flex-wrap:wrap;align-items:center;background:var(--bg2);border-top:1px solid var(--border);">'
+      +vendHtml()
+      +'<button type="button" class="gf-btn'+(tf==='tous'?' gf-on':'')+'" data-plan-type="tous">Tous</button>'
+      +'<button type="button" class="gf-btn'+(tf==='tracteur'?' gf-on':'')+'" data-plan-type="tracteur">Tracteurs</button>'
+      +'<button type="button" class="gf-btn'+(tf==='porteur'?' gf-on':'')+'" data-plan-type="porteur">Porteurs</button>'
+      +'<button type="button" class="gf-chip'+(profils.length?' on':'')+'" id="btn-plan-profils">'+escH(pLabel)+' ▼</button>'
+      +triBtn('btn-plan-exclus','EXCLUS',GF.planMaskExclusion)
+      +triBtn('btn-plan-inactifs','INACTIFS',GF.planMaskInactifs)
+      +triBtn('btn-plan-access','ACCESSIBLES',GF.planMaskAccessible)
+      +'</div>';
+    html+='<div id="plan-fpills" class="filter-row" style="padding:4px 12px;background:var(--bg2);border-top:1px solid var(--border);flex-wrap:wrap;">'
+      +pill('all','Tous')+pill('daf_with','Avec DAF')+pill('no_daf','Sans DAF')
+      +triPill('urgent','Urgents',GF.planFUrgent)
+      +triPill('protocole','Protocole',GF.planFProtocole)
+      +triPill('projet','PROJET',GF.planFProjet,'OFF retire les projets / pas de projet de l’année en cours.')
+      +'</div>';
+    html+='<div style="padding:4px 12px 6px;background:var(--bg2);border-top:1px solid var(--border);">'+geoHtml()+'</div>';
+    html+='<div style="display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;background:var(--bg2);border-top:1px solid var(--border);">'
+      +maskBtn('btn-plan-sec','Sites sec.',GF.planMaskSitesSec)
+      +maskBtn('btn-plan-sans','Sans fiche',GF.planMaskSansFiche)
+      +maskBtn('btn-plan-d3','DAF 3 ans',GF.planMaskDaf3Ans)
+      +'</div>';
+    box.innerHTML=html;
+    bindPlanFilters();
+    var tog=$('plan-filter-toggle');
+    if(tog)tog.textContent=UI.filtersOpen?'Masquer filtres':'Filtres';
   }
-
-  function nextTri(cur){return cur==='neutral'?'exclude':(cur==='exclude'?'only':'neutral');}
 
   function refreshMarkers(){
     try{if(typeof renderImmat==='function'&&currentScreen==='immat')renderImmat({keepScroll:true});}catch(e){}
@@ -14672,6 +14913,8 @@ document.addEventListener('DOMContentLoaded',function(){
     safeOn('plan-filter-toggle','click',function(){
       UI.filtersOpen=!UI.filtersOpen;
       var f=$('plan-filters'); if(f)f.classList.toggle('collapsed', !UI.filtersOpen);
+      var tog=$('plan-filter-toggle');
+      if(tog)tog.textContent=UI.filtersOpen?'Masquer filtres':'Filtres';
     });
     safeOn('plan-search','input',debounce(function(){
       GF.planSearch=($('plan-search')||{}).value||'';
@@ -14720,11 +14963,8 @@ document.addEventListener('DOMContentLoaded',function(){
       });
     }
     document.addEventListener('click',function(e){
-      var btn=e.target&&e.target.closest?e.target.closest('[data-plan-show],#plan-mask-exclu,#plan-mask-ina'):null;
-      if(!btn)return;
-      if(btn.dataset.planShow){GF.planShow=btn.dataset.planShow; renderPlanVentes({keepScroll:true}); return;}
-      if(btn.id==='plan-mask-exclu'){GF.planMaskExclusion=nextTri(GF.planMaskExclusion); renderPlanVentes({keepScroll:true});}
-      if(btn.id==='plan-mask-ina'){GF.planMaskInactifs=nextTri(GF.planMaskInactifs); renderPlanVentes({keepScroll:true});}
+      if(!e.target.closest('#plan-vend-wrap')&&$('plan-vend-drop')){$('plan-vend-drop').style.display='none'; UI.vend=false;}
+      if(!e.target.closest('#plan-geo-wrap')&&$('plan-geo-drop')){$('plan-geo-drop').style.display='none'; UI.geo=false;}
     });
   }
 
