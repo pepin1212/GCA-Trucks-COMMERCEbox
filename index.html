@@ -16,7 +16,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 #app{width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden}
 .screen{display:none;flex:1;overflow-y:auto;overflow-x:hidden;padding-bottom:calc(var(--nav-h) + var(--safe-b) + 8px);-webkit-overflow-scrolling:touch}
 .screen.active{display:block}
-#nav{position:fixed;bottom:0;left:0;right:0;height:calc(var(--nav-h) + var(--safe-b));background:rgba(10,12,15,.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;align-items:flex-start;padding-top:8px;z-index:100}
+#nav{position:fixed;bottom:0;left:0;right:0;height:calc(var(--nav-h) + var(--safe-b));background:rgba(10,12,15,.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;align-items:flex-start;padding-top:8px;z-index:500}
 .nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 2px;cursor:pointer;transition:all .2s}
 .nav-icon{font-size:22px;line-height:1}
 .nav-label{font-size:9px;font-weight:600;letter-spacing:.3px;color:var(--text3);text-transform:uppercase}
@@ -450,7 +450,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-plan-export-xlsx-v1';
+const APP_BUILD='2026-11-10-fix-ui-freeze-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -2864,6 +2864,7 @@ function getDistinctCarrosseries(){const s=new Set();DB.getVehicles().forEach(v=
 // ===== NAVIGATION =====
 var currentScreen='marche';
 function showScreen(name){
+  try{dismissBlockingOverlays();}catch(e){}
   if(currentScreen==='marche'&&name!=='marche')clearMarcheClientFocus(false);
   if(name==='activite'&&typeof window.openActiviteScreen==='function'){window.openActiviteScreen();return;}
   QA('.screen').forEach(s=>s.classList.remove('active'));
@@ -3125,8 +3126,21 @@ function _modalHasExportableContent(){
 function _buttonsHasExport(buttons){
   return (buttons||[]).some(function(b){var l=String(b.label||'').toLowerCase();return l.indexOf('export')>=0||l.indexOf('excel')>=0;});
 }
+function dismissBlockingOverlays(){
+  try{
+    var ov=$('modal-ov');
+    if(ov){ov.classList.remove('open');ov.removeAttribute('data-lock');}
+    _modalExportGetter=null;
+  }catch(e){}
+  try{if(typeof closeSheet==='function')closeSheet();}catch(e){}
+  ['immat-col-pop','plan-col-pop','immat-visit-menu','immat-vend-drop','immat-geo-drop','plan-vend-drop','plan-geo-drop','marche-geo-drop'].forEach(function(id){
+    var el=$(id); if(el)el.style.display='none';
+  });
+  try{QA('[id^="gf-vendeur-drop-"],[id^="vf-drop-"]').forEach(function(el){el.style.display='none';});}catch(e){}
+}
+window.dismissBlockingOverlays=dismissBlockingOverlays;
 function openModal(title,bodyHtml,buttons,exportGetter){
-  buttons=buttons||[{label:'Fermer',cls:'btn-primary'}];
+  if(buttons==null)buttons=[{label:'Fermer',cls:'btn-primary'}];
   _modalExportGetter=(typeof exportGetter==='function')?exportGetter:null;
   $('modal-title').textContent=title;
   $('modal-body').innerHTML=bodyHtml;
@@ -3140,13 +3154,18 @@ function openModal(title,bodyHtml,buttons,exportGetter){
   $('modal-foot').innerHTML=footButtons.map((b,i)=>
     `<button class="btn ${b.cls||'btn-secondary'}" id="mb${i}" style="width:100%;">${escH(b.label)}</button>`
   ).join('');
-  $('modal-ov').classList.add('open');
+  var ov=$('modal-ov');
+  if(ov)ov.classList.add('open');
   footButtons.forEach((b,i)=>{
     const el=$(`mb${i}`);
     if(el)el.onclick=()=>{b.action&&b.action();if(b.close!==false)closeModal();};
   });
 }
-function closeModal(){$('modal-ov').classList.remove('open');_modalExportGetter=null;}
+function closeModal(){
+  var ov=$('modal-ov');
+  if(ov){ov.classList.remove('open');ov.removeAttribute('data-lock');}
+  _modalExportGetter=null;
+}
 
 // ===== HOME RENDER =====
 function _computeMarcheGraphCtx(filtVeh, filtered, totalVeh){
@@ -4521,7 +4540,29 @@ function bindEvents(){
   QA('.nav-item[data-screen]').forEach(function(el){el.onclick=function(){showScreen(el.dataset.screen);};});
   safeOn('sheet-close','click',closeSheet);
   safeOn('sheet-ov','click',function(e){if(e.target===$('sheet-ov'))closeSheet();});
-  safeOn('modal-ov','click',function(e){if(e.target===$('modal-ov')&&!$('modal-ov').getAttribute('data-lock'))closeModal();});
+  safeOn('modal-ov','click',function(e){
+    if(e.target!==$('modal-ov'))return;
+    var ov=$('modal-ov');
+    if(ov&&ov.getAttribute('data-lock')){
+      // Triple tap rapide sur le fond = déblocage d’urgence si envoi coffre bloqué
+      var now=Date.now();
+      if(!ov._tapUnlock)ov._tapUnlock={n:0,t:0};
+      if(now-ov._tapUnlock.t>900)ov._tapUnlock.n=0;
+      ov._tapUnlock.t=now; ov._tapUnlock.n++;
+      if(ov._tapUnlock.n>=3){dismissBlockingOverlays();toast('Interface débloquée');}
+      return;
+    }
+    closeModal();
+  });
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState!=='visible')return;
+    try{
+      var ov=$('modal-ov'), foot=$('modal-foot');
+      if(ov&&ov.classList.contains('open')&&ov.getAttribute('data-lock')==='1'&&foot&&!foot.querySelector('button')){
+        dismissBlockingOverlays();
+      }
+    }catch(e){}
+  });
   safeOn('tours-search','input',function(){toursSearch=this.value;debouncedTours();});
   QA('#tours-fpills .fpill').forEach(function(el){
     el.onclick=function(){
@@ -13891,6 +13932,9 @@ document.addEventListener('DOMContentLoaded',function(){
     sc._immatBound=true;
     var raf=0;
     sc.addEventListener('scroll',function(){
+      var pop=$('immat-col-pop'), vm=$('immat-visit-menu');
+      if(pop)pop.style.display='none';
+      if(vm)vm.style.display='none';
       if(raf)return;
       raf=requestAnimationFrame(function(){raf=0; var prev=VIEW.start; paintBody(); if(VIEW.start===prev){} });
     },{passive:true});
@@ -14090,7 +14134,21 @@ document.addEventListener('DOMContentLoaded',function(){
   }
   function openSendProgress(){
     var ov=$('modal-ov'); if(ov)ov.setAttribute('data-lock','1');
-    openModal('Envoi vers le coffre', coffreStepRow('coffre-step-1','Nouvelle copie enregistrée')+coffreStepRow('coffre-step-2','Ancienne copie effacée')+'<div id="coffre-step-detail" style="font-size:12px;color:var(--text2);line-height:1.45;"></div>', []);
+    openModal('Envoi vers le coffre', coffreStepRow('coffre-step-1','Nouvelle copie enregistrée')+coffreStepRow('coffre-step-2','Ancienne copie effacée')+'<div id="coffre-step-detail" style="font-size:12px;color:var(--text2);line-height:1.45;"></div>', [
+      {label:'Annuler',cls:'btn-ghost',close:false,action:function(){
+        var o=$('modal-ov'); if(o)o.removeAttribute('data-lock');
+        closeModal();
+      }}
+    ]);
+    // Filet de sécurité : si l’envoi reste bloqué sans bouton Fermer, déverrouiller
+    clearTimeout(openSendProgress._t);
+    openSendProgress._t=setTimeout(function(){
+      var o=$('modal-ov'), foot=$('modal-foot');
+      if(!o||!o.classList.contains('open')||o.getAttribute('data-lock')!=='1')return;
+      if(foot&&foot.querySelector('#coffre-send-close'))return;
+      unlockSend();
+      sendDetail('<p>L’envoi semble bloqué. Vous pouvez fermer et réessayer.</p>');
+    },45000);
   }
   function markSendStep(id, ok){
     var el=document.getElementById(id); if(!el)return;
@@ -14104,6 +14162,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if(d)d.innerHTML=html||'';
   }
   function unlockSend(){
+    clearTimeout(openSendProgress._t);
     var foot=$('modal-foot'); if(!foot)return;
     foot.innerHTML='<button class="btn btn-primary" id="coffre-send-close" style="width:100%;">Fermer</button>';
     var b=$('coffre-send-close');
@@ -15292,7 +15351,10 @@ document.addEventListener('DOMContentLoaded',function(){
     var sc=$('plan-scroll');
     if(sc&&!sc._planScroll){
       sc._planScroll=true;
-      sc.addEventListener('scroll',function(){VIEW.start=-1; paintBody();},{passive:true});
+      sc.addEventListener('scroll',function(){
+        VIEW.start=-1; paintBody();
+        var pop=$('plan-col-pop'); if(pop)pop.style.display='none';
+      },{passive:true});
       sc.addEventListener('change',function(e){
         var t=e.target; if(!t||!sc.contains(t))return;
         if(t.classList.contains('plan-inc')){
