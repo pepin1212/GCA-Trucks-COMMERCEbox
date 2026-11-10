@@ -446,7 +446,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-plan-col-filtres-v1';
+const APP_BUILD='2026-11-10-badge-pv-tournees-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -8109,6 +8109,7 @@ document.addEventListener('DOMContentLoaded',function(){
       if(c.isUrgent)badges.push('<span class="badge b-urgent">URGENT</span>');
       if(c.hasProjet)badges.push('<span class="badge b-projet">PROJET</span>');
       if(c.pasProjet)badges.push('<span class="badge" style="background:var(--bg3);color:var(--text3);border:1px solid var(--border);">SANS PROJET</span>');
+      try{if(typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(c._siteKey||(typeof makeSiteKey==='function'?makeSiteKey(c):'')))badges.push('<span class="badge b-pv" title="Inclus au Plan de ventes">PV</span>');}catch(e){}
       if(c.isFlotteRegionale)badges.push('<span class="badge b-flotte">FLOTTE RÉGIO.</span>');
       if(c.isFlotteCoordonnee)badges.push('<span class="badge b-flotte">FLOTTE COORD.</span>');
       if(c.isFlotteNationale)badges.push('<span class="badge b-flotte">FLOTTE NAT.</span>');
