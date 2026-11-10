@@ -76,13 +76,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .immat-table tr.immat-pad td{height:auto;max-height:none;padding:0;border:none;background:transparent;}
 .immat-num{cursor:pointer;}
 .immat-num:active{background:var(--daf-bg);}
-.immat-visit-btn,.immat-col{background:none;border:none;color:inherit;font:inherit;font-weight:800;cursor:pointer;padding:1px 2px;}
+.immat-visit-btn,.immat-col,.plan-col{background:none;border:none;color:inherit;font:inherit;font-weight:800;cursor:pointer;padding:1px 2px;}
 .immat-visit-btn{font-size:9px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);max-width:108px;}
-.immat-col.on{color:var(--daf);}
+.immat-col.on,.plan-col.on{color:var(--daf);}
 #immat-filters.collapsed{display:none;}
 #immat-detail:empty{display:none;}
 #immat-detail{flex:0 1 auto;max-height:38vh;overflow:auto;background:var(--bg);border-bottom:1px solid var(--border);}
-#immat-visit-menu,#immat-col-pop{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
+#immat-visit-menu,#immat-col-pop,#plan-col-pop{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
 #screen-plan.screen.active{display:flex;flex-direction:column;overflow:hidden;}
 #plan-filters{flex:0 1 auto;max-height:28vh;overflow:auto;background:var(--bg2);border-bottom:1px solid var(--border);}
 #plan-filters.collapsed{display:none;}
@@ -409,6 +409,7 @@ input[type=file]{display:none}
   <div id="plan-kpi" class="collapsed"></div>
   <div id="plan-compact" class="show"></div>
   <div id="plan-scroll"></div>
+  <div id="plan-col-pop" style="display:none;"></div>
 </div>
 
 <nav id="nav">
@@ -445,7 +446,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-force-update-v1';
+const APP_BUILD='2026-11-10-plan-col-filtres-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -14351,6 +14352,8 @@ document.addEventListener('DOMContentLoaded',function(){
 (function(){
   var UI={filtersOpen:false, geo:false, vend:false, q:''};
   var VIEW={start:-1, rows:[], lastKpi:null};
+  var SORT={key:'client', dir:1};
+  var COLF={};
   var RH=40;
   var DEFAULT_ACTIONS=[
     {id:'demo_tracteur', label:'DEMO TRACTEUR'},
@@ -14568,8 +14571,90 @@ document.addEventListener('DOMContentLoaded',function(){
     if(!Array.isArray(GF.planVilles))GF.planVilles=[];
   }
 
+  function prjCode(r){
+    var f=r&&r.flags||{};
+    if(f.hasProjet)return 'prj';
+    if(f.pasProjet)return 'pas';
+    if(f.simpleVisite)return 'vis';
+    return '';
+  }
+  function pairSum(pair){return (pair&&pair.d||0)+(pair&&pair.h||0);}
+  function numVal(r,col){
+    if(col==='objectif')return r.objectif||0;
+    if(col==='pf')return r.pf||0;
+    var m=/^(n3|n2|n1|n0|tr|po|tot)([dh])?$/.exec(col);
+    if(!m)return null;
+    var pair=r[m[1]]||{d:0,h:0};
+    if(!m[2])return pairSum(pair);
+    return m[2]==='d'?(pair.d||0):(pair.h||0);
+  }
+  function sortVal(r,key){
+    if(key==='client')return r.nom||'';
+    if(key==='canton')return r.canton||'';
+    if(key==='ville')return r.ville||'';
+    if(key==='inc')return r.included?1:0;
+    if(key==='cp')return r.cp||'';
+    if(key==='prj')return prjCode(r);
+    if(key.indexOf('act_')===0){
+      var st=(r.actions&&r.actions[key.slice(4)])||'';
+      return st==='done'?2:(st==='X'?1:0);
+    }
+    var n=numVal(r,key);
+    return n==null?'':n;
+  }
+  function colActive(col){
+    var f=COLF[col]; if(!f)return false;
+    if(f.mode&&f.mode!=='all')return true;
+    if(f.q)return true;
+    if(f.vals&&f.vals.length)return true;
+    return false;
+  }
+  function colBtn(col,label){
+    var on=SORT.key===col||colActive(col);
+    var mark=SORT.key===col?(SORT.dir>0?' ▲':' ▼'):'';
+    return '<button type="button" class="plan-col'+(on?' on':'')+'" data-col="'+attr(col)+'">'+label+mark+'</button>';
+  }
+  function colPass(r){
+    var keys=Object.keys(COLF), i, col, f, v, qq;
+    for(i=0;i<keys.length;i++){
+      col=keys[i]; f=COLF[col]; if(!f)continue;
+      if(col==='client'){
+        if(f.q){qq=String(f.q).toLowerCase(); if((r.nom+' '+r.ville).toLowerCase().indexOf(qq)<0)return false;}
+        continue;
+      }
+      if(col==='canton'||col==='ville'){
+        if(f.q){qq=String(f.q).toLowerCase(); if(String(r[col]||'').toLowerCase().indexOf(qq)<0)return false;}
+        continue;
+      }
+      if(col==='inc'){
+        v=!!r.included;
+        if(f.mode==='on'&&!v)return false;
+        if(f.mode==='off'&&v)return false;
+        continue;
+      }
+      if(col==='cp'){
+        if(f.vals&&f.vals.length&&f.vals.indexOf(String(r.cp||''))<0)return false;
+        continue;
+      }
+      if(col==='prj'){
+        if(f.vals&&f.vals.length&&f.vals.indexOf(prjCode(r))<0)return false;
+        continue;
+      }
+      if(col.indexOf('act_')===0){
+        v=(r.actions&&r.actions[col.slice(4)])||'';
+        if(f.vals&&f.vals.length&&f.vals.indexOf(v)<0)return false;
+        continue;
+      }
+      v=numVal(r,col);
+      if(v==null){if(f.mode&&f.mode!=='all')return false; continue;}
+      if(f.mode==='pos'&&!(v>0))return false;
+      if(f.mode==='zero'&&v!==0)return false;
+    }
+    return true;
+  }
   function passesFilters(ent, model){
     ensureGF();
+    if(!colPass(model))return false;
     var q=String(GF.planSearch||'').trim().toLowerCase();
     if(q){
       var hay=[ent.nom,ent.ville,ent.canton,ent.tva,(ent.principal&&ent.principal.vendeur)||'',(ent.principal&&ent.principal.profil)||''].join(' ').toLowerCase();
@@ -14669,17 +14754,53 @@ document.addEventListener('DOMContentLoaded',function(){
 
   function headHtml(){
     var n=activeYear(), acts=actionsList(), html='<tr>';
-    html+='<th class="c-inc" rowspan="2">INCL.</th><th class="c-prj" rowspan="2"></th><th class="c-cp" rowspan="2">C/P</th><th class="c-nom" rowspan="2">CLIENT</th>';
-    html+='<th colspan="2">'+(n-3)+'</th><th colspan="2">'+(n-2)+'</th><th colspan="2">'+(n-1)+'</th><th colspan="2">'+n+'</th>';
-    html+='<th colspan="2" title="Tracteurs immat. N-6 → N-4">TRACT. 4-6</th>';
-    html+='<th colspan="2" title="Porteurs immat. N-7 → N-5">PORT. 5-7</th>';
-    html+='<th colspan="2" title="Total immat. N-10 → N-1">TOTAL 10 ANS</th>';
-    html+='<th rowspan="2">OBJECTIF</th>';
-    acts.forEach(function(a){html+='<th rowspan="2" title="'+attr(a.label)+'">'+escH(a.label)+'</th>';});
-    html+='<th rowspan="2">CANTON</th><th rowspan="2">VILLE</th></tr><tr>';
-    [0,1,2,3,4,5,6].forEach(function(){html+='<th>DAF</th><th>HORS</th>';});
+    html+='<th class="c-inc" rowspan="2">'+colBtn('inc','INCL.')+'</th>';
+    html+='<th class="c-prj" rowspan="2">'+colBtn('prj','PRJ')+'</th>';
+    html+='<th class="c-cp" rowspan="2">'+colBtn('cp','C/P')+'</th>';
+    html+='<th class="c-nom" rowspan="2">'+colBtn('client','CLIENT')+'</th>';
+    html+='<th colspan="2">'+colBtn('n3',String(n-3))+'</th><th colspan="2">'+colBtn('n2',String(n-2))+'</th><th colspan="2">'+colBtn('n1',String(n-1))+'</th><th colspan="2">'+colBtn('n0',String(n))+'</th>';
+    html+='<th colspan="2" title="Tracteurs immat. N-6 → N-4">'+colBtn('tr','TRACT. 4-6')+'</th>';
+    html+='<th colspan="2" title="Porteurs immat. N-7 → N-5">'+colBtn('po','PORT. 5-7')+'</th>';
+    html+='<th colspan="2" title="Total immat. N-10 → N-1">'+colBtn('tot','TOTAL 10 ANS')+'</th>';
+    html+='<th rowspan="2">'+colBtn('objectif','OBJECTIF')+'</th>';
+    acts.forEach(function(a){html+='<th rowspan="2" title="'+attr(a.label)+'">'+colBtn('act_'+a.id, escH(a.label))+'</th>';});
+    html+='<th rowspan="2">'+colBtn('canton','CANTON')+'</th><th rowspan="2">'+colBtn('ville','VILLE')+'</th></tr><tr>';
+    [['n3','d'],['n3','h'],['n2','d'],['n2','h'],['n1','d'],['n1','h'],['n0','d'],['n0','h'],['tr','d'],['tr','h'],['po','d'],['po','h'],['tot','d'],['tot','h']].forEach(function(p){
+      html+='<th>'+colBtn(p[0]+p[1], p[1]==='d'?'DAF':'HORS')+'</th>';
+    });
     html+='</tr>';
     return html;
+  }
+  function openColPop(btn){
+    var col=btn.getAttribute('data-col'), pop=$('plan-col-pop');
+    if(!pop||!col)return;
+    var f=COLF[col]||{};
+    var kind='num';
+    if(col==='client'||col==='canton'||col==='ville')kind='text';
+    else if(col==='inc')kind='check';
+    else if(col==='cp'||col==='prj'||col.indexOf('act_')===0)kind='vals';
+    var html='<div style="padding:8px;">';
+    html+='<button type="button" class="btn btn-secondary btn-sm plan-sort-go" data-dir="1" style="width:100%;margin-bottom:4px;">Trier croissant</button>';
+    html+='<button type="button" class="btn btn-secondary btn-sm plan-sort-go" data-dir="-1" style="width:100%;margin-bottom:8px;">Trier décroissant</button>';
+    if(kind==='text'){
+      var ph=col==='client'?'Le nom contient…':(col==='canton'?'Le canton contient…':'La ville contient…');
+      html+='<input id="plan-col-q" class="form-input" placeholder="'+attr(ph)+'" value="'+attr(f.q||'')+'" style="font-size:13px;margin-bottom:6px;">';
+    }else if(kind==='check'){
+      html+='<button type="button" class="gf-chip plan-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip plan-fmode" data-mode="on">Inclus</button> <button type="button" class="gf-chip plan-fmode" data-mode="off">Non inclus</button>';
+    }else if(kind==='num'){
+      html+='<button type="button" class="gf-chip plan-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip plan-fmode" data-mode="pos">&gt; 0</button> <button type="button" class="gf-chip plan-fmode" data-mode="zero">= 0</button>';
+    }else{
+      var opts=col==='cp'?[['C','Client C'],['P','Prospect P']]:(col==='prj'?[['prj','PROJET'],['pas','PAS DE PROJET'],['vis','SIMPLE VISITE'],['','Vide']]:[['','Vide'],['X','X'],['done','Fait ✓']]);
+      opts.forEach(function(o){
+        html+='<label style="display:flex;gap:6px;padding:4px 0;font-size:12px;"><input type="checkbox" class="plan-vfilt" value="'+attr(o[0])+'"'+((f.vals||[]).indexOf(o[0])>=0?' checked':'')+'> '+escH(o[1])+'</label>';
+      });
+      html+='<button type="button" class="btn btn-primary btn-sm" id="plan-vfilt-apply" style="width:100%;margin-top:6px;">Filtrer</button>';
+    }
+    html+='<button type="button" class="btn btn-ghost btn-sm" id="plan-col-clear" style="width:100%;margin-top:6px;">Effacer le filtre</button></div>';
+    pop.innerHTML=html; pop.style.display='block'; pop._col=col;
+    var rc=btn.getBoundingClientRect();
+    pop.style.top=Math.max(8, Math.min(rc.bottom+4, window.innerHeight-220))+'px';
+    pop.style.left=Math.max(8, Math.min(rc.left, window.innerWidth-250))+'px';
   }
 
   function rowHtml(r){
@@ -15099,6 +15220,8 @@ document.addEventListener('DOMContentLoaded',function(){
         }
       });
       sc.addEventListener('click',function(e){
+        var col=e.target.closest&&e.target.closest('.plan-col');
+        if(col&&sc.contains(col)){e.preventDefault();e.stopPropagation();openColPop(col);return;}
         var name=e.target.closest&&e.target.closest('.plan-name');
         if(name&&sc.contains(name)){if(name.dataset.sk&&typeof openSiteSheet==='function')openSiteSheet(name.dataset.sk);return;}
         var act=e.target.closest&&e.target.closest('.plan-act');
@@ -15110,9 +15233,39 @@ document.addEventListener('DOMContentLoaded',function(){
         }
       });
     }
+    var pop=$('plan-col-pop');
+    if(pop&&!pop._bound){
+      pop._bound=true;
+      pop.addEventListener('click',function(e){
+        e.stopPropagation();
+        var col=pop._col;
+        var sort=e.target.closest&&e.target.closest('.plan-sort-go');
+        if(sort){SORT={key:col, dir:Number(sort.getAttribute('data-dir'))||1}; pop.style.display='none'; renderPlanVentes({keepScroll:true}); return;}
+        var mode=e.target.closest&&e.target.closest('.plan-fmode');
+        if(mode){COLF[col]=COLF[col]||{}; COLF[col].mode=mode.getAttribute('data-mode')||'all'; if(COLF[col].mode==='all'&&!COLF[col].q)delete COLF[col]; renderPlanVentes({keepScroll:true}); return;}
+        if(e.target.id==='plan-vfilt-apply'){
+          var vals=[];
+          pop.querySelectorAll('.plan-vfilt:checked').forEach(function(cb){vals.push(cb.value);});
+          if(vals.length)COLF[col]={vals:vals}; else delete COLF[col];
+          renderPlanVentes({keepScroll:true});
+          return;
+        }
+        if(e.target.id==='plan-col-clear'){delete COLF[col]; pop.style.display='none'; renderPlanVentes({keepScroll:true});}
+      });
+      pop.addEventListener('input',function(e){
+        if(e.target.id!=='plan-col-q')return;
+        var col=pop._col;
+        COLF[col]=COLF[col]||{};
+        COLF[col].q=e.target.value||'';
+        if(!COLF[col].q&&(!COLF[col].mode||COLF[col].mode==='all'))delete COLF[col];
+        clearTimeout(pop._t);
+        pop._t=setTimeout(function(){renderPlanVentes({keepScroll:true});},140);
+      });
+    }
     document.addEventListener('click',function(e){
       if(!e.target.closest('#plan-vend-wrap')&&$('plan-vend-drop')){$('plan-vend-drop').style.display='none'; UI.vend=false;}
       if(!e.target.closest('#plan-geo-wrap')&&$('plan-geo-drop')){$('plan-geo-drop').style.display='none'; UI.geo=false;}
+      if(!e.target.closest('#plan-col-pop')&&!e.target.closest('.plan-col')&&$('plan-col-pop'))$('plan-col-pop').style.display='none';
     });
   }
 
@@ -15123,9 +15276,15 @@ document.addEventListener('DOMContentLoaded',function(){
     var keep=!!opts.keepScroll;
     var scTop=keep&&$('plan-scroll')?$('plan-scroll').scrollTop:0;
     var rows=buildModels().filter(function(r){return passesFilters(r.ent,r);});
+    var key=SORT.key||'client', dir=SORT.dir||1;
     rows.sort(function(a,b){
-      if(!!b.included!==!!a.included)return (b.included?1:0)-(a.included?1:0);
-      return String(a.nom||'').localeCompare(String(b.nom||''),'fr');
+      var va=sortVal(a,key), vb=sortVal(b,key);
+      if(va==null&&vb==null)return 0;
+      if(va==null)return 1;
+      if(vb==null)return -1;
+      var n=typeof va==='number'?va-vb:String(va).localeCompare(String(vb),'fr',{numeric:true});
+      if(!n)n=String(a.nom||'').localeCompare(String(b.nom||''),'fr');
+      return n*dir;
     });
     VIEW.rows=rows; VIEW.start=-1;
     paintYearSelect();
@@ -15133,7 +15292,10 @@ document.addEventListener('DOMContentLoaded',function(){
     else { var fb=$('plan-filters'); if(fb)fb.innerHTML=''; }
     var search=$('plan-search'); if(search)search.value=GF.planSearch||'';
     var sub=$('plan-sub'); if(sub)sub.textContent='Année '+activeYear()+' · '+rows.length+' ligne(s)';
-    ensureTable(); paintKpi(rows); paintBody();
+    var head=$('plan-head');
+    if(!head||!$('plan-body'))ensureTable();
+    else head.innerHTML=headHtml();
+    paintKpi(rows); paintBody();
     syncPlanPanel();
     if(keep&&$('plan-scroll'))$('plan-scroll').scrollTop=scTop;
   };
