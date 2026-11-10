@@ -445,7 +445,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-coffre-enregistrer-v1';
+const APP_BUILD='2026-11-10-force-update-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -3910,21 +3910,27 @@ function dafForceAppUpdateIfNeeded(){
     }
     sessionStorage.setItem('daf_reload_'+APP_BUILD,'1');
     dafForceAppUpdate(function(){
-      var q='?v='+encodeURIComponent(APP_BUILD);
+      var path=location.pathname||'/';
+      if(!/index\.html$/i.test(path)) path=path.replace(/\/?$/,'/')+'index.html';
+      var q='?v='+encodeURIComponent(APP_BUILD)+'&t='+Date.now();
       if((location.search||'').indexOf('reset=1')>=0)q+='&reset=1';
-      location.replace(location.pathname+q+location.hash);
+      location.replace(path+q+location.hash);
     });
     return true;
   }catch(e){return false;}
 }
 function dafManualForceUpdate(){
-  openModal('Forcer la mise à jour','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Efface le cache PWA de cette application puis recharge la dernière version depuis GitHub.<br><br>Build actuel affiché : <strong>'+escH(APP_BUILD)+'</strong></p>',[
+  var pagesUrl='https://pepin1212.github.io/GCA-Trucks-COMMERCEbox/index.html?v='+encodeURIComponent(APP_BUILD)+'&t='+Date.now();
+  openModal('Forcer la mise à jour','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Efface le cache PWA puis recharge depuis GitHub Pages.<br><br>Build dans <strong>ce</strong> fichier : <strong>'+escH(APP_BUILD)+'</strong><br><br>Si tu restes bloqué sur une ancienne version (ex. bases-v97), ferme l’app, ouvre <strong>Safari</strong> (pas l’icône écran d’accueil) et va sur :<br><span style="font-family:monospace;font-size:10px;word-break:break-all;">'+escH(pagesUrl)+'</span></p>',[
     {label:'Annuler',cls:'btn-ghost'},
     {label:'Mettre à jour maintenant',cls:'btn-primary',action:function(){
       try{sessionStorage.removeItem('daf_reload_'+APP_BUILD);}catch(e){}
       dafForceAppUpdate(function(){
-        var q='?v='+encodeURIComponent(APP_BUILD);
-        location.replace(location.pathname+q);
+        var path=location.pathname||'/';
+        if(!/index\.html$/i.test(path)){
+          path=path.replace(/\/?$/,'/')+'index.html';
+        }
+        location.replace(path+'?v='+encodeURIComponent(APP_BUILD)+'&t='+Date.now());
       });
     }}
   ]);
