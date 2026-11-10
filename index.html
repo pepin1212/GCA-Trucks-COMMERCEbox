@@ -84,9 +84,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 #immat-detail{flex:0 1 auto;max-height:38vh;overflow:auto;background:var(--bg);border-bottom:1px solid var(--border);}
 #immat-visit-menu,#immat-col-pop{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
 #screen-plan.screen.active{display:flex;flex-direction:column;overflow:hidden;}
-#plan-filters{flex:0 1 auto;max-height:36vh;overflow:auto;background:var(--bg2);border-bottom:1px solid var(--border);}
+#plan-filters{flex:0 1 auto;max-height:28vh;overflow:auto;background:var(--bg2);border-bottom:1px solid var(--border);}
 #plan-filters.collapsed{display:none;}
 #plan-kpi{flex:0 0 auto;padding:6px 10px;border-bottom:1px solid var(--border);background:var(--bg);}
+#plan-kpi.collapsed{display:none;}
+#plan-compact{display:none;padding:4px 10px;border-bottom:1px solid var(--border);background:var(--bg2);font-size:10px;color:var(--text2);font-weight:700;line-height:1.35;}
+#plan-compact.show{display:block;}
+#plan-compact strong{color:var(--daf);}
 #plan-scroll{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;}
 .plan-table{border-collapse:separate;border-spacing:0;font-size:10px;min-width:max-content;}
 .plan-table th,.plan-table td{border-bottom:1px solid var(--border);border-right:1px solid var(--border);padding:3px 4px;text-align:center;white-space:nowrap;background:var(--bg);vertical-align:middle;}
@@ -391,7 +395,7 @@ input[type=file]{display:none}
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
         <select id="plan-year-select" class="form-input" style="width:auto;min-width:88px;padding:5px 8px;font-size:12px;font-weight:800;"></select>
         <button type="button" class="gf-chip" id="plan-year-add">+ Ajouter</button>
-        <button type="button" class="gf-chip" id="plan-filter-toggle">Filtres</button>
+        <button type="button" class="gf-chip" id="plan-filter-toggle" title="Afficher ou réduire Filtres + KPI">Réduire</button>
         <button type="button" class="gf-chip" id="plan-action-add">+ Action</button>
       </div>
     </div>
@@ -402,7 +406,8 @@ input[type=file]{display:none}
     <button type="button" class="btn btn-ghost btn-sm" id="plan-search-clear" title="Effacer la recherche" style="min-width:30px;height:30px;padding:0;border-radius:50%;font-size:13px;line-height:1;">✕</button>
   </div>
   <div id="plan-filters" class="collapsed"></div>
-  <div id="plan-kpi"></div>
+  <div id="plan-kpi" class="collapsed"></div>
+  <div id="plan-compact" class="show"></div>
   <div id="plan-scroll"></div>
 </div>
 
@@ -440,7 +445,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-plan-ventes-v2';
+const APP_BUILD='2026-11-10-plan-ventes-v3';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -14231,7 +14236,7 @@ document.addEventListener('DOMContentLoaded',function(){
 /* DAF_COMMERCE-Box — Plan de ventes (concept validé 2026-11-09) */
 (function(){
   var UI={filtersOpen:false, geo:false, vend:false, q:''};
-  var VIEW={start:-1, rows:[]};
+  var VIEW={start:-1, rows:[], lastKpi:null};
   var RH=40;
   var DEFAULT_ACTIONS=[
     {id:'demo_tracteur', label:'DEMO TRACTEUR'},
@@ -14609,19 +14614,52 @@ document.addEventListener('DOMContentLoaded',function(){
     sc.innerHTML='<table class="plan-table"><thead id="plan-head">'+headHtml()+'</thead><tbody id="plan-body"></tbody></table>';
   }
 
-  function paintKpi(rows){
-    var box=$('plan-kpi'); if(!box)return;
-    var inclus=rows.filter(function(r){return r.included;});
+  function kpiStats(rows){
+    var inclus=(rows||[]).filter(function(r){return r.included;});
     var obj=0, pf=0;
     inclus.forEach(function(r){obj+=r.objectif||0; pf+=r.pf||0;});
     var ecart=pf-obj, pct=obj>0?Math.round((pf/obj)*1000)/10:0;
+    return {n:inclus.length, obj:obj, pf:pf, ecart:ecart, pct:pct, year:activeYear()};
+  }
+  function paintCompact(stats){
+    var box=$('plan-compact'); if(!box)return;
+    stats=stats||VIEW.lastKpi||{n:0,obj:0,pf:0,ecart:0,pct:0,year:activeYear()};
+    box.innerHTML='<strong>'+stats.year+'</strong> · Inclus <strong>'+stats.n+'</strong> · Obj <strong>'+stats.obj+'</strong> · PF <strong>'+stats.pf+'</strong> · '
+      +(stats.ecart>=0?'+':'')+stats.ecart+' · '+stats.pct+'%'
+      +' <button type="button" class="btn btn-ghost btn-sm" id="plan-compact-open" style="margin-left:6px;font-size:10px;padding:2px 8px;vertical-align:baseline;">Filtres · KPI</button>';
+    var b=$('plan-compact-open');
+    if(b)b.onclick=function(e){e.preventDefault();e.stopPropagation(); setPlanPanelOpen(true);};
+  }
+  function syncPlanPanel(){
+    var f=$('plan-filters'), k=$('plan-kpi'), c=$('plan-compact'), tog=$('plan-filter-toggle');
+    if(f)f.classList.toggle('collapsed', !UI.filtersOpen);
+    if(k)k.classList.toggle('collapsed', !UI.filtersOpen);
+    if(c)c.classList.toggle('show', !UI.filtersOpen);
+    if(tog){
+      tog.textContent=UI.filtersOpen?'Réduire':'Filtres · KPI';
+      tog.title=UI.filtersOpen?'Réduire Filtres + KPI pour maximiser le tableau':'Afficher Filtres + KPI';
+      tog.classList.toggle('on', UI.filtersOpen);
+    }
+    if(!UI.filtersOpen)paintCompact(VIEW.lastKpi);
+  }
+  function setPlanPanelOpen(open){
+    UI.filtersOpen=!!open;
+    syncPlanPanel();
+    if(UI.filtersOpen)paintFilters();
+  }
+  function paintKpi(rows){
+    var box=$('plan-kpi'); if(!box)return;
+    var stats=kpiStats(rows);
+    VIEW.lastKpi=stats;
     box.innerHTML='<div class="kpi-grid kpi-grid-3" style="margin:0;">'
-      +'<div class="kpi-card"><div class="kpi-val">'+inclus.length+'</div><div class="kpi-lbl">Inclus</div></div>'
-      +'<div class="kpi-card c-daf"><div class="kpi-val">'+obj+'</div><div class="kpi-lbl">Σ Objectifs</div></div>'
-      +'<div class="kpi-card c-green"><div class="kpi-val">'+pf+'</div><div class="kpi-lbl">Portefeuille N</div></div>'
-      +'<div class="kpi-card '+(ecart>=0?'c-green':'c-orange')+'"><div class="kpi-val">'+(ecart>=0?'+':'')+ecart+'</div><div class="kpi-lbl">Écart</div></div>'
-      +'<div class="kpi-card c-blue"><div class="kpi-val">'+pct+'%</div><div class="kpi-lbl">Avancement</div></div>'
-      +'<div class="kpi-card"><div class="kpi-val">'+activeYear()+'</div><div class="kpi-lbl">Année plan</div></div></div>';
+      +'<div class="kpi-card"><div class="kpi-val">'+stats.n+'</div><div class="kpi-lbl">Inclus</div></div>'
+      +'<div class="kpi-card c-daf"><div class="kpi-val">'+stats.obj+'</div><div class="kpi-lbl">Σ Objectifs</div></div>'
+      +'<div class="kpi-card c-green"><div class="kpi-val">'+stats.pf+'</div><div class="kpi-lbl">Portefeuille N</div></div>'
+      +'<div class="kpi-card '+(stats.ecart>=0?'c-green':'c-orange')+'"><div class="kpi-val">'+(stats.ecart>=0?'+':'')+stats.ecart+'</div><div class="kpi-lbl">Écart</div></div>'
+      +'<div class="kpi-card c-blue"><div class="kpi-val">'+stats.pct+'%</div><div class="kpi-lbl">Avancement</div></div>'
+      +'<div class="kpi-card"><div class="kpi-val">'+stats.year+'</div><div class="kpi-lbl">Année plan</div></div></div>';
+    paintCompact(stats);
+    syncPlanPanel();
   }
 
   function paintYearSelect(){
@@ -14837,8 +14875,7 @@ document.addEventListener('DOMContentLoaded',function(){
       +'</div>';
     box.innerHTML=html;
     bindPlanFilters();
-    var tog=$('plan-filter-toggle');
-    if(tog)tog.textContent=UI.filtersOpen?'Masquer filtres':'Filtres';
+    syncPlanPanel();
   }
 
   function refreshMarkers(){
@@ -14911,10 +14948,7 @@ document.addEventListener('DOMContentLoaded',function(){
   function bindStatic(){
     if(bindStatic._done)return; bindStatic._done=true;
     safeOn('plan-filter-toggle','click',function(){
-      UI.filtersOpen=!UI.filtersOpen;
-      var f=$('plan-filters'); if(f)f.classList.toggle('collapsed', !UI.filtersOpen);
-      var tog=$('plan-filter-toggle');
-      if(tog)tog.textContent=UI.filtersOpen?'Masquer filtres':'Filtres';
+      setPlanPanelOpen(!UI.filtersOpen);
     });
     safeOn('plan-search','input',debounce(function(){
       GF.planSearch=($('plan-search')||{}).value||'';
@@ -14980,11 +15014,13 @@ document.addEventListener('DOMContentLoaded',function(){
       return String(a.nom||'').localeCompare(String(b.nom||''),'fr');
     });
     VIEW.rows=rows; VIEW.start=-1;
-    paintYearSelect(); paintFilters();
-    var f=$('plan-filters'); if(f)f.classList.toggle('collapsed', !UI.filtersOpen);
+    paintYearSelect();
+    if(UI.filtersOpen)paintFilters();
+    else { var fb=$('plan-filters'); if(fb)fb.innerHTML=''; }
     var search=$('plan-search'); if(search)search.value=GF.planSearch||'';
     var sub=$('plan-sub'); if(sub)sub.textContent='Année '+activeYear()+' · '+rows.length+' ligne(s)';
     ensureTable(); paintKpi(rows); paintBody();
+    syncPlanPanel();
     if(keep&&$('plan-scroll'))$('plan-scroll').scrollTop=scTop;
   };
 })();
