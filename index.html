@@ -445,7 +445,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-plan-ventes-v3';
+const APP_BUILD='2026-11-10-plan-ventes-v4';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -489,6 +489,32 @@ function normSiret(s){
 }
 function siretSiren(s){var n=normSiret(s);return n.length>=9?n.slice(0,9):'';}
 function normClientName(s){return norm(String(s||'').replace(/\s+/g,' '));}
+function normTva(t){
+  var s=String(t||'').trim().toUpperCase().replace(/[\s\.\-]/g,'');
+  if(!s)return '';
+  // Harmonise FR + SIREN / TVA : FR12345678901 ↔ 12345678901
+  if(/^FR[A-Z0-9]{2}\d{9}$/.test(s))return s;
+  if(/^FR\d{9,11}$/.test(s))return s;
+  if(/^\d{9,11}$/.test(s))return 'FR'+s;
+  return s;
+}
+function tvaEquals(a,b){
+  var na=normTva(a), nb=normTva(b);
+  if(!na||!nb)return false;
+  if(na===nb)return true;
+  var da=na.replace(/^FR[A-Z0-9]{0,2}/,''), db=nb.replace(/^FR[A-Z0-9]{0,2}/,'');
+  return !!(da&&db&&da===db);
+}
+function sitesForTva(tva){
+  if(!tva||!IDX||!IDX.sitesByTva)return [];
+  var direct=IDX.sitesByTva[tva];
+  if(direct&&direct.length)return direct.slice();
+  var out=[], keys=Object.keys(IDX.sitesByTva), i;
+  for(i=0;i<keys.length;i++){
+    if(tvaEquals(keys[i], tva))out=out.concat(IDX.sitesByTva[keys[i]]||[]);
+  }
+  return out;
+}
 // Rattachement automatique : si plusieurs sites CRM (même TVA / SIREN / nom), cible le site principal du groupe.
 function _clientFromSiteKey(sk){
   return sk&&IDX.cBySite&&IDX.cBySite[sk]?IDX.cBySite[sk]:null;
@@ -542,13 +568,59 @@ function _pickPrincipalAmongCandidates(cands,tva){
 function resolveClientForVehicle(v){
   if(!v||!IDX)return null;
   var _vsiret=normSiret(v.siret);
-  if(_vsiret){
-    if(IDX.cBySiret&&IDX.cBySiret[_vsiret])return IDX.cBySiret[_vsiret];
-    return null;
-  }
+  // 1) SIRET exact
+  if(_vsiret&&IDX.cBySiret&&IDX.cBySiret[_vsiret])return IDX.cBySiret[_vsiret];
+  // 2) TVA à fiche unique (même si un SIRET non reconnu est présent)
   if(v.tva){
-    var sitesTva=(IDX.sitesByTva&&IDX.sitesByTva[v.tva])||[];
+    var sitesTva=sitesForTva(v.tva);
     if(sitesTva.length===1)return sitesTva[0];
+  }
+  // 3) SIREN (établissement ≠ siège / SIRET légèrement différent)
+  var siren=siretSiren(_vsiret)||siretSiren(v.siren);
+  var cands=siren&&IDX.cBySiren?((IDX.cBySiren[siren]||[]).slice()):null;
+  if(cands&&cands.length){
+    if(cands.length===1)return cands[0];
+    if(v.tva){
+      var byTva=cands.filter(function(c){return tvaEquals(c.tva, v.tva);});
+      if(byTva.length===1)return byTva[0];
+      if(byTva.length>1)cands=byTva;
+    }
+    var vn=normClientName(v.client||v.nom||'');
+    if(vn){
+      var byName=cands.filter(function(c){var cn=normClientName(c.nom);return cn&&(cn===vn||cn.indexOf(vn)>=0||vn.indexOf(cn)>=0);});
+      if(byName.length===1)return byName[0];
+    }
+    if(v.ville){
+      var byVille=cands.filter(function(c){return norm(c.ville)===norm(v.ville);});
+      if(byVille.length===1)return byVille[0];
+    }
+    var viaPrincipal=_pickPrincipalAmongCandidates(cands,v.tva);
+    if(viaPrincipal)return viaPrincipal;
+  }
+  // 4) Même TVA multi-sites : nom / site principal (sans créer de fiche)
+  if(v.tva){
+    var vn2=normClientName(v.client||v.nom||'');
+    var tvaSites=sitesForTva(v.tva);
+    if(vn2){
+      var byNameTva=tvaSites.filter(function(c){var cn=normClientName(c.nom);return cn&&(cn===vn2||cn.indexOf(vn2)>=0||vn2.indexOf(cn)>=0);});
+      if(byNameTva.length===1)return byNameTva[0];
+      if(byNameTva.length>1){
+        var viaNamePrincipal=_pickPrincipalAmongCandidates(byNameTva,v.tva);
+        if(viaNamePrincipal)return viaNamePrincipal;
+      }
+    }
+    if(v.ville){
+      var byVilleTva=tvaSites.filter(function(c){return norm(c.ville)===norm(v.ville);});
+      if(byVilleTva.length===1)return byVilleTva[0];
+      if(byVilleTva.length>1){
+        var viaVillePrincipal=_pickPrincipalAmongCandidates(byVilleTva,v.tva);
+        if(viaVillePrincipal)return viaVillePrincipal;
+      }
+    }
+    if(tvaSites.length>1){
+      var viaTvaPrincipal=_pickPrincipalAmongCandidates(tvaSites,v.tva);
+      if(viaTvaPrincipal)return viaTvaPrincipal;
+    }
   }
   return null;
 }
@@ -1583,16 +1655,27 @@ function safeSheetName(n){
   return s.slice(0,31);
 }
 function isSansFicheVehicle(v){
-  if(!v||!v.tva)return true;
+  if(!v)return true;
+  // Même moteur que l’indexation / KPI : SIRET → SIREN → TVA (+ nom/ville/principal)
+  try{
+    if(IDX&&(IDX.cBySiret||IDX.sitesByTva)&&typeof resolveClientForVehicle==='function'){
+      return !resolveClientForVehicle(v);
+    }
+  }catch(e){}
+  if(!v.tva)return true;
   var clients=DB.getClients()||[];
   var siret=normSiret(v.siret);
   if(siret){
     for(var i=0;i<clients.length;i++){if(normSiret(clients[i].siret)===siret)return false;}
-    return true;
+    // SIRET présent mais inconnu : tenter SIREN / TVA avant de déclarer orphelin
+    var siren=siretSiren(siret);
+    if(siren){
+      for(var k=0;k<clients.length;k++){if(siretSiren(clients[k].siret)===siren)return false;}
+    }
   }
   var n=0;
-  for(var j=0;j<clients.length;j++){if(String(clients[j].tva||'')===String(v.tva))n++;}
-  return n!==1;
+  for(var j=0;j<clients.length;j++){if(tvaEquals(clients[j].tva, v.tva))n++;}
+  return n===0;
 }
 function importVehicles(data, possession){
   if(!data||data.length<2)return{vehicles:[],cols:[],stats:{total:0,reconnus:0,sansSiret:0,sansFiche:0,enrichedFromCrm:0,sansTva:0,sansDate:0,sansPlaque:0,sansType:0,sansMarque:0,dups:0}};
@@ -2086,8 +2169,9 @@ function buildIndex(){
     IDX.cBySite[sk]=c;
   });
 
-  // === INDEX VÉHICULES — UNIQUEMENT PAR SIRET ===
-  // vBySite[sk] = véhicules du site exact (TVA+SIRET)
+  // === INDEX VÉHICULES (rattachement via resolveClientForVehicle) ===
+  // Ordre : SIRET exact → TVA unique → SIREN (+nom/ville/principal) → TVA multi-sites
+  // vBySite[sk] = véhicules du site CRM rattaché
   // vByTva[tva] = union de tous les sites pour cette TVA (Marché uniquement)
   IDX.vBySiret={};
   IDX.vBySite={};
@@ -5986,7 +6070,7 @@ function renderQualite(){
   // Section CLIENTS À QUALIFIER
   html+='<div class="card quality-section" style="border-color:var(--orange);border-width:2px;">'
     +'<div class="card-title" style="color:var(--orange);">⚠️ Clients à qualifier</div>'
-    +'<div style="font-size:10px;color:var(--text3);margin-bottom:8px;line-height:1.4;">Rattachement par SIRET exact. Sans SIRET, rattachement seulement si la TVA n’a qu’une fiche. Sinon le véhicule reste sans fiche.</div>'
+    +'<div style="font-size:10px;color:var(--text3);margin-bottom:8px;line-height:1.4;">Rattachement : SIRET exact → sinon SIREN → sinon TVA (fiche unique, ou multi-sites via nom/ville/site principal). Pas de création de fiche automatique.</div>'
     +_qualityBlock('Clients sans véhicule rattaché (SIRET absent ou inconnu dans immat.)',clientsSansVehicule,_clientLine,'warn')
     +_qualityBlock('Véhicules orphelins (SIRET présent mais inconnu dans le CRM)',vehiculesOrphelins,_vehicleLine,'err')
     +_qualityBlock('Véhicules sans SIRET (non rattachables)',vehiculesSansSiret,_vehicleLine,'warn')
@@ -8590,7 +8674,7 @@ document.addEventListener('DOMContentLoaded',function(){
     html+=sec('7. Fiche client','<p><strong>Modifier la fiche</strong> change le nom, l’adresse, la ville, le canton, le département, le pays, le vendeur et le téléphone de ce site. La TVA et le SIRET d’une fiche déjà créée restent fixes. Un client créé dans l’application et ces modifications sont dans le JSON et le coffre. Un import CRM les réapplique.</p><p><strong>Projet détecté</strong> ouvre une affaire. <strong>Pas de projet</strong> concerne l’année en cours. <strong>Simple visite</strong> enregistre la date du jour et un commentaire. Elle ne crée ni projet, ni affaire, ni commission, et ne retire pas le client des tournées.</p><p>L’historique affiche ces trois événements, du plus récent au plus ancien, avec Supprimer après confirmation. Supprimer un projet retire aussi l’affaire et les commissions liées. Supprimer Pas de projet retire le masquage de l’année. Supprimer une simple visite ne retire que la ligne.</p><p>Possession OUI ou NON se règle sur chaque véhicule du parc. NON le sort des opportunités de renouvellement. Le véhicule reste exportable, avec Possession = NON.</p>');
     html+=sec('8. Affaires et Commissions','<p>Affaires regroupe les projets et les affaires chaudes. Le bouton Créer un projet client ouvre le même formulaire que sur la fiche.</p><p>Commissions regroupe les livraisons. Le tableau de suivi, replié au départ, compte les camions en commande et en livraison, mois par mois. Un clic sur le client ouvre la fiche. Un clic sur le nombre de commandes ouvre l’affaire. Un clic sur le nombre de livraisons filtre les commissions de ce client pour ce mois.</p>');
     html+=sec('9. Activité','<p>Le journal liste les actions de cet appareil. Chaque ligne a <strong>Fiche client</strong> et <strong>Supprimer</strong>. Le filtre <strong>Projet / Pas de projet / Visite</strong> garde aussi le résultat d’un projet. La création d’un projet laisse une ligne. Le passage de EN COURS à GAGNÉ, ou vers un autre résultat, laisse une deuxième ligne.</p><p>Le journal part dans le JSON et dans le coffre. Un appareil neuf le retrouve avec le reste de la base.</p>');
-    html+=sec('10. Plus','<p><strong>BASE CRM</strong> charge les clients. <strong>Nouvelles immatriculations</strong> ajoute une plaque qui n’est pas encore dans le parc. Si la plaque existe déjà, la fenêtre montre le véhicule déjà enregistré avant la validation. Cette plaque n’est pas ajoutée une seconde fois. Avec un SIRET, le camion va sur ce site. Sans SIRET, il va sur la fiche seulement si la TVA a un seul site. Sinon il reste sans fiche. <strong>Remplacer tout le parc</strong> est à part et demande confirmation.</p><p><strong>Mémoriser les fichiers d’origine</strong> se fait une fois. Cela ne change pas les fiches ni le parc. <strong>Exporter les deux Excel</strong> reprend les colonnes de ces fichiers. Une cellule modifiée est en rouge. Une fiche créée ou une immatriculation ajoutée est en rouge sur toute la ligne. Les fichiers d’origine ne sont pas réécrits. Projets, affaires, commissions et journal restent dans le JSON et le coffre.</p><p><strong>Créer un client</strong> ajoute une fiche. <strong>Qualité</strong> signale les écarts de TVA, de SIRET et de rattachement. <strong>Forcer la mise à jour</strong> recharge la version de l’application. <strong>Tout effacer</strong> vide la base de cet appareil après confirmation. La copie déjà envoyée au coffre reste en ligne.</p>');
+    html+=sec('10. Plus','<p><strong>BASE CRM</strong> charge les clients. <strong>Nouvelles immatriculations</strong> ajoute une plaque qui n’est pas encore dans le parc. Si la plaque existe déjà, la fenêtre montre le véhicule déjà enregistré avant la validation. Cette plaque n’est pas ajoutée une seconde fois. Rattachement : SIRET exact, sinon SIREN, sinon TVA (fiche unique ou multi-sites via nom/ville/site principal). Aucune nouvelle fiche créée automatiquement. <strong>Remplacer tout le parc</strong> est à part et demande confirmation.</p><p><strong>Mémoriser les fichiers d’origine</strong> se fait une fois. Cela ne change pas les fiches ni le parc. <strong>Exporter les deux Excel</strong> reprend les colonnes de ces fichiers. Une cellule modifiée est en rouge. Une fiche créée ou une immatriculation ajoutée est en rouge sur toute la ligne. Les fichiers d’origine ne sont pas réécrits. Projets, affaires, commissions et journal restent dans le JSON et le coffre.</p><p><strong>Créer un client</strong> ajoute une fiche. <strong>Qualité</strong> signale les écarts de TVA, de SIRET et de rattachement. <strong>Forcer la mise à jour</strong> recharge la version de l’application. <strong>Tout effacer</strong> vide la base de cet appareil après confirmation. La copie déjà envoyée au coffre reste en ligne.</p>');
     html+=sec('11. Récupérer un appareil neuf','<p>Installez l’application, puis Plus → Charger sauvegarde JSON, ou récupérez le coffre. La base revient telle qu’elle était à l’enregistrement : clients, fiches modifiées, clients créés, immatriculations, possession OUI/NON, projets, affaires, commissions, archives, groupes, contacts, exclusions, accessibles, réglages d’IMMAT et journal Activité.</p><p>Le coffre et le JSON portent le même contenu. Si le coffre est injoignable, le JSON suffit. La connexion au coffre, elle, se refait sur le nouvel appareil.</p>');
     html+='</div>';
     openSheet('Mode d’emploi complet',html);
