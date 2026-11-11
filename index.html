@@ -452,7 +452,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-10-immat-pv-inclure-v1';
+const APP_BUILD='2026-11-11-enregistrer-coffre-seul-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -977,6 +977,10 @@ function enregistrerJsonEtCoffre(){
     else toast('Coffre indisponible sur cette version');
   },560);
 }
+function enregistrerCoffreSeul(){
+  if(typeof window.coffreEnvoyer==='function')window.coffreEnvoyer();
+  else toast('Coffre indisponible sur cette version');
+}
 function showBackupInstructions(){
   openModal('💾 Backup — '+BACKUP_FOLDER,`
     <div style="font-size:12px;color:var(--text2);line-height:1.6;">
@@ -985,8 +989,9 @@ function showBackupInstructions(){
         <span style="font-family:monospace;font-size:11px;">iCloud Drive / ${BACKUP_FOLDER}</span>
       </div>
       <p style="margin-bottom:8px;"><strong>Enregistrer</strong> télécharge le JSON <strong>DAF_Professional_sauvegarde.json</strong> puis l’envoie au coffre. Sur iPhone, iOS peut demander de confirmer l’emplacement dans Fichiers.</p>
-      <p style="margin-bottom:8px;"><strong>Étape 1</strong> — Appuyez <strong>Enregistrer</strong> ci-dessous</p>
-      <p style="margin-bottom:8px;"><strong>Étape 2</strong> — Dans l'app <strong>Fichiers</strong> sur iPhone :</p>
+      <p style="margin-bottom:8px;"><strong>Coffre uniquement</strong> envoie seulement vers le coffre (pas de téléchargement JSON). <strong>JSON seulement</strong> fait l’inverse.</p>
+      <p style="margin-bottom:8px;"><strong>Étape 1</strong> — Choisissez un bouton ci-dessous</p>
+      <p style="margin-bottom:8px;"><strong>Étape 2</strong> — Dans l'app <strong>Fichiers</strong> sur iPhone (si JSON) :</p>
       <p style="margin-bottom:4px;padding-left:12px;">• Ouvrez <strong>iCloud Drive</strong></p>
       <p style="margin-bottom:4px;padding-left:12px;">• Créez un dossier <strong>"${BACKUP_FOLDER}"</strong> si absent</p>
       <p style="margin-bottom:8px;padding-left:12px;">• Déplacez le fichier téléchargé dedans</p>
@@ -996,6 +1001,7 @@ function showBackupInstructions(){
     </div>
   `,[
     {label:'Enregistrer',cls:'btn-primary',close:false,action:function(){closeModal();setTimeout(enregistrerJsonEtCoffre,40);}},
+    {label:'Coffre uniquement',cls:'btn-secondary',close:false,action:function(){closeModal();setTimeout(enregistrerCoffreSeul,40);}},
     {label:'JSON seulement',cls:'btn-secondary',close:false,action:function(){if(typeof exportBackupJSONFixed==='function')exportBackupJSONFixed();else triggerBackupDownload();closeModal();}},
     {label:'Fermer',cls:'btn-ghost'},
   ]);
