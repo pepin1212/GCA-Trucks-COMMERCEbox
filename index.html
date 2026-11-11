@@ -151,6 +151,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .btn:active{transform:scale(.96)}
 .btn-primary{background:var(--daf);color:#000}.btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border2)}.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}.btn-green{background:var(--green);color:#fff}.btn-red{background:var(--red);color:#fff}.btn-blue{background:var(--blue);color:#fff}.btn-orange{background:var(--orange);color:#fff}
 .btn-sm{padding:5px 10px;font-size:11px}
+#btn-mask-plan-pv{background:var(--blue);color:#fff;font-weight:800;border:1px solid rgba(74,144,217,.65);}
+#btn-mask-plan-pv.mask-exclude{background:rgba(74,144,217,.16);color:var(--blue);border-color:var(--blue);}
+#btn-mask-plan-pv.mask-only{background:#2f78c4;color:#fff;border-color:#8ebcf0;box-shadow:inset 0 0 0 1px rgba(142,188,240,.55);}
 input[type=file]{display:none}
 .file-zone{border:2px dashed var(--border2);border-radius:var(--radius);padding:16px;text-align:center;margin:0 0 8px;cursor:pointer;transition:all .2s}
 .file-zone:active{border-color:var(--daf);background:var(--daf-bg)}
@@ -324,7 +327,7 @@ input[type=file]{display:none}
       <option value="renew_desc">Renouvellement &#9660;</option>
     </select>
     <div style="display:flex;gap:5px;margin-left:auto;flex-wrap:wrap;">
-      <button class="gf-chip" id="btn-mask-plan-pv" title="ON = inclus au Plan de ventes · OFF = hors Plan · neutre = tous">Plan</button>
+      <button class="btn btn-sm" id="btn-mask-plan-pv" title="ON = inclus au Plan de ventes · OFF = hors Plan · neutre = tous">Plan</button>
       <button class="btn btn-sm" id="btn-create-group-tours" style="background:#ffe600;color:#111;font-weight:800;border:1px solid rgba(255,230,0,.6);">+ Créer groupe</button>
       <button class="btn btn-secondary btn-sm" id="btn-expand">Ouvrir</button>
       <button class="btn btn-secondary btn-sm" id="btn-collapse">Fermer</button>
@@ -453,7 +456,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-11-tours-filtre-plan-v1';
+const APP_BUILD='2026-11-11-tours-plan-btn-bleu-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -5153,9 +5156,13 @@ function updateToursMaskButtons(){
     var el=$(d.btn);if(!el)return;
     var st=GF[d.key]||'neutral';
     el.textContent=d.label+(st==='neutral'?'':(' '+_toursMaskLabel(st)));
-    el.className='gf-chip'+(st==='exclude'?' mask-exclude':(st==='only'?' mask-only':''));
-    if(d.id==='projets')el.title='OFF retire les projets de l’année en cours, les projets futurs quelle que soit leur date, et les pas de projet de l’année en cours.';
-    if(d.id==='planInclus')el.title='ON = inclus au Plan de ventes (case Inclure) · OFF = hors Plan · neutre = tous';
+    if(d.id==='planInclus'){
+      el.className='btn btn-sm'+(st==='exclude'?' mask-exclude':(st==='only'?' mask-only':''));
+      el.title='ON = inclus au Plan de ventes (case Inclure) · OFF = hors Plan · neutre = tous';
+    }else{
+      el.className='gf-chip'+(st==='exclude'?' mask-exclude':(st==='only'?' mask-only':''));
+      if(d.id==='projets')el.title='OFF retire les projets de l’année en cours, les projets futurs quelle que soit leur date, et les pas de projet de l’année en cours.';
+    }
   });
   var elNat=$('btn-mask-flotte-nat');
   if(elNat){elNat.textContent='Hors Flotte NAT. '+(GF.masquerFlotteNationaleTours?'ON':'OFF');elNat.className='gf-chip'+(GF.masquerFlotteNationaleTours?' on':'');}
