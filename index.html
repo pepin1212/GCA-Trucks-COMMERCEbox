@@ -324,6 +324,7 @@ input[type=file]{display:none}
       <option value="renew_desc">Renouvellement &#9660;</option>
     </select>
     <div style="display:flex;gap:5px;margin-left:auto;flex-wrap:wrap;">
+      <button class="gf-chip" id="btn-mask-plan-pv" title="ON = inclus au Plan de ventes · OFF = hors Plan · neutre = tous">Plan</button>
       <button class="btn btn-sm" id="btn-create-group-tours" style="background:#ffe600;color:#111;font-weight:800;border:1px solid rgba(255,230,0,.6);">+ Créer groupe</button>
       <button class="btn btn-secondary btn-sm" id="btn-expand">Ouvrir</button>
       <button class="btn btn-secondary btn-sm" id="btn-collapse">Fermer</button>
@@ -452,7 +453,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-11-enregistrer-coffre-seul-v1';
+const APP_BUILD='2026-11-11-tours-filtre-plan-v1';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -1033,6 +1034,7 @@ const GF = {
   toursFProtocole: 'neutral',
   toursMaskSitesSec: 'exclude',
   toursMaskSansFiche: 'neutral',
+  toursMaskPlanInclus: 'neutral',
   marcheMaskSitesSec: 'neutral',
   marcheMaskSansFiche: 'neutral',
   marcheMaskDaf3Ans: 'neutral',
@@ -1223,7 +1225,8 @@ var TOURS_MASK_DEFS=[
   {id:'inactifs',btn:'btn-mask-inactifs',label:'INACTIFS',key:'toursMaskInactifs'},
   {id:'projets',btn:'btn-mask-projets',label:'Projets',key:'toursMaskProjets'},
   {id:'sitesSec',btn:'btn-mask-sites-sec',label:'Sites sec.',key:'toursMaskSitesSec'},
-  {id:'sansFiche',btn:'btn-mask-sans-fiche',label:'Sans fiche',key:'toursMaskSansFiche'}
+  {id:'sansFiche',btn:'btn-mask-sans-fiche',label:'Sans fiche',key:'toursMaskSansFiche'},
+  {id:'planInclus',btn:'btn-mask-plan-pv',label:'Plan',key:'toursMaskPlanInclus'}
 ];
 function _marcheTriMissReason(st, hit, label){
   if(st==='exclude'&&hit)return label+' OFF';
@@ -1440,6 +1443,7 @@ function ensureToursMaskTriState(){
     }
   });
   if(GF.toursMaskSansFiche==null||GF.toursMaskSansFiche===undefined)GF.toursMaskSansFiche='neutral';
+  if(GF.toursMaskPlanInclus==null||GF.toursMaskPlanInclus===undefined)GF.toursMaskPlanInclus='neutral';
   GF._toursMaskTriState=true;
 }
 function cycleToursMaskState(s){
@@ -1454,6 +1458,11 @@ function toursMaskRowMatch(c,id){
     case 'inactifs':return !!c.isInactif;
     case 'projets':return !!((c.hasProjetAnnee!=null?c.hasProjetAnnee:c.hasProjet)||c.pasProjet);
     case 'sitesSec':return !!c.isSiteSecondaire;
+    case 'planInclus':
+      try{
+        var sk=c&&(c._siteKey||(typeof makeSiteKey==='function'?makeSiteKey(c):''));
+        return !!(sk&&typeof window.isSiteInPlanVentes==='function'&&window.isSiteInPlanVentes(sk));
+      }catch(e){return false;}
     default:return false;
   }
 }
@@ -4605,6 +4614,11 @@ function bindEvents(){
     if(GF.toursMaskSansFiche!=='only'&&toursF==='orphan_immat')toursF='all';
     renderTours();
   });
+  safeOn('btn-mask-plan-pv','click',function(){
+    ensureToursMaskTriState();
+    GF.toursMaskPlanInclus=cycleToursMaskState(GF.toursMaskPlanInclus||'neutral');
+    renderTours();
+  });
   safeOn('btn-tours-type-tous','click',function(){GF.toursTypeFilter='tous';invalidateCache();renderTours();});
   safeOn('btn-tours-type-trac','click',function(){GF.toursTypeFilter=GF.toursTypeFilter==='tracteur'?'tous':'tracteur';invalidateCache();renderTours();});
   safeOn('btn-tours-type-port','click',function(){GF.toursTypeFilter=GF.toursTypeFilter==='porteur'?'tous':'porteur';invalidateCache();renderTours();});
@@ -5049,7 +5063,7 @@ function _toursUrgentForKpi(c){
 }
 function _toursDataCacheKeyFn(){
   ensureToursMaskTriState();
-  return [DB.getBase(),DB.getClients().length,DB.getVehicles().length,(DB.getProjects()||[]).length,GF.vendeur||'',GF.pays||'',GF.dept||'',(GF.profils||[]).join('|'),(GF.cbToursProfils||[]).join('|'),(GF.vendeursTours||[]).join('|'),GF.toursMaskExclus||'',GF.toursMaskAccessible||'',GF.toursMaskInactifs||'',GF.toursMaskProjets||'',GF.toursMaskSitesSec||'',GF.toursMaskSansFiche||'',GF.toursTypeFilter||'tous',GF.masquerFlotteNationaleTours?'1':'0',GF.masquerFlottesTours?'1':'0'].join(':');
+  return [DB.getBase(),DB.getClients().length,DB.getVehicles().length,(DB.getProjects()||[]).length,GF.vendeur||'',GF.pays||'',GF.dept||'',(GF.profils||[]).join('|'),(GF.cbToursProfils||[]).join('|'),(GF.vendeursTours||[]).join('|'),GF.toursMaskExclus||'',GF.toursMaskAccessible||'',GF.toursMaskInactifs||'',GF.toursMaskProjets||'',GF.toursMaskSitesSec||'',GF.toursMaskSansFiche||'',GF.toursMaskPlanInclus||'',GF.toursTypeFilter||'tous',GF.masquerFlotteNationaleTours?'1':'0',GF.masquerFlottesTours?'1':'0'].join(':');
 }
 function buildToursData(){
   if(GF.masquerSitesSecondaires===undefined)GF.masquerSitesSecondaires=false;
@@ -5141,6 +5155,7 @@ function updateToursMaskButtons(){
     el.textContent=d.label+(st==='neutral'?'':(' '+_toursMaskLabel(st)));
     el.className='gf-chip'+(st==='exclude'?' mask-exclude':(st==='only'?' mask-only':''));
     if(d.id==='projets')el.title='OFF retire les projets de l’année en cours, les projets futurs quelle que soit leur date, et les pas de projet de l’année en cours.';
+    if(d.id==='planInclus')el.title='ON = inclus au Plan de ventes (case Inclure) · OFF = hors Plan · neutre = tous';
   });
   var elNat=$('btn-mask-flotte-nat');
   if(elNat){elNat.textContent='Hors Flotte NAT. '+(GF.masquerFlotteNationaleTours?'ON':'OFF');elNat.className='gf-chip'+(GF.masquerFlotteNationaleTours?' on':'');}
