@@ -456,7 +456,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-11-tours-plan-btn-bleu-v1';
+const APP_BUILD='2026-11-15-bases-v99';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -9345,13 +9345,25 @@ document.addEventListener('DOMContentLoaded',function(){
   function ensureProjectDeals(){var ds=deals();var changed=false;projects().forEach(function(p){var pid=p.id||p.projectId;if(!pid)return;if(ds.some(function(d){return String(d.projectId)===String(pid)}))return;var c=clients().find(function(x){return String(x.tva||'')===String(p.tva||'')})||{};var q=Math.max(1,i(p.nb||p.qty||p.quantite||p.camions||1));var psk=(typeof resolveProjectSiteKey==='function'?resolveProjectSiteKey(p):'')||p.siteKey||'';ds.push({id:uid('deal'),projectId:pid,siteKey:psk,tva:p.tva||'',client:p.client||p.nom||c.nom||'',created:p.created||p.date||today(),comment:p.comment||p.commentaire||'',status:p.status||'EN_COURS',lines:[{id:uid('line'),created:p.created||p.date||today(),type:p.type||p.typeVehicule||'Tracteur',model:p.model||p.modele||'',qty:q,result:(p.status==='FUTUR'||p.status==='REPORTE')?'FUTUR':'EN_COURS'}]});changed=true;});if(changed)saveDeals(ds);return ds}
   function distinctCarrosseries(){var s=new Set(['Fourgon','Benne','Frigorifique','Plateau','Citerne','Ampliroll','Toupie','Porte-conteneur','Savoyarde','Autre']);vehicles().forEach(function(v){if(v.carrosserie)s.add(v.carrosserie)});return Array.from(s).sort()}
   function carrosserieOptions(v){return distinctCarrosseries().map(function(x){return '<option value="'+esc(x)+'" '+(String(v||'')===String(x)?'selected':'')+'>'+esc(x)+'</option>'}).join('')}
+  function bankOf(l){
+    var banks=['PACCAR FINANCE','BANQUE CLIENT','SOLUTION FINANCE','LA BANQUE POSTALE','MUTUALEASE','BNP','FRANFI','LIXXBAIL','AUTRE'];
+    var raw=norm(l.banque||'');
+    for(var i=0;i<banks.length;i++){if(raw&&norm(banks[i])===raw)return banks[i];}
+    var less=norm(l.lessor||'');
+    for(var j=0;j<banks.length;j++){if(less&&norm(banks[j])===less)return banks[j];}
+    if(norm(l.paccar||'')==='OUI'||less.indexOf('PACCAR')>=0||raw.indexOf('PACCAR')>=0)return 'PACCAR FINANCE';
+    if((l.banque||l.lessor))return 'AUTRE';
+    return '';
+  }
+  function bankOptions(l){var cur=bankOf(l);var banks=['','PACCAR FINANCE','BANQUE CLIENT','SOLUTION FINANCE','LA BANQUE POSTALE','MUTUALEASE','BNP','FRANFI','LIXXBAIL','AUTRE'];return banks.map(function(b){return '<option value="'+esc(b)+'" '+(cur===b?'selected':'')+'>'+esc(b||'—')+'</option>';}).join('');}
   function orderComm(d){var q=lineQty(d); if(String(d.vnvo||'VN').toUpperCase()==='VO')return 400*q; return (String(d.type||'').toLowerCase().indexOf('port')>=0?550:400)*q}
-  function maintComm(type,qty){var q=Math.max(1,i(qty||1));var t=String(type||'Non').toLowerCase();if(t.indexOf('xtra')>=0)return 200*q;if(t.indexOf('flex')>=0||t.indexOf('full')>=0)return 300*q;if(t.indexOf('care+')>=0)return 100*q;return 0}
-  function paccarComm(d){return String(d.paccar||'Non').toLowerCase()==='oui'?300*lineQty(d):0}
-  function primeComm(d){return n(d.prime)}
-  function totalComm(d){return orderComm(d)+maintComm(d.maintenance,d.qty)+paccarComm(d)+primeComm(d)}
+  function maintComm(type,qty){var q=Math.max(1,i(qty||1));var t=String(type||'Non').toLowerCase();if(t.indexOf('xtra')>=0)return 100*q;if(t.indexOf('flex')>=0||t.indexOf('full')>=0)return 300*q;if(t.indexOf('care')>=0)return 100*q;return 0}
+  function paccarComm(d){var bank=norm(d.banque||d.lessor||'');if(bank.indexOf('PACCAR')>=0||String(d.paccar||'Non').toLowerCase()==='oui')return 300*lineQty(d);return 0}
+  function margeEuroLine(d){var price=n(d.salePrice),pct=n(d.marginPct);if(price>0)return Math.round(price*pct)/100;return n(d.marginEuro)}
+  function primeComm(d){if(n(d.marginPct)<7)return 0;return Math.round(margeEuroLine(d)*3)/100*lineQty(d)}
+  function totalComm(d){return orderComm(d)+maintComm(d.maintenance,d.qty)+paccarComm(d)+primeComm(d)+n(d.exceptionalPrime)*lineQty(d)}
   function receivedComm(d){return (d.rcvOrder?orderComm(d):0)+(d.rcvMaint?maintComm(d.maintenance,d.qty):0)+(d.rcvPaccar?paccarComm(d):0)+(d.rcvPrime?primeComm(d):0)}
-  function syncDeliveryFromLine(d,l){var liv=deliveries();var source=d.id+'|'+l.id;var idx=liv.findIndex(function(x){return String(x.sourceId)===String(source)});if(lineResult(l)!=='GAGNE'){if(idx>=0){liv.splice(idx,1);saveDeliveries(liv)}return}var row=idx>=0?liv[idx]:{};row=Object.assign(row,{id:row.id||uid('liv'),sourceId:source,dealId:d.id,projectId:d.projectId||'',siteKey:d.siteKey||'',tva:d.tva||'',client:d.client||'',created:row.created||today(),qty:lineQty(l),type:l.type||'',model:l.model||'',carrosserie:l.carrosserie||'',orderDate:l.orderDate||row.orderDate||'',deliveryDate:l.deliveryDate||row.deliveryDate||'',productionNo:l.productionNo||row.productionNo||'',bodybuilder:l.bodybuilder||row.bodybuilder||'',vnvo:l.vnvo||row.vnvo||'VN',maintenance:l.maintenance||row.maintenance||'Non',lessor:l.lessor||row.lessor||'',paccar:l.paccar||row.paccar||'Non',marginPct:l.marginPct||row.marginPct||'',prime:n(l.prime!=null?l.prime:row.prime)});if(idx>=0)liv[idx]=row;else liv.push(row);saveDeliveries(liv)}
+  function syncDeliveryFromLine(d,l){var liv=deliveries();var source=d.id+'|'+l.id;var idx=liv.findIndex(function(x){return String(x.sourceId)===String(source)});if(lineResult(l)!=='GAGNE'){if(idx>=0){liv.splice(idx,1);saveDeliveries(liv)}return}var row=idx>=0?liv[idx]:{};row=Object.assign(row,{id:row.id||uid('liv'),sourceId:source,dealId:d.id,projectId:d.projectId||'',siteKey:d.siteKey||'',tva:d.tva||'',client:d.client||'',created:row.created||today(),qty:lineQty(l),type:l.type||'',model:l.model||'',carrosserie:l.carrosserie||'',orderDate:l.orderDate||row.orderDate||'',deliveryDate:l.deliveryDate||row.deliveryDate||'',productionNo:l.productionNo||row.productionNo||'',bodybuilder:l.bodybuilder||row.bodybuilder||'',vnvo:l.vnvo||row.vnvo||'VN',maintenance:l.maintenance||row.maintenance||'Non',lessor:l.banque||l.lessor||row.lessor||'',banque:l.banque||row.banque||'',paccar:l.paccar||row.paccar||'Non',marginPct:l.marginPct||row.marginPct||'',salePrice:l.salePrice!=null?l.salePrice:(row.salePrice||''),exceptionalPrime:n(l.exceptionalPrime!=null?l.exceptionalPrime:row.exceptionalPrime),prime:n(l.prime!=null?l.prime:row.prime)});if(idx>=0)liv[idx]=row;else liv.push(row);saveDeliveries(liv)}
   function syncAllDeliveries(){deals().forEach(function(d){arr(d.lines).forEach(function(l){syncDeliveryFromLine(d,l)})})}
   window.syncAllDeliveries=syncAllDeliveries;
   function openLineModal(dealId,idx){var ds=ensureProjectDeals(),d=ds.find(function(x){return String(x.id)===String(dealId)});if(!d)return;d.lines=arr(d.lines);var l=Object.assign({id:uid('line'),created:today(),type:'Tracteur',model:'',qty:1,result:'EN_COURS',vnvo:'VN',maintenance:'Non',paccar:'Non'},idx>=0?d.lines[idx]:{});var r=lineResult(l);var body=''
@@ -9368,12 +9380,14 @@ document.addEventListener('DOMContentLoaded',function(){
     +'<div class="form-group"><label class="form-label">N° production</label><input class="form-input" id="v32-prod" value="'+esc(l.productionNo||'')+'"></div>'
     +'<div class="form-group"><label class="form-label">Carrossier</label><input class="form-input" id="v32-body" value="'+esc(l.bodybuilder||'')+'"></div>'
     +'<div class="form-group"><label class="form-label">VN / VO</label><select class="form-input" id="v32-vnvo"><option '+((l.vnvo||'VN')==='VN'?'selected':'')+'>VN</option><option '+((l.vnvo||'')==='VO'?'selected':'')+'>VO</option></select></div>'
-    +'<div class="form-group"><label class="form-label">Contrat entretien</label><select class="form-input" id="v32-maint"><option>Non</option><option '+(l.maintenance==='Care+'?'selected':'')+'>Care+</option><option '+(l.maintenance==='Xtra Care'?'selected':'')+'>Xtra Care</option><option '+(l.maintenance==='FlexCare'?'selected':'')+'>FlexCare</option><option '+(l.maintenance==='FullCare'?'selected':'')+'>FullCare</option></select></div>'
-    +'<div class="form-group"><label class="form-label">Bailleur</label><input class="form-input" id="v32-lessor" value="'+esc(l.lessor||'')+'"></div>'
-    +'<div class="form-group"><label class="form-label">PACCAR Financial</label><select class="form-input" id="v32-paccar"><option '+((l.paccar||'Non')==='Non'?'selected':'')+'>Non</option><option '+((l.paccar||'')==='Oui'?'selected':'')+'>Oui</option></select></div>'
-    +'<div class="form-group"><label class="form-label">% marge restante</label><input type="number" step="0.1" class="form-input" id="v32-margin" value="'+esc(l.marginPct||'')+'"></div>'
-    +'<div class="form-group"><label class="form-label">Prime marge restante (€)</label><input type="number" step="1" class="form-input" id="v32-prime" value="'+esc(l.prime||0)+'"></div>';
-    openModal(idx>=0?'Modifier véhicule affaire':'Ajouter véhicule affaire',body,[{label:'Annuler',cls:'btn-ghost'},{label:'Enregistrer',cls:'btn-primary',action:function(){var res=byId('v32-res').value,type=byId('v32-type').value;if(res==='GAGNE'&&type==='Porteur'&&!String(byId('v32-body').value||'').trim()){toastMsg('Carrossier obligatoire pour un porteur gagné');return}if(res==='PERDU'&&!String(byId('v32-conc').value||'').trim()){toastMsg('Renseigne la marque concurrente pour un véhicule perdu');return}var nl=Object.assign({},l,{id:l.id||uid('line'),created:l.created||today(),result:res,type:type,model:byId('v32-model').value||'',qty:i(byId('v32-qty').value)||1,carrosserie:byId('v32-carrosserie').value||'',concurrent:res==='PERDU'?byId('v32-conc').value:'',lossComment:(res==='PERDU'||res==='ABANDON')?byId('v32-loss').value:'',orderDate:byId('v32-order').value||'',deliveryDate:byId('v32-delivery').value||'',productionNo:byId('v32-prod').value||'',bodybuilder:byId('v32-body').value||'',vnvo:byId('v32-vnvo').value||'VN',maintenance:byId('v32-maint').value||'Non',lessor:byId('v32-lessor').value||'',paccar:byId('v32-paccar').value||'Non',marginPct:byId('v32-margin').value||'',prime:n(byId('v32-prime').value)});if(idx>=0)d.lines[idx]=nl;else d.lines.push(nl);saveDeal(d);syncDeliveryFromLine(d,nl);renderAffaires();try{if(typeof renderCommissions==='function')renderCommissions();}catch(e){}try{if(typeof window.refreshLinkedAfterAffaireChange==='function')window.refreshLinkedAfterAffaireChange(d);}catch(e){}toastMsg('Véhicule affaire enregistré')}}]);
+    +'<div class="form-group"><label class="form-label">Contrat entretien (CER)</label><select class="form-input" id="v32-maint"><option>Non</option><option '+(l.maintenance==='Care+'?'selected':'')+'>Care+</option><option '+(l.maintenance==='Xtra Care'?'selected':'')+'>Xtra Care</option><option '+(l.maintenance==='FlexCare'?'selected':'')+'>FlexCare</option><option '+(l.maintenance==='FullCare'?'selected':'')+'>FullCare</option></select></div>'
+    +'<div class="form-group"><label class="form-label">Prix de vente (€)</label><input type="number" step="0.01" class="form-input" id="v32-price" value="'+esc(l.salePrice||'')+'"></div>'
+    +'<div class="form-group"><label class="form-label">% de marge</label><input type="number" step="0.1" class="form-input" id="v32-margin" value="'+esc(l.marginPct||'')+'"></div>'
+    +'<div id="v32-marge-preview" style="font-size:12px;color:var(--text2);margin:-4px 0 8px;"></div>'
+    +'<div class="form-group"><label class="form-label">Banque</label><select class="form-input" id="v32-banque">'+bankOptions(l)+'</select></div>'
+    +'<div class="form-group"><label class="form-label">Prime exceptionnelle (€)</label><input type="number" step="1" class="form-input" id="v32-ex" value="'+esc(l.exceptionalPrime||0)+'"></div>';
+    openModal(idx>=0?'Modifier véhicule affaire':'Ajouter véhicule affaire',body,[{label:'Annuler',cls:'btn-ghost'},{label:'Enregistrer',cls:'btn-primary',action:function(){var res=byId('v32-res').value,type=byId('v32-type').value;if(res==='GAGNE'&&type==='Porteur'&&!String(byId('v32-body').value||'').trim()){toastMsg('Carrossier obligatoire pour un porteur gagné');return}if(res==='PERDU'&&!String(byId('v32-conc').value||'').trim()){toastMsg('Renseigne la marque concurrente pour un véhicule perdu');return}var banque=byId('v32-banque').value||'';var price=n(byId('v32-price').value);var pctRaw=byId('v32-margin').value||'';var pct=n(pctRaw);var margeEuro=price>0?Math.round(price*pct)/100:0;var primeMarge=pct>=7?Math.round(margeEuro*3)/100:0;var nl=Object.assign({},l,{id:l.id||uid('line'),created:l.created||today(),result:res,type:type,model:byId('v32-model').value||'',qty:i(byId('v32-qty').value)||1,carrosserie:byId('v32-carrosserie').value||'',concurrent:res==='PERDU'?byId('v32-conc').value:'',lossComment:(res==='PERDU'||res==='ABANDON')?byId('v32-loss').value:'',orderDate:byId('v32-order').value||'',deliveryDate:byId('v32-delivery').value||'',productionNo:byId('v32-prod').value||'',bodybuilder:byId('v32-body').value||'',vnvo:byId('v32-vnvo').value||'VN',maintenance:byId('v32-maint').value||'Non',banque:banque,lessor:banque,paccar:banque==='PACCAR FINANCE'?'Oui':'Non',salePrice:price||'',marginPct:pctRaw,marginEuro:margeEuro,exceptionalPrime:n(byId('v32-ex').value),prime:primeMarge});if(idx>=0)d.lines[idx]=nl;else d.lines.push(nl);saveDeal(d);syncDeliveryFromLine(d,nl);renderAffaires();try{if(typeof renderCommissions==='function')renderCommissions();}catch(e){}try{if(typeof window.refreshLinkedAfterAffaireChange==='function')window.refreshLinkedAfterAffaireChange(d);}catch(e){}toastMsg('Véhicule affaire enregistré')}}]);
+    setTimeout(function(){function paintMarge(){var price=n((byId('v32-price')||{}).value),pct=n((byId('v32-margin')||{}).value);var me=price>0?Math.round(price*pct)/100:0;var pr=pct>=7?Math.round(me*3)/100:0;var box=byId('v32-marge-preview');if(box)box.textContent='Marge : '+me.toLocaleString('fr-FR')+' € · Prime marge : '+pr.toLocaleString('fr-FR')+' €';}var p=byId('v32-price'),m=byId('v32-margin');if(p)p.oninput=paintMarge;if(m)m.oninput=paintMarge;paintMarge();},0);
   }
   function duplicateLine(dealId,idx){var ds=ensureProjectDeals(),d=ds.find(function(x){return String(x.id)===String(dealId)});if(!d||!d.lines||!d.lines[idx])return;var cp=JSON.parse(JSON.stringify(d.lines[idx]));cp.id=uid('line');cp.created=today();d.lines.splice(idx+1,0,cp);saveDeal(d);syncDeliveryFromLine(d,cp);renderAffaires();toastMsg('Véhicule dupliqué')}
   function renderAffaires(){var cont=byId('affaires-content');if(!cont)return;try{var ds=ensureProjectDeals();window.affairesFilter=window.affairesFilter||'EN_COURS';var q=String(window.affairesSearch||'').toLowerCase().trim();var k={EN_COURS:0,FUTUR:0,GAGNE:0,PERDU:0,ABANDON:0,ALL:0};ds.forEach(function(d){arr(d.lines).forEach(function(l){var r=lineResult(l),q=lineQty(l);k.ALL+=q;if(k[r]!=null)k[r]+=q;})});function kpi(st,cls){return '<div class="kpi-card '+cls+' '+(window.affairesFilter===st?'active':'')+' aff-kpi" data-f="'+st+'"><div class="kpi-val">'+(st==='ALL'?k.ALL:k[st])+'</div><div class="kpi-lbl">'+labelStatus(st)+'</div></div>'}var html='<div class="kpi-grid" style="margin-top:4px;">'+kpi('EN_COURS','c-daf')+kpi('FUTUR','c-purple')+kpi('GAGNE','c-green')+kpi('PERDU','c-red')+kpi('ABANDON','')+kpi('ALL','c-blue')+'</div>';var visible=ds.filter(function(d){var hay=[d.client,d.comment].concat(arr(d.lines).map(function(l){return [l.type,l.model,l.carrosserie,lineResult(l),l.concurrent,l.lossComment,l.bodybuilder].join(' ')})).join(' ').toLowerCase();if(q&&hay.indexOf(q)<0)return false;if(window.affairesFilter==='ALL')return true;return arr(d.lines).some(function(l){return lineResult(l)===window.affairesFilter})});if(!visible.length)html+='<div class="empty-state"><div class="empty-icon">💼</div><div class="empty-title">Aucune affaire</div><div class="empty-sub">Crée un projet depuis une fiche client ou change de KPI.</div></div>';visible.forEach(function(d){html+='<div class="card" data-deal-id="'+esc(d.id)+'"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;"><div><div style="font-size:14px;font-weight:900;">'+esc(d.client||'Client')+'</div><div style="font-size:10px;color:var(--text3);">Créée le '+fmt(d.created)+' · '+arr(d.lines).length+' véhicule(s)/ligne(s)</div></div><div style="display:flex;gap:6px;align-items:center;"><button class="btn btn-ghost btn-sm aff-client-link" data-tva="'+esc(d.tva||'')+'" style="font-size:10px;color:var(--daf);border:1px solid var(--daf);border-radius:20px;padding:3px 8px;">👤 Fiche client</button><button class="btn btn-red btn-sm del-aff-deal" data-id="'+esc(d.id)+'" data-pid="'+esc(d.projectId||'')+'">Supprimer</button></div></div><div style="overflow-x:auto;margin-top:8px;"><table style="width:100%;min-width:980px;font-size:10px;border-collapse:collapse;"><tr style="color:var(--text3);text-align:left;"><th></th><th>Résultat</th><th>Commande</th><th>N° prod</th><th>Type</th><th>Modèle</th><th>Qté</th><th>Livraison</th><th>Marge%</th><th>Carrosserie</th><th>Carrossier</th><th>Contrat</th><th>PACCAR</th><th>Commission</th></tr>';arr(d.lines).forEach(function(l,idx){var r=lineResult(l),show=(window.affairesFilter==='ALL'||r===window.affairesFilter);if(!show)return;var comm=r==='GAGNE'?totalComm(l):0;html+='<tr style="border-top:1px solid var(--border);"><td style="white-space:nowrap;"><button class="btn btn-primary btn-sm edit-aff-line" data-id="'+esc(d.id)+'" data-idx="'+idx+'">Modifier</button></td>'
@@ -11848,7 +11862,7 @@ document.addEventListener('DOMContentLoaded',function(){
         qty:q,type:l.type||'',model:l.model||'',carrosserie:l.carrosserie||'',
         orderDate:l.orderDate||((i>=0&&liv[i].orderDate)||''),deliveryDate:l.deliveryDate||((i>=0&&liv[i].deliveryDate)||''),productionNo:l.productionNo||((i>=0&&liv[i].productionNo)||''),
         bodybuilder:l.bodybuilder||l.carrossier||((i>=0&&liv[i].bodybuilder)||''),vnvo:l.vnvo||((i>=0&&liv[i].vnvo)||'VN'),maintenance:l.maintenance||((i>=0&&liv[i].maintenance)||'Non'),
-        lessor:l.lessor||l.bailleur||((i>=0&&liv[i].lessor)||''),paccar:l.paccar||((i>=0&&liv[i].paccar)||'Non'),prime:num(l.prime!=null?l.prime:(i>=0?liv[i].prime:0)),marginPct:l.marginPct||((i>=0&&liv[i].marginPct)||''),
+        lessor:l.banque||l.lessor||l.bailleur||((i>=0&&liv[i].lessor)||''),banque:l.banque||((i>=0&&liv[i].banque)||''),paccar:l.paccar||((i>=0&&liv[i].paccar)||'Non'),prime:num(l.prime!=null?l.prime:(i>=0?liv[i].prime:0)),marginPct:l.marginPct||((i>=0&&liv[i].marginPct)||''),salePrice:(l.salePrice!=null?l.salePrice:(i>=0?liv[i].salePrice:'')),exceptionalPrime:num(l.exceptionalPrime!=null?l.exceptionalPrime:(i>=0?liv[i].exceptionalPrime:0)),
         created:(i>=0&&liv[i].created)||l.created||d.created||todayISO(),rcvOrder:!!(i>=0&&liv[i].rcvOrder),rcvMaint:!!(i>=0&&liv[i].rcvMaint),rcvPaccar:!!(i>=0&&liv[i].rcvPaccar),rcvPrime:!!(i>=0&&liv[i].rcvPrime)
       };
       if(i>=0)liv[i]=Object.assign({},liv[i],base); else liv.push(base);
@@ -11857,21 +11871,33 @@ document.addEventListener('DOMContentLoaded',function(){
     if(changed)saveDeliveries(liv);
     return liv;
   }
-  function orderCommission(d){var q=qty(d), type=norm2((d&&d.type)||''), vnvo=norm2((d&&d.vnvo)||'VN'); if(vnvo==='VO'||vnvo.indexOf('OCCAS')>=0)return 400*q; if(type.indexOf('PORTEUR')>=0)return 550*q; return 400*q}
-  function maintenanceCommission(d){var q=qty(d), m=norm2((d&&d.maintenance)||''); if(!m||m==='NON'||m==='SANS')return 0; if(m.indexOf('CARE+')>=0)return 100*q; if(m.indexOf('XTRA')>=0)return 100*q; if(m.indexOf('FLEX')>=0)return 300*q; if(m.indexOf('FULL')>=0)return 300*q; return 0}
-  function paccarCommission(d){var p=norm2((d&&d.paccar)||''); return (p==='OUI'||p==='YES'||p==='1'||p.indexOf('PACCAR')>=0)?300*qty(d):0}
-  function primeCommission(d){return num(d&&d.prime)}
-  function deliveryCommission(d){return maintenanceCommission(d)+paccarCommission(d)+primeCommission(d)}
+  function payYm(v){var m=ym(v);if(!m)return '';var y=Number(m.slice(0,4)),mo=Number(m.slice(5,7))+1;if(mo>12){mo=1;y++;}return y+'-'+(mo<10?'0':'')+mo;}
+  function truckCopies(raw){
+    var q=qty(raw), units=Array.isArray(raw.units)?raw.units:[], out=[];
+    for(var i=0;i<q;i++){
+      var u=units[i]||null;
+      out.push(Object.assign({}, raw, {qty:1,unitIndex:i,productionNo:(u&&u.productionNo)||raw.productionNo||'',rcvOrder:u?!!u.rcvOrder:!!raw.rcvOrder,rcvMaint:u?!!u.rcvMaint:!!raw.rcvMaint,rcvPaccar:u?!!u.rcvPaccar:!!raw.rcvPaccar,rcvPrime:u?!!u.rcvPrime:!!raw.rcvPrime,rcvEx:u?!!u.rcvEx:false}));
+    }
+    return out;
+  }
+  function orderCommission(d){var type=norm2((d&&d.type)||''), vnvo=norm2((d&&d.vnvo)||'VN'); if(vnvo==='VO'||vnvo.indexOf('OCCAS')>=0)return 400; if(type.indexOf('PORTEUR')>=0)return 550; return 400;}
+  function maintenanceCommission(d){var m=norm2((d&&d.maintenance)||''); if(!m||m==='NON'||m==='SANS')return 0; if(m.indexOf('XTRA')>=0)return 100; if(m.indexOf('FLEX')>=0)return 300; if(m.indexOf('FULL')>=0)return 300; if(m.indexOf('CARE')>=0)return 100; return 0;}
+  function bankLabel(d){var b=String((d&&d.banque)||(d&&d.lessor)||'').trim(); if(!b && /OUI|YES|1|PACCAR/.test(norm2((d&&d.paccar)||'')))return 'PACCAR FINANCE'; return b;}
+  function paccarCommission(d){return norm2(bankLabel(d)).indexOf('PACCAR')>=0?300:0;}
+  function marginEuroOf(d){var price=num(d&&d.salePrice), pct=num(d&&d.marginPct); if(price>0)return Math.round(price*pct)/100; return num(d&&d.marginEuro);}
+  function primeCommission(d){if(num(d&&d.marginPct)<7)return 0; return Math.round(marginEuroOf(d)*3)/100;}
+  function extraCommission(d){return num(d&&d.exceptionalPrime);}
+  function deliveryCommission(d){return maintenanceCommission(d)+paccarCommission(d)+primeCommission(d)+extraCommission(d);}
   function orderReceived(d){return d&&d.rcvOrder?orderCommission(d):0}
-  function deliveryReceived(d){return (d&&d.rcvMaint?maintenanceCommission(d):0)+(d&&d.rcvPaccar?paccarCommission(d):0)+(d&&d.rcvPrime?primeCommission(d):0)}
+  function deliveryReceived(d){return (d&&d.rcvMaint?maintenanceCommission(d):0)+(d&&d.rcvPaccar?paccarCommission(d):0)+(d&&d.rcvPrime?primeCommission(d):0)+(d&&d.rcvEx?extraCommission(d):0)}
   function orderRest(d){return Math.max(0,orderCommission(d)-orderReceived(d))}
   function deliveryRest(d){return Math.max(0,deliveryCommission(d)-deliveryReceived(d))}
   function entryDate(e){var d=e.d||{};return e.kind==='order'?(d.orderDate||d.created||todayISO()):(d.deliveryDate||d.orderDate||d.created||todayISO())}
-  function entryMonth(e){var d=e.d||{};var raw=e.kind==='order'?d.orderDate:(d.deliveryDate||d.orderDate);return ym(raw)||ym(d.created)||currentYm()}
-  function buildEntries(rows){var out=[];rows.forEach(function(d){out.push({kind:'order',month:ym(d.orderDate)||ym(d.created)||currentYm(),date:iso(d.orderDate)||iso(d.created)||todayISO(),amount:orderCommission(d),d:d});out.push({kind:'delivery',month:ym(d.deliveryDate)||ym(d.orderDate)||ym(d.created)||currentYm(),date:iso(d.deliveryDate)||iso(d.orderDate)||iso(d.created)||todayISO(),amount:deliveryCommission(d),d:d});});return out;}
+  function entryMonth(e){return e.month||currentYm()}
+  function buildEntries(rows){var out=[];rows.forEach(function(raw){truckCopies(raw).forEach(function(d){var om=payYm(d.orderDate), dm=payYm(d.deliveryDate); if(om)out.push({kind:'order',month:om,date:iso(d.orderDate)||todayISO(),amount:orderCommission(d),d:d}); if(dm)out.push({kind:'delivery',month:dm,date:iso(d.deliveryDate)||todayISO(),amount:deliveryCommission(d),d:d}); if(!om&&!dm)out.push({kind:'order',month:'sans-date',date:todayISO(),amount:orderCommission(d),d:d});});});return out;}
   function searchable(d){return [d&&d.client,d&&d.model,d&&d.type,d&&d.bodybuilder,d&&d.productionNo,d&&d.maintenance,d&&d.paccar,d&&d.carrosserie].join(' ').toLowerCase()}
   function isPastMonth(v){var d=dateObj(v); if(!d)return true; return d<firstDayCurrentMonth()}
-  function matchesFilter(e,f){var cy=String(new Date().getFullYear()), cm=currentYm(); if(!f||f==='all')return true; if(f==='yearTotal')return e.month.slice(0,4)===cy; if(f==='monthTotal')return e.month===cm; if(f==='unpaidPast'){if(e.kind==='order')return isPastMonth(e.d.orderDate||e.d.created)&&orderRest(e.d)>0;return isPastMonth(e.d.deliveryDate||e.d.orderDate||e.d.created)&&deliveryRest(e.d)>0;} return true;}
+  function matchesFilter(e,f){var cy=String(new Date().getFullYear()), cm=currentYm(); if(!f||f==='all')return true; if(f==='yearTotal')return String(e.month||'').slice(0,4)===cy; if(f==='monthTotal')return e.month===cm; if(f==='unpaidPast'){if(!e.month||e.month==='sans-date'||e.month>=cm)return false;return (e.kind==='order'?orderRest(e.d):deliveryRest(e.d))>0;} return true;}
   function totalEntryAmount(e){return e.kind==='order'?orderCommission(e.d):deliveryCommission(e.d)}
   function receivedEntryAmount(e){return e.kind==='order'?orderReceived(e.d):deliveryReceived(e.d)}
   function openDealFromCommission(id){if(!id)return;try{if(typeof window.openDealV213==='function'){window.openDealV213(id);return}}catch(e){}try{if(typeof window.showScreen==='function')window.showScreen('affaires')}catch(e){}setTimeout(function(){var el=document.querySelector('[data-deal-id="'+String(id).replace(/"/g,'\\"')+'"]');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.outline='2px solid var(--daf)';el.style.outlineOffset='3px';setTimeout(function(){el.style.outline='';el.style.outlineOffset=''},1800)}},180)}
@@ -11898,7 +11924,10 @@ document.addEventListener('DOMContentLoaded',function(){
     liv.forEach(function(d){add(ymOf(d.orderDate)||ymOf(d.created),d,'cmd');add(ymOf(d.deliveryDate),d,'liv');});
     var keys=Object.keys(months).sort().reverse();
     window.commSuiviOpen=window.commSuiviOpen||{};
-    var html='<div class="card" id="comm-suivi" style="margin:8px 12px 12px;"><div class="card-title">Suivi commandes et livraisons</div><div style="font-size:10px;color:var(--text3);line-height:1.4;margin-bottom:6px;">Un mois se déplie. Le client ouvre la fiche. Le nombre en commande ouvre l’affaire chaude. Le nombre en livraison filtre ce client dans les commissions du mois.</div>';
+    var hidden=localStorage.getItem('commSuiviHidden')==='1';
+    var html='<div class="card" id="comm-suivi" style="margin:8px 12px 12px;"><div class="card-title" id="comm-suivi-toggle" style="cursor:pointer;">'+(hidden?'▶':'▼')+' Suivi commandes et livraisons</div>';
+    if(hidden)return html+'</div>';
+    html+='<div style="font-size:10px;color:var(--text3);line-height:1.4;margin-bottom:6px;">Un mois se déplie. Le client ouvre la fiche. Le nombre en commande ouvre l’affaire chaude. Le nombre en livraison filtre ce client dans les commissions du mois.</div>';
     if(!keys.length)html+='<div style="font-size:11px;color:var(--text3);">Aucune commande ni livraison datée.</div>';
     keys.forEach(function(k){
       var open=!!window.commSuiviOpen[k];
@@ -11919,6 +11948,7 @@ document.addEventListener('DOMContentLoaded',function(){
     return html+'</div>';
   }
   function bindCommSuivi(){
+    var tog=byId('comm-suivi-toggle'); if(tog)tog.onclick=function(){localStorage.setItem('commSuiviHidden', localStorage.getItem('commSuiviHidden')==='1'?'0':'1'); renderCommissionsStable();};
     qsa('.comm-suivi-month').forEach(function(el){el.onclick=function(){var k=this.getAttribute('data-k');window.commSuiviOpen[k]=!window.commSuiviOpen[k];renderCommissionsStable();};});
     qsa('.comm-suivi-client').forEach(function(el){el.onclick=function(e){
       e.stopPropagation();
@@ -11946,6 +11976,70 @@ document.addEventListener('DOMContentLoaded',function(){
       setTimeout(function(){var line=document.querySelector('.comm-final-line'); if(line)line.scrollIntoView({behavior:'smooth',block:'center'});},40);
     };});
   }
+  var BANK_LIST=['','PACCAR FINANCE','BANQUE CLIENT','SOLUTION FINANCE','LA BANQUE POSTALE','MUTUALEASE','BNP','FRANFI','LIXXBAIL','AUTRE'];
+  function primeCell(amount, on, due, id, unit, key){
+    if(!(amount>0))return '<td style="border:1px solid var(--border);padding:4px;text-align:center;color:var(--text3);">—</td>';
+    var bg=due?(on?'rgba(58,184,122,.38)':'rgba(224,80,80,.38)'):'transparent';
+    return '<td style="border:1px solid var(--border);padding:3px;background:'+bg+';"><label style="display:flex;align-items:center;justify-content:flex-end;gap:4px;font-weight:800;white-space:nowrap;"><input type="checkbox" class="comm-prime-check" data-id="'+esc(id)+'" data-unit="'+unit+'" data-k="'+key+'" '+(on?'checked':'')+' onclick="event.stopPropagation()">'+euro(amount)+'</label></td>';
+  }
+  function excelGrid(list){
+    var heads=['Date de commande','Client','N° production','Modèle','VN ou VO','Carrossier','Prix de vente','Marge','% de marge','Banque','Date de livraison','CER','Prime commande','Prime CER','Prime marge ≥7%','Prime PACCAR','Prime exceptionnelle'];
+    var html='<div style="overflow-x:auto;margin:0 0 8px;"><table style="border-collapse:collapse;min-width:1680px;width:100%;font-size:11px;background:var(--bg);"><tr>';
+    heads.forEach(function(h){html+='<th style="border:1px solid var(--border);padding:5px;background:var(--bg3);color:var(--text2);text-align:left;white-space:nowrap;font-size:10px;">'+esc(h)+'</th>';});
+    html+='</tr>';
+    list.forEach(function(e){
+      var d=e.d||{};
+      var dueOrder=payYm(d.orderDate)===e.month;
+      var dueDel=payYm(d.deliveryDate)===e.month;
+      var tract=norm2(d.type||'').indexOf('TRACT')>=0;
+      var bank=bankLabel(d);
+      var opts=BANK_LIST.map(function(b){return '<option value="'+esc(b)+'" '+(bank===b?'selected':'')+'>'+esc(b||'—')+'</option>';}).join('');
+      var pct=(d.marginPct===''||d.marginPct==null)?'—':(String(d.marginPct).replace('.',',')+' %');
+      var me=marginEuroOf(d);
+      html+='<tr>'
+        +'<td style="border:1px solid var(--border);padding:4px;white-space:nowrap;">'+fmt(d.orderDate)+'</td>'
+        +'<td style="border:1px solid var(--border);padding:4px;"><button type="button" class="btn btn-ghost btn-sm comm-final-open" data-id="'+esc(d.dealId||'')+'" style="font-weight:800;padding:0;">'+esc(d.client||'Client')+'</button></td>'
+        +'<td style="border:1px solid var(--border);padding:4px;">'+esc(d.productionNo||'—')+'</td>'
+        +'<td style="border:1px solid var(--border);padding:4px;">'+esc(d.model||'—')+'</td>'
+        +'<td style="border:1px solid var(--border);padding:4px;">'+esc(d.vnvo||'VN')+'</td>'
+        +'<td style="border:1px solid var(--border);padding:4px;text-align:center;font-weight:800;">'+esc(tract?'X':(d.bodybuilder||'—'))+'</td>'
+        +'<td style="border:1px solid var(--border);padding:4px;text-align:right;">'+(num(d.salePrice)?euro(d.salePrice):'—')+'</td>'
+        +'<td style="border:1px solid var(--border);padding:4px;text-align:right;">'+(me?euro(me):'—')+'</td>'
+        +'<td style="border:1px solid var(--border);padding:4px;text-align:right;">'+esc(pct)+'</td>'
+        +'<td style="border:1px solid var(--border);padding:3px;"><select class="form-input comm-bank" data-deal="'+esc(d.dealId||'')+'" data-line="'+esc(d.sourceLineId||'')+'" style="font-size:10px;padding:3px;min-width:140px;">'+opts+'</select></td>'
+        +'<td style="border:1px solid var(--border);padding:4px;white-space:nowrap;">'+fmt(d.deliveryDate)+'</td>'
+        +'<td style="border:1px solid var(--border);padding:4px;">'+esc(d.maintenance&&norm2(d.maintenance)!=='NON'?d.maintenance:'—')+'</td>'
+        +primeCell(orderCommission(d), !!d.rcvOrder, dueOrder, d.id, d.unitIndex, 'rcvOrder')
+        +primeCell(maintenanceCommission(d), !!d.rcvMaint, dueDel, d.id, d.unitIndex, 'rcvMaint')
+        +primeCell(primeCommission(d), !!d.rcvPrime, dueDel, d.id, d.unitIndex, 'rcvPrime')
+        +primeCell(paccarCommission(d), !!d.rcvPaccar, dueDel, d.id, d.unitIndex, 'rcvPaccar')
+        +primeCell(extraCommission(d), !!d.rcvEx, dueDel, d.id, d.unitIndex, 'rcvEx')
+        +'</tr>';
+    });
+    return html+'</table></div>';
+  }
+  function saveUnitFlag(id, unit, key, value){
+    var list=getDeliveries();
+    var d=list.find(function(x){return String(x.id)===String(id);});
+    if(!d)return;
+    var q=qty(d), units=[];
+    if(Array.isArray(d.units)&&d.units.length)units=d.units.map(function(u){return Object.assign({},u);});
+    else {for(var i=0;i<q;i++)units.push({rcvOrder:!!d.rcvOrder,rcvMaint:!!d.rcvMaint,rcvPaccar:!!d.rcvPaccar,rcvPrime:!!d.rcvPrime,rcvEx:false,productionNo:d.productionNo||''});}
+    while(units.length<q)units.push({});
+    units[unit]=Object.assign({}, units[unit]||{}, (function(){var o={};o[key]=value;return o;})());
+    d.units=units;
+    saveDeliveries(list);
+    renderCommissionsStable();
+  }
+  function saveLineBank(dealId, lineId, banque){
+    var deals=getDeals();
+    var deal=deals.find(function(x){return String(x.id)===String(dealId);});
+    if(!deal)return;
+    arr(deal.lines).forEach(function(l,idx){if(String(l.id||idx)!==String(lineId))return; l.banque=banque; l.lessor=banque; l.paccar=banque==='PACCAR FINANCE'?'Oui':'Non';});
+    try{if(window.saveHotDeals)window.saveHotDeals(deals);}catch(e){}
+    try{if(window.syncAllDeliveries)window.syncAllDeliveries();}catch(e){}
+    renderCommissionsStable();
+  }
   function renderCommissionsStable(){
     try{if(typeof window.syncAllDeliveries==='function')window.syncAllDeliveries();}catch(e){}
     var cont=byId('livraisons-content'); if(!cont)return;
@@ -11962,10 +12056,10 @@ document.addEventListener('DOMContentLoaded',function(){
     html+='<div style="display:flex;gap:6px;align-items:center;padding:0 12px 8px;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm comm-final-kpi '+(filter==='all'?'btn-primary':'')+'" data-f="all" style="font-size:10px;">Tous</button><button class="btn btn-secondary btn-sm" id="comm-final-sort" style="font-size:10px;margin-left:auto;">'+(sort==='asc'?'⬆ Plus ancien':'⬇ Plus récent')+'</button></div>';
     var map={}; visible.forEach(function(e){(map[e.month]=map[e.month]||[]).push(e)}); var keys=Object.keys(map).sort(); if(sort==='desc')keys.reverse(); window.commOpenStateFinal=window.commOpenStateFinal||{};
     if(!keys.length)html+='<div class="card"><div style="font-size:11px;color:var(--text3);">Aucune commission selon le filtre actuel.</div></div>';
-    keys.forEach(function(k){var es=map[k].slice().sort(function(a,b){return sort==='asc'?a.date.localeCompare(b.date):b.date.localeCompare(a.date)}), theo=es.reduce(function(a,e){return a+totalEntryAmount(e)},0), rec=es.reduce(function(a,e){return a+receivedEntryAmount(e)},0), rest=theo-rec, open=Object.prototype.hasOwnProperty.call(window.commOpenStateFinal,k)?!!window.commOpenStateFinal[k]:(k===cm);html+='<div style="margin:0 12px 8px;"><div class="comm-final-month" data-k="'+esc(k)+'" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg3);border-radius:'+(open?'var(--radius) var(--radius) 0 0':'var(--radius)')+';cursor:pointer;border-left:3px solid '+(rest<=0?'var(--green)':'var(--daf)')+';"><div><div style="font-size:13px;font-weight:800;color:var(--text);">'+esc(labelMonth(k))+' '+(open?'▼':'▶')+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">'+euro(theo)+' · <span style="color:'+(rest<=0?'var(--green)':'var(--red)')+';">'+euro(rest)+' restant</span>'+(rest<=0?' ✅':'')+'</div></div><div style="font-size:20px;font-weight:900;color:var(--daf);">'+euro(theo)+'</div></div>';if(open){var orders=es.filter(function(e){return e.kind==='order'}), livs=es.filter(function(e){return e.kind==='delivery'});html+='<div style="background:var(--bg2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:0 12px;"><div style="padding:10px 0 4px;"><div style="font-size:12px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:var(--daf);border-bottom:2px solid var(--daf);padding-bottom:5px;margin-bottom:8px;">COMMANDES</div>';if(!orders.length)html+='<div style="font-size:11px;color:var(--text3);padding-bottom:8px;">Aucune commande sur ce mois.</div>';orders.forEach(function(e){html+=rowHtml(e)});html+='</div><div style="padding:4px 0 10px;"><div style="font-size:12px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:var(--green);border-bottom:2px solid var(--green);padding-bottom:5px;margin-bottom:8px;">LIVRAISONS</div>';if(!livs.length)html+='<div style="font-size:11px;color:var(--text3);">Aucune livraison sur ce mois.</div>';livs.forEach(function(e){html+=rowHtml(e)});html+='</div></div>'}html+='</div>'});
+    keys.forEach(function(k){var es=map[k].slice().sort(function(a,b){return sort==='asc'?a.date.localeCompare(b.date):b.date.localeCompare(a.date)}), theo=es.reduce(function(a,e){return a+totalEntryAmount(e)},0), rec=es.reduce(function(a,e){return a+receivedEntryAmount(e)},0), rest=theo-rec, open=Object.prototype.hasOwnProperty.call(window.commOpenStateFinal,k)?!!window.commOpenStateFinal[k]:(k===cm);html+='<div style="margin:0 12px 8px;"><div class="comm-final-month" data-k="'+esc(k)+'" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg3);border-radius:'+(open?'var(--radius) var(--radius) 0 0':'var(--radius)')+';cursor:pointer;border-left:3px solid '+(rest<=0?'var(--green)':'var(--daf)')+';"><div><div style="font-size:13px;font-weight:800;color:var(--text);">'+esc(labelMonth(k))+' '+(open?'▼':'▶')+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">'+euro(theo)+' · <span style="color:'+(rest<=0?'var(--green)':'var(--red)')+';">'+euro(rest)+' restant</span>'+(rest<=0?' ✅':'')+'</div></div><div style="font-size:20px;font-weight:900;color:var(--daf);">'+euro(theo)+'</div></div>';if(open){var orders=es.filter(function(e){return e.kind==='order'}), livs=es.filter(function(e){return e.kind==='delivery'});html+='<div style="background:var(--bg2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:0 12px;"><div style="padding:10px 0 4px;"><div style="font-size:12px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:var(--daf);border-bottom:2px solid var(--daf);padding-bottom:5px;margin-bottom:8px;">COMMANDES · '+orders.length+' camion'+(orders.length>1?'s':'')+'</div>';if(!orders.length)html+='<div style="font-size:11px;color:var(--text3);padding-bottom:8px;">Aucune commande sur ce mois.</div>';else html+=excelGrid(orders);html+='</div><div style="padding:4px 0 10px;"><div style="font-size:12px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:var(--green);border-bottom:2px solid var(--green);padding-bottom:5px;margin-bottom:8px;">LIVRAISONS · '+livs.length+' camion'+(livs.length>1?'s':'')+'</div>';if(!livs.length)html+='<div style="font-size:11px;color:var(--text3);">Aucune livraison sur ce mois.</div>';else html+=excelGrid(livs);html+='</div></div>'}html+='</div>'});
     cont.innerHTML=html; bindCommissionsStable(); bindCommSuivi();
   }
-  function bindCommissionsStable(){var qEl=byId('comm-search-sticky');if(qEl&&!qEl._commStable){qEl._commStable=true;qEl.oninput=function(){window.commSearchFinal=this.value;renderCommissionsStable()}}var sort=byId('comm-final-sort');if(sort)sort.onclick=function(){window.commSortFinal=(window.commSortFinal||localStorage.getItem('commSortFinal')||'desc')==='asc'?'desc':'asc';localStorage.setItem('commSortFinal',window.commSortFinal);renderCommissionsStable()};qsa('.comm-final-kpi').forEach(function(x){x.onclick=function(){window.commFilterFinal=this.dataset.f||'all';renderCommissionsStable()}});qsa('.comm-final-month').forEach(function(x){x.onclick=function(){var k=this.dataset.k, cur=Object.prototype.hasOwnProperty.call(window.commOpenStateFinal,k)?!!window.commOpenStateFinal[k]:(k===currentYm());window.commOpenStateFinal[k]=!cur;renderCommissionsStable()}});qsa('.comm-final-open,.comm-final-line').forEach(function(el){el.onclick=function(){var id=this.dataset.id||this.dataset.deal;if(id)openDealFromCommission(id)}});qsa('.comm-final-check').forEach(function(c){c.onchange=function(e){e.stopPropagation();var list=getDeliveries(), d=list.find(function(x){return String(x.id)===String(c.dataset.id)});if(!d)return;if(c.dataset.k==='rcvDelivery'){d.rcvMaint=c.checked;d.rcvPaccar=c.checked;d.rcvPrime=c.checked}else d[c.dataset.k]=c.checked;saveDeliveries(list);renderCommissionsStable()}})}
+  function bindCommissionsStable(){var qEl=byId('comm-search-sticky');if(qEl&&!qEl._commStable){qEl._commStable=true;qEl.oninput=function(){window.commSearchFinal=this.value;renderCommissionsStable()}}var sort=byId('comm-final-sort');if(sort)sort.onclick=function(){window.commSortFinal=(window.commSortFinal||localStorage.getItem('commSortFinal')||'desc')==='asc'?'desc':'asc';localStorage.setItem('commSortFinal',window.commSortFinal);renderCommissionsStable()};qsa('.comm-final-kpi').forEach(function(x){x.onclick=function(){window.commFilterFinal=this.dataset.f||'all';renderCommissionsStable()}});qsa('.comm-final-month').forEach(function(x){x.onclick=function(){var k=this.dataset.k, cur=Object.prototype.hasOwnProperty.call(window.commOpenStateFinal,k)?!!window.commOpenStateFinal[k]:(k===currentYm());window.commOpenStateFinal[k]=!cur;renderCommissionsStable()}});qsa('.comm-final-open,.comm-final-line').forEach(function(el){el.onclick=function(){var id=this.dataset.id||this.dataset.deal;if(id)openDealFromCommission(id)}});qsa('.comm-final-check').forEach(function(c){c.onchange=function(e){e.stopPropagation();var list=getDeliveries(), d=list.find(function(x){return String(x.id)===String(c.dataset.id)});if(!d)return;if(c.dataset.k==='rcvDelivery'){d.rcvMaint=c.checked;d.rcvPaccar=c.checked;d.rcvPrime=c.checked}else d[c.dataset.k]=c.checked;saveDeliveries(list);renderCommissionsStable()}});qsa('.comm-prime-check').forEach(function(c){c.onchange=function(e){e.stopPropagation();saveUnitFlag(c.dataset.id,Number(c.dataset.unit)||0,c.dataset.k,c.checked);}});qsa('.comm-bank').forEach(function(s){s.onchange=function(e){e.stopPropagation();saveLineBank(s.dataset.deal,s.dataset.line,s.value);}});}
   var previousRenderScreen=window.renderScreen;
   window.renderCommissions=renderCommissionsStable; window.renderLivraisons=renderCommissionsStable;
   window.renderScreen=function(name){if(name==='livraisons'||name==='commissions'){renderCommissionsStable();return}return previousRenderScreen?previousRenderScreen(name):undefined};
