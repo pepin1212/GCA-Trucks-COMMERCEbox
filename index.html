@@ -9346,7 +9346,7 @@ document.addEventListener('DOMContentLoaded',function(){
   function distinctCarrosseries(){var s=new Set(['Fourgon','Benne','Frigorifique','Plateau','Citerne','Ampliroll','Toupie','Porte-conteneur','Savoyarde','Autre']);vehicles().forEach(function(v){if(v.carrosserie)s.add(v.carrosserie)});return Array.from(s).sort()}
   function carrosserieOptions(v){return distinctCarrosseries().map(function(x){return '<option value="'+esc(x)+'" '+(String(v||'')===String(x)?'selected':'')+'>'+esc(x)+'</option>'}).join('')}
   function bankOf(l){
-    var banks=['PACCAR FINANCE','BANQUE CLIENT','SOLUTION FINANCE','LA BANQUE POSTALE','MUTUALEASE','BNP','FRANFI','LIXXBAIL','AUTRE'];
+    var banks=['PACCAR FINANCE','BANQUE CLIENT','SOLUTION FINANCE','LA BANQUE POSTALE','MUTUALEASE','BNP','FRANFI','LIXXBAIL','INVESTLEASE','DAVID GEET','ALMES','SOCOFI','AUTRE'];
     var raw=norm(l.banque||'');
     for(var i=0;i<banks.length;i++){if(raw&&norm(banks[i])===raw)return banks[i];}
     var less=norm(l.lessor||'');
@@ -9355,7 +9355,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if((l.banque||l.lessor))return 'AUTRE';
     return '';
   }
-  function bankOptions(l){var cur=bankOf(l);var banks=['','PACCAR FINANCE','BANQUE CLIENT','SOLUTION FINANCE','LA BANQUE POSTALE','MUTUALEASE','BNP','FRANFI','LIXXBAIL','AUTRE'];return banks.map(function(b){return '<option value="'+esc(b)+'" '+(cur===b?'selected':'')+'>'+esc(b||'—')+'</option>';}).join('');}
+  function bankOptions(l){var cur=bankOf(l);var banks=['','PACCAR FINANCE','BANQUE CLIENT','SOLUTION FINANCE','LA BANQUE POSTALE','MUTUALEASE','BNP','FRANFI','LIXXBAIL','INVESTLEASE','DAVID GEET','ALMES','SOCOFI','AUTRE'];return banks.map(function(b){return '<option value="'+esc(b)+'" '+(cur===b?'selected':'')+'>'+esc(b||'—')+'</option>';}).join('');}
   function orderComm(d){var q=lineQty(d); if(String(d.vnvo||'VN').toUpperCase()==='VO')return 400*q; return (String(d.type||'').toLowerCase().indexOf('port')>=0?550:400)*q}
   function maintComm(type,qty){var q=Math.max(1,i(qty||1));var t=String(type||'Non').toLowerCase();if(t.indexOf('xtra')>=0)return 100*q;if(t.indexOf('flex')>=0||t.indexOf('full')>=0)return 300*q;if(t.indexOf('care')>=0)return 100*q;return 0}
   function paccarComm(d){var bank=norm(d.banque||d.lessor||'');if(bank.indexOf('PACCAR')>=0||String(d.paccar||'Non').toLowerCase()==='oui')return 300*lineQty(d);return 0}
@@ -11948,7 +11948,7 @@ document.addEventListener('DOMContentLoaded',function(){
       setTimeout(function(){var line=document.querySelector('.comm-final-line'); if(line)line.scrollIntoView({behavior:'smooth',block:'center'});},40);
     };});
   }
-  var BANK_LIST=['','PACCAR FINANCE','BANQUE CLIENT','SOLUTION FINANCE','LA BANQUE POSTALE','MUTUALEASE','BNP','FRANFI','LIXXBAIL','AUTRE'];
+  var BANK_LIST=['','PACCAR FINANCE','BANQUE CLIENT','SOLUTION FINANCE','LA BANQUE POSTALE','MUTUALEASE','BNP','FRANFI','LIXXBAIL','INVESTLEASE','DAVID GEET','ALMES','SOCOFI','AUTRE'];
   function primeCell(amount, on, due, id, unit, key){
     if(!(amount>0))return '<td style="border:1px solid var(--border);padding:4px;text-align:center;color:var(--text3);">—</td>';
     var bg=due?(on?'rgba(58,184,122,.38)':'rgba(224,80,80,.38)'):'transparent';
@@ -15726,6 +15726,220 @@ document.addEventListener('DOMContentLoaded',function(){
 })();
 </script>
 
+<script>
+/* Seed — import des commandes gagnées 2026 (tableur client) → Affaires + Commissions */
+(function(){
+  'use strict';
+  var IMPORT_TAG='sheet-cmd-2026-v1';
+
+  function rows(){
+    /* orderDate, prod, client, model, bodybuilder, vnvo, type, price, marginEuro, marginPct, banque, deliveryDate, maintenance */
+    return [
+      ['2026-01-01','160011','R2G LOCATION','XG530FT','','VN','Tracteur',103000,4801.24,4.66,'BANQUE CLIENT','2026-03-01','FlexCare'],
+      ['2026-03-01','160004','PALETTES SUD ENERGIE','XG530FT','','VN','Tracteur',119000,11421.34,9.60,'DAVID GEET','2026-03-01','FlexCare'],
+      ['2026-03-01','131490','PALETTES SUD ENERGIE','XF480FT','','VN','Tracteur',108000,10181.24,9.43,'DAVID GEET','2026-03-01','FullCare'],
+      ['2026-02-01','160014','TRANSFERT SAS','XG480FT','','VN','Tracteur',108000,7651.24,7.08,'BANQUE CLIENT','2026-03-01','FlexCare'],
+      ['2026-02-01','160016','TRANSFERT SAS','XG480FT','','VN','Tracteur',108000,7651.24,7.08,'BANQUE CLIENT','2026-03-01','FlexCare'],
+      ['2026-04-01','VO','ANSOR','XF480FT VO','','VO','Tracteur',42500,'','','BANQUE CLIENT','2026-04-01','Non'],
+      ['2026-01-01','160010','R2G LOCATION','XG480FT','','VN','Tracteur',103000,4476.24,4.35,'INVESTLEASE','2026-04-01','FlexCare'],
+      ['2026-01-01','160012','R2G LOCATION','XG480FT','','VN','Tracteur',103000,4476.24,4.35,'INVESTLEASE','2026-04-01','FlexCare'],
+      ['2026-02-01','943379','TRANS MARION EXPRESS','XG530FT','','VN','Tracteur',125000,9730.28,7.78,'BANQUE CLIENT','2026-05-01','Non'],
+      ['2026-02-01','113796','CARBURANTS DE PROVENCE','XF530FT','','VN','Tracteur',120000,9824.24,8.19,'BANQUE CLIENT','2026-05-01','Non'],
+      ['2026-04-01','260661','BMC LOGISTIK','XG+530FT','','VN','Tracteur',139500,5456.24,3.91,'BANQUE CLIENT','2026-05-01','Non'],
+      ['2026-04-01','428044','CARRY','XG530FT','','VN','Tracteur',122000,9276.24,7.60,'PACCAR FINANCE','2026-06-01','FlexCare'],
+      ['2026-04-01','405215','JB 13','XG530FT','','VN','Tracteur',141000,10069.64,7.14,'BANQUE CLIENT','2026-06-01','FlexCare'],
+      ['2026-05-01','424088','C.D.G','XG530FT','','VN','Tracteur',139000,11196.00,8.05,'BNP','2026-07-01','FlexCare'],
+      ['2026-05-01','405245','RS TRANSPORT','XG530FT','','VN','Tracteur',121000,9312.75,7.70,'ALMES','2026-07-01','Non'],
+      ['2026-05-01','424086','TRANS MARION EXPRESS','XG530FT','','VN','Tracteur',125000,10230.28,8.18,'PACCAR FINANCE','2026-07-01','Non'],
+      ['2026-05-01','424084','SSTI','XG530FT','','VN','Tracteur',126000,9183.24,7.29,'LA BANQUE POSTALE','2026-07-01','FlexCare'],
+      ['2026-05-01','424087','SSTI','XG530FT','','VN','Tracteur',126000,9183.24,7.29,'BANQUE CLIENT','2026-07-01','FlexCare'],
+      ['2026-07-01','395437','EGYPAL','XG+530FT','','VN','Tracteur',153800,5951.24,3.87,'PACCAR FINANCE','2026-07-01','FullCare'],
+      ['2026-05-01','445149','PLAN D EKO RENT','XG530FT','','VN','Tracteur',108500,2251.24,2.07,'BANQUE CLIENT','2026-07-01','FlexCare'],
+      ['2026-05-01','445148','PLAN D EKO RENT','XG530FT','','VN','Tracteur',108500,2251.24,2.07,'BANQUE CLIENT','2026-07-01','FullCare'],
+      ['2026-07-01','186816','DJC TP','XF480FT','','VN','Tracteur',115000,10946.24,9.52,'PACCAR FINANCE','2026-09-01','Non'],
+      ['2026-09-01','419698','R2G LOCATIONS','XB290FA PPP','LEBRUN','VN','Porteur',107800,7703.82,7.15,'PACCAR FINANCE','2026-10-01','Non'],
+      ['2026-09-01','VO','PALETTES SERVICES','XF480FT VO','','VO','Tracteur',58000,'','','BNP','2026-10-01','Non'],
+      ['2026-06-01','441136','SSTI','XG530FT','','VN','Tracteur',126000,8931.24,7.09,'LA BANQUE POSTALE','2026-10-01','FlexCare'],
+      ['2026-10-01','395823','PC TRUCK','XG+530FT EMERALD','','VN','Tracteur',153000,7621.58,4.98,'SOCOFI','2026-10-01','FullCare'],
+      ['2026-11-01','121619','CRCA','XB210FA BODY','PACCAR','VN','Porteur',86500,5666.94,6.55,'BANQUE CLIENT','2026-11-01','Non'],
+      ['2026-07-01','441158','SSTI','XG530FT','','VN','Tracteur',131000,7941.24,6.06,'','2026-11-01','FlexCare'],
+      ['2026-07-01','VO','GF COLIS','BB GRUE VO','','VO','Porteur','','','','BANQUE CLIENT','2026-11-01','Non'],
+      ['2026-08-01','509604','ROYAL TRANS','XG530FT','','VN','Tracteur',110000,7821.24,7.11,'DAVID GEET','2026-11-01','Non'],
+      ['2026-08-01','509610','ROYAL TRANS','XG530FT','','VN','Tracteur',110000,7821.24,7.11,'BNP','2026-11-01','Non'],
+      ['2026-09-01','509605','ACTYF TRANSPORTS','XG530FT','','VN','Tracteur',110000,8131.24,7.39,'BANQUE CLIENT','2026-11-01','Non'],
+      ['2026-07-01','487873','NEPTUNE PISCINE','XD410FT','STIM','VN','Tracteur',106500,7729.44,7.26,'BANQUE CLIENT','2026-12-01','Non'],
+      ['2026-05-01','446555','13 RECYCLAGE','XD410FA','PALFINGER','VN','Porteur',106800,5249.24,4.92,'BANQUE CLIENT','2026-12-01','Non'],
+      ['2026-10-01','448035','PIGA ET ROVERA','XF530FT','','VN','Tracteur',125000,8911.24,7.13,'BANQUE CLIENT','2026-12-01','FullCare'],
+      ['2026-10-01','448036','PIGA ET ROVERA','XF530FT','','VN','Tracteur',125000,8911.24,7.13,'BANQUE CLIENT','2026-12-01','FullCare'],
+      ['2026-07-01','459284','JTI','XG530 DEMO','','VN','Tracteur',116000,'','','BANQUE CLIENT','2027-01-01','FullCare'],
+      ['2026-10-01','','MANZON','XB230FA','LAMBERET','VN','Porteur',67300,6965.24,10.35,'','2027-04-01','Non']
+    ];
+  }
+
+  function uid(prefix){return prefix+'_'+Date.now().toString(36)+'_'+Math.floor(Math.random()*1e6).toString(36);}
+  function num(v){var n=parseFloat(String(v==null?'':v).replace(/\s/g,'').replace(',','.'));return isFinite(n)?n:0;}
+  function primeOf(price,pct,marginEuro){
+    var p=num(pct); if(p<7)return 0;
+    var me=num(marginEuro); if(!(me>0)&&num(price)>0)me=Math.round(num(price)*p)/100;
+    return Math.round(me*3)/100;
+  }
+  function isRealProd(prod){
+    var p=String(prod||'').trim().toUpperCase();
+    return !!(p && p!=='VO' && p!=='X' && p!=='-');
+  }
+  function lineKey(l){
+    if(isRealProd(l.productionNo))return 'P:'+String(l.productionNo).trim().toUpperCase();
+    return 'V:'+[String(l.client||'').trim().toUpperCase(),l.model,l.orderDate,String(l.salePrice==null?'':l.salePrice),l.deliveryDate,String(l.vnvo||'').toUpperCase()].join('|');
+  }
+  function makeImportKey(client,r){
+    var prod=r[1], model=r[3], orderDate=r[0], deliveryDate=r[11], price=r[7], vnvo=r[5];
+    if(isRealProd(prod))return IMPORT_TAG+':P:'+String(prod).trim().toUpperCase();
+    return IMPORT_TAG+':V:'+[client,model,orderDate,deliveryDate,price,vnvo].join('|');
+  }
+  function existingKeys(deals){
+    var set={};
+    (deals||[]).forEach(function(d){
+      (d.lines||[]).forEach(function(l){
+        var k=lineKey({productionNo:l.productionNo,client:d.client,model:l.model,orderDate:l.orderDate,salePrice:l.salePrice,deliveryDate:l.deliveryDate,vnvo:l.vnvo});
+        set[k]=1;
+        if(l.importKey)set['I:'+l.importKey]=1;
+      });
+    });
+    return set;
+  }
+  function buildLine(r, client){
+    var orderDate=r[0], prod=r[1], model=r[3], body=r[4], vnvo=r[5], type=r[6];
+    var price=r[7], marginEuro=r[8], marginPct=r[9], banque=r[10], deliveryDate=r[11], maint=r[12];
+    var pctStr=marginPct===''||marginPct==null?'':String(marginPct);
+    var priceVal=price===''||price==null?'':num(price);
+    var meVal=marginEuro===''||marginEuro==null?'':num(marginEuro);
+    var paccar=String(banque||'').toUpperCase().indexOf('PACCAR')>=0?'Oui':'Non';
+    return {
+      id:uid('line'),
+      created:orderDate,
+      result:'GAGNE',
+      type:type||'Tracteur',
+      model:model||'',
+      qty:1,
+      carrosserie:'',
+      orderDate:orderDate,
+      deliveryDate:deliveryDate,
+      productionNo:prod||'',
+      bodybuilder:body||'',
+      vnvo:vnvo||'VN',
+      maintenance:maint||'Non',
+      banque:banque||'',
+      lessor:banque||'',
+      paccar:paccar,
+      salePrice:priceVal,
+      marginPct:pctStr,
+      marginEuro:meVal===''?0:meVal,
+      prime:primeOf(priceVal,pctStr,meVal),
+      exceptionalPrime:0,
+      importKey:makeImportKey(client,r),
+      importSource:IMPORT_TAG
+    };
+  }
+
+  function dedupeSeedLines(deals){
+    var seen={}, changed=false;
+    (deals||[]).forEach(function(d){
+      var keep=[];
+      (d.lines||[]).forEach(function(l){
+        if(l.importSource!==IMPORT_TAG){keep.push(l);return;}
+        var k=lineKey({productionNo:l.productionNo,client:d.client,model:l.model,orderDate:l.orderDate,salePrice:l.salePrice,deliveryDate:l.deliveryDate,vnvo:l.vnvo});
+        var ik=l.importKey?('I:'+l.importKey):'';
+        if(seen[k]||(ik&&seen[ik])){changed=true;return;}
+        seen[k]=1; if(ik)seen[ik]=1; keep.push(l);
+      });
+      d.lines=keep;
+    });
+    return changed;
+  }
+  function applySeed(){
+    if(typeof getHotDeals!=='function'||typeof saveHotDeals!=='function')return false;
+    var deals=getHotDeals()||[];
+    if(!Array.isArray(deals))deals=[];
+    var cleaned=dedupeSeedLines(deals);
+    var keys=existingKeys(deals);
+    var byClient={};
+    deals.forEach(function(d,idx){
+      var c=String(d.client||'').trim().toUpperCase();
+      if(c && String(d.status||'').toUpperCase().replace('É','E')==='GAGNE' && !byClient[c])byClient[c]=idx;
+    });
+    var added=0;
+    rows().forEach(function(r){
+      var client=r[2];
+      var line=buildLine(r, client);
+      var k=lineKey({productionNo:line.productionNo,client:client,model:line.model,orderDate:line.orderDate,salePrice:line.salePrice,deliveryDate:line.deliveryDate,vnvo:line.vnvo});
+      if(keys[k]||keys['I:'+line.importKey])return;
+      var ck=String(client||'').trim().toUpperCase();
+      var idx=byClient[ck];
+      if(idx==null){
+        var deal={
+          id:uid('deal'),
+          projectId:'',
+          siteKey:'',
+          tva:'',
+          client:client,
+          created:line.orderDate,
+          comment:'Import tableur commandes 2026',
+          status:'GAGNE',
+          importSource:IMPORT_TAG,
+          lines:[line]
+        };
+        byClient[ck]=deals.length;
+        deals.push(deal);
+      }else{
+        deals[idx].lines=deals[idx].lines||[];
+        deals[idx].lines.push(line);
+        deals[idx].status='GAGNE';
+      }
+      keys[k]=1;
+      keys['I:'+line.importKey]=1;
+      added++;
+    });
+    if(added>0||cleaned){
+      // retire les affaires seed vides après dédup
+      deals=deals.filter(function(d){return !d.importSource||d.importSource!==IMPORT_TAG||(d.lines&&d.lines.length);});
+      saveHotDeals(deals);
+      try{
+        if(typeof getDeliveries==='function'&&typeof saveDeliveries==='function'){
+          var valid={}; deals.forEach(function(d){(d.lines||[]).forEach(function(l){valid[String(d.id)+'|'+String(l.id)]=1;});});
+          var dealMap={}; deals.forEach(function(d){dealMap[String(d.id)]=1;});
+          var liv=getDeliveries()||[];
+          var pruned=liv.filter(function(x){
+            var sid=String(x.sourceId||'');
+            if(sid.indexOf('|')<0)return true;
+            var dealId=sid.split('|')[0];
+            if(!dealMap[dealId])return true;
+            return !!valid[sid];
+          });
+          if(pruned.length!==liv.length)saveDeliveries(pruned);
+        }
+      }catch(e){}
+      try{if(typeof syncAllDeliveries==='function')syncAllDeliveries();}catch(e){}
+      try{if(typeof window.syncWonDealsToDeliveriesFinal==='function')window.syncWonDealsToDeliveriesFinal();}catch(e){}
+      try{
+        if(typeof renderAffaires==='function'&&window.currentScreen==='affaires')renderAffaires();
+        if(typeof renderCommissions==='function'&&window.currentScreen==='livraisons')renderCommissions();
+        if(typeof renderCommissionsStable==='function'&&window.currentScreen==='livraisons')renderCommissionsStable();
+      }catch(e){}
+      if(added>0){try{if(typeof toast==='function')toast(added+' commande(s) importée(s)');}catch(e){}}
+      console.info('[COMMERCEbox] Seed commandes 2026 : +'+added+(cleaned?' (dédup)':''));
+    }
+    return true;
+  }
+
+  window.importCommandesSheet2026=function(){return applySeed();};
+
+  function boot(){
+    if(!applySeed()){setTimeout(boot,250);return;}
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(boot,600);});
+  else setTimeout(boot,600);
+})();
+</script>
 
 </body>
 </html>
