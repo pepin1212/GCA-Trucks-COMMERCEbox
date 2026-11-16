@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0c0f">
@@ -10,17 +10,17 @@
 <title>DAF_COMMERCE-Box</title>
 <script src="xlsx.full.min.js" onerror="window._xlsxLoadError=true;"></script>
 <style>
-:root{--bg:#0a0c0f;--bg2:#111418;--bg3:#1a1e24;--bg4:#222830;--border:#2a3040;--border2:#3a4255;--text:#e8eaf0;--text2:#a0a8b8;--text3:#606880;--daf:#e8a020;--daf2:#f0b840;--daf-bg:rgba(232,160,32,.12);--daf-border:rgba(232,160,32,.3);--blue:#4a90d9;--blue-bg:rgba(74,144,217,.12);--green:#3ab87a;--green-bg:rgba(58,184,122,.12);--red:#e05050;--red-bg:rgba(224,80,80,.12);--orange:#e07830;--orange-bg:rgba(224,120,48,.12);--purple:#8060d0;--purple-bg:rgba(128,96,208,.12);--radius:12px;--radius-sm:8px;--nav-h:68px;--safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px);--nav-pad:calc(var(--nav-h) + var(--safe-b) + 20px)}
+:root{--bg:#0a0c0f;--bg2:#111418;--bg3:#1a1e24;--bg4:#222830;--border:#2a3040;--border2:#3a4255;--text:#e8eaf0;--text2:#a0a8b8;--text3:#606880;--daf:#e8a020;--daf2:#f0b840;--daf-bg:rgba(232,160,32,.12);--daf-border:rgba(232,160,32,.3);--blue:#4a90d9;--blue-bg:rgba(74,144,217,.12);--green:#3ab87a;--green-bg:rgba(58,184,122,.12);--red:#e05050;--red-bg:rgba(224,80,80,.12);--orange:#e07830;--orange-bg:rgba(224,120,48,.12);--purple:#8060d0;--purple-bg:rgba(128,96,208,.12);--radius:12px;--radius-sm:8px;--nav-h:68px;--safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:-apple-system,"SF Pro Display","Helvetica Neue",sans-serif;font-size:14px}
 #app{width:100%;height:100%;display:flex;flex-direction:column;overflow:hidden}
-.screen{display:none;flex:1;overflow-y:auto;overflow-x:hidden;padding-bottom:var(--nav-pad);-webkit-overflow-scrolling:touch}
+/* Marge bas = hauteur menu fixe (68px) + marge, sans safe-area qui gonfle le bandeau sur iPhone */
+.screen{display:none;flex:1;overflow-y:auto;overflow-x:hidden;padding-bottom:calc(var(--nav-h) + 28px);-webkit-overflow-scrolling:touch}
 .screen.active{display:block}
-/* Bandeau compact en bas : safe-area une seule fois dans la hauteur (pas aussi en padding-bottom) */
-#nav{position:fixed;bottom:0;left:0;right:0;height:calc(var(--nav-h) + var(--safe-b));background:rgba(10,12,15,.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;align-items:flex-start;padding-top:8px;z-index:500;box-sizing:border-box}
-.nav-item{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 2px;cursor:pointer;transition:all .2s}
+#nav{position:fixed;bottom:0;left:0;right:0;height:var(--nav-h);background:rgba(10,12,15,.96);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;align-items:flex-start;padding-top:8px;z-index:500}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:0 2px;cursor:pointer;transition:all .2s}
 .nav-icon{font-size:22px;line-height:1}
-.nav-label{font-size:9px;font-weight:600;letter-spacing:.3px;color:var(--text3);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.nav-label{font-size:9px;font-weight:600;letter-spacing:.3px;color:var(--text3);text-transform:uppercase}
 .nav-item.active .nav-label{color:var(--daf)}
 .nav-item.active .nav-icon{transform:translateY(-1px)}
 .screen-header{padding:10px 14px 6px;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border)}
@@ -52,7 +52,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .tours-proj-quick.none{background:var(--bg4);color:var(--text3);border-color:var(--border)}
 .tours-pv-mark{cursor:pointer;color:var(--text3)}
 .tours-pv-mark.on{background:var(--daf-bg);color:var(--daf);border-color:var(--daf-border)}
-#screen-immat.screen.active{display:flex;flex-direction:column;overflow:hidden;padding-bottom:var(--nav-pad);}
+#screen-immat.screen.active{display:flex;flex-direction:column;overflow:hidden;padding-bottom:calc(var(--nav-h) + 28px);}
 #immat-filters{flex:0 1 auto;max-height:42vh;overflow:auto;background:var(--bg2);border-bottom:1px solid var(--border);}
 #immat-scroll{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;}
 .immat-table{border-collapse:separate;border-spacing:0;font-size:10px;min-width:max-content;}
@@ -88,7 +88,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 #immat-detail:empty{display:none;}
 #immat-detail{flex:0 1 auto;max-height:38vh;overflow:auto;background:var(--bg);border-bottom:1px solid var(--border);}
 #immat-visit-menu,#immat-col-pop,#plan-col-pop{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
-#screen-plan.screen.active{display:flex;flex-direction:column;overflow:hidden;padding-bottom:var(--nav-pad);}
+#screen-plan.screen.active{display:flex;flex-direction:column;overflow:hidden;padding-bottom:calc(var(--nav-h) + 28px);}
 /* iOS : les menus position:fixed dans Plan peuvent rester cliquables après changement d’onglet */
 #screen-plan:not(.active){pointer-events:none!important;visibility:hidden!important;}
 #plan-filters{flex:0 1 auto;max-height:28vh;overflow:auto;background:var(--bg2);border-bottom:1px solid var(--border);}
@@ -15977,26 +15977,6 @@ document.addEventListener('DOMContentLoaded',function(){
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(boot,600);});
   else setTimeout(boot,600);
-})();
-</script>
-
-<script>
-/* iPhone : espace bas = hauteur réelle du menu (compact) + marge, sans gonfler le bandeau */
-(function(){
-  'use strict';
-  function syncNavPad(){
-    var nav=document.getElementById('nav');
-    if(!nav)return;
-    var h=Math.ceil(nav.getBoundingClientRect().height||0);
-    if(!(h>0))return;
-    document.documentElement.style.setProperty('--nav-pad', (h + 20) + 'px');
-  }
-  window.syncNavPad=syncNavPad;
-  function boot(){syncNavPad();}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);
-  else boot();
-  window.addEventListener('resize',syncNavPad,{passive:true});
-  window.addEventListener('orientationchange',function(){setTimeout(syncNavPad,150);},{passive:true});
 })();
 </script>
 
