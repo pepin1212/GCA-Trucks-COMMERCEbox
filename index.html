@@ -160,16 +160,17 @@ input[type=file]{display:none}
 .file-zone:active{border-color:var(--daf);background:var(--daf-bg)}
 .fz-title{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:2px}
 .fz-sub{font-size:10px;color:var(--text3)}
-#sheet-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:200}
+/* Fiches / modales AU-DESSUS du menu bas (sinon le nav z-index:500 masque le bas du contenu) */
+#sheet-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:600}
 #sheet-ov.open{display:block}
-#sheet{position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-radius:20px 20px 0 0;z-index:201;max-height:93vh;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
+#sheet{position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-radius:20px 20px 0 0;z-index:601;max-height:93vh;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
 #sheet.open{transform:translateY(0)}
 .sheet-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:10px auto 0}
 .sheet-hdr{padding:11px 14px 9px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
 .sheet-title{font-size:16px;font-weight:700}
 .sheet-close{width:27px;height:27px;border-radius:50%;background:var(--bg3);border:none;color:var(--text2);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.sheet-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 calc(var(--safe-b) + 10px)}
-#modal-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:300;align-items:center;justify-content:center;padding:18px}
+.sheet-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 28px}
+#modal-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:700;align-items:center;justify-content:center;padding:18px}
 #modal-ov.open{display:flex}
 #modal{background:var(--bg2);border:1px solid var(--border2);border-radius:16px;width:100%;max-width:360px;max-height:84vh;display:flex;flex-direction:column}
 .modal-hdr{padding:13px 15px;border-bottom:1px solid var(--border)}
