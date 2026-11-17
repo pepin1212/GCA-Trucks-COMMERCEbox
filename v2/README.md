@@ -13,13 +13,9 @@ Copie isolée de l’app (ne modifie pas V1 à la racine du repo).
 - [Guide utilisateur](docs/guide-utilisateur-v2.md)
 - [SQL + RLS](docs/supabase-v2-rls.sql)
 
-## Placeholders
+## Config cloud
 
-Dans `index.html`, remplacer :
-
-```js
-var URL_='YOUR_SUPABASE_URL';
-var KEY='YOUR_SUPABASE_ANON_KEY';
-```
+Projet V2 déjà renseigné dans `index.html` (`URL_` + clé publishable `sb_publishable_…`).  
+Client = `fetch` REST (pas supabase-js) — même modèle que V1 ; la publishable key suffit.
 
 SheetJS est chargé depuis `../xlsx.full.min.js` (partagé avec V1).

@@ -14256,9 +14256,10 @@ document.addEventListener('DOMContentLoaded',function(){
 /* COMMERCEbox V2 — auth obligatoire + autosave cloud debounced + offline queue A.
    Projet Supabase SÉPARÉ de V1. Ne touche jamais coffre_snapshots / coffre_parts. */
 (function(){
-  // PLACEHOLDERS — coller URL + anon key du 2e projet Supabase Free (voir v2/docs/guide-utilisateur-v2.md)
-  var URL_='YOUR_SUPABASE_URL';
-  var KEY='YOUR_SUPABASE_ANON_KEY';
+  // Projet Supabase Free V2 (séparé de V1). Clé publishable nouvelle UI — compatible fetch REST (pas de supabase-js).
+  // Voir v2/docs/guide-utilisateur-v2.md
+  var URL_='https://ksikuebjwwttijkqgenw.supabase.co';
+  var KEY='sb_publishable_y6xMuO4QF4ND9cXpE52ZgQ_tBMhk9DE';
   var CHUNK=280000;
   var DEBOUNCE_MS=1200;
   var RETRY_MS=8000;

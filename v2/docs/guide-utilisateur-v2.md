@@ -2,16 +2,22 @@
 
 V1 continue de tourner à la racine GitHub Pages. V2 vit dans `/v2/` et utilise un **2ᵉ projet Supabase Free** (le plafond Free = 2 projets). Les tables `coffre_*` V1 ne sont **pas** touchées.
 
-## 1. Créer le 2ᵉ projet Supabase
+## 1. Projet Supabase V2 (déjà branché dans le code)
 
-1. Ouvrir [supabase.com/dashboard](https://supabase.com/dashboard)
-2. **New project** (organization existante) → nom suggéré `commercebox-v2`
-3. Noter la région, attendre le provisioning
-4. **Project Settings → API** :
-   - `Project URL` → coller dans `v2/index.html` à la place de `YOUR_SUPABASE_URL`
-   - `anon` `public` key → coller à la place de `YOUR_SUPABASE_ANON_KEY`
-5. **Authentication → Providers → Email** : activer Email. Pour un seul utilisateur terrain, vous pouvez décocher **Confirm email**.
-6. **SQL Editor** : coller puis Run le fichier `v2/docs/supabase-v2-rls.sql`
+Dans `v2/index.html` :
+
+- **URL** : `https://ksikuebjwwttijkqgenw.supabase.co`
+- **Clé** : publishable `sb_publishable_…` (nouvelle UI Supabase)
+
+V2 n’utilise **pas** supabase-js : comme V1, elle appelle Auth/REST en `fetch` avec l’en-tête `apikey`. La clé publishable est acceptée (vérifié : Auth + `GET /rest/v1/v2_store` OK). Pas besoin de la legacy anon JWT `eyJ…` pour ce client.
+
+Si un jour un outil exige encore le JWT anon : Dashboard → **Project Settings → API Keys → View legacy API keys** → clé `anon` `public`.
+
+### Checklist projet (si nouveau clone / reset)
+
+1. [supabase.com/dashboard](https://supabase.com/dashboard) → projet V2
+2. **Authentication → Providers → Email** activé (Confirm email optionnel pour 1 user)
+3. **SQL Editor** → Run `v2/docs/supabase-v2-rls.sql` (tables `v2_store` / `v2_parts` + RLS)
 
 ## 2. Déployer V2 (GitHub Pages)
 
@@ -40,7 +46,8 @@ Sur iPhone : ouvrir V2 dans Safari une fois, puis « Sur l’écran d’accueil 
 
 | Symptôme | Action |
 |----------|--------|
-| « Config Supabase V2 manquante » | Clés encore en `YOUR_…` dans `v2/index.html` |
+| « Config Supabase V2 manquante » | `URL_` / `KEY` encore en `YOUR_…` dans `v2/index.html` |
+| « Invalid JWT » | Rare avec ce client ; sinon coller la legacy anon JWT (View legacy API keys) à la place de `KEY` |
 | « Tables V2 absentes » | Relancer `supabase-v2-rls.sql` |
 | Projet Free en pause (7 j) | Dashboard Supabase → Restore / unpause |
 | Sync en attente | Vérifier le réseau ; la file repart seule |
@@ -49,7 +56,7 @@ Sur iPhone : ouvrir V2 dans Safari une fois, puis « Sur l’écran d’accueil 
 
 | Fichier | Rôle |
 |---------|------|
-| `v2/index.html` | App V2 + placeholders URL/KEY |
+| `v2/index.html` | App V2 + URL/KEY projet V2 |
 | `v2/docs/supabase-v2-rls.sql` | Tables + RLS |
 | `v2/docs/guide-utilisateur-v2.md` | Ce guide |
 | `index.html` (racine) | **V1 — ne pas modifier** |
