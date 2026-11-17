@@ -1,6 +1,7 @@
 -- COMMERCEbox V2 — schéma cloud (projet Supabase Free SÉPARÉ de V1)
 -- Ne crée PAS et ne modifie PAS coffre_snapshots / coffre_parts (réservés à V1).
 -- À exécuter dans : Supabase → SQL Editor → New query → Run
+-- Rejouable (idempotent) : crée les tables si besoin, ajoute les colonnes verrou, (re)pose les policies.
 
 -- 1) Meta snapshot (1 ligne / utilisateur)
 create table if not exists public.v2_store (
@@ -13,6 +14,12 @@ create table if not exists public.v2_store (
   updated_at timestamptz not null default now(),
   migrated_at timestamptz
 );
+
+-- 1b) Verrou session appareil (single active device)
+-- active_device_id = id stable localStorage de l’appareil qui tient la session
+-- heartbeat_at     = dernier ping (~45 s). Une session est « active » si heartbeat < ~3 min.
+alter table public.v2_store add column if not exists active_device_id text;
+alter table public.v2_store add column if not exists heartbeat_at timestamptz;
 
 -- 2) Morceaux JSON (payload version 9 découpé)
 create table if not exists public.v2_parts (
@@ -58,3 +65,10 @@ create policy "v2_parts_delete_own" on public.v2_parts
 
 -- Auth e-mail/mot de passe : dans Authentication → Providers → Email
 -- Pour un usage solo rapide : désactiver "Confirm email" si vous préférez.
+--
+-- Verrou appareil (rappel) :
+--   L’app écrit active_device_id + heartbeat_at au login et toutes les ~45 s.
+--   Un 2ᵉ appareil avec heartbeat récent (< 3 min) est refusé, avec bouton
+--   « Utiliser cet appareil à la place » pour forcer la prise (téléphone perdu).
+--   Se déconnecter libère le verrou. Sans ces colonnes, l’app reste utilisable
+--   mais le verrou est inactif jusqu’à ce que ce SQL soit rejoué.

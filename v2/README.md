@@ -3,6 +3,7 @@
 Copie isolée de l’app (ne modifie pas V1 à la racine du repo).
 
 - **Auth** e-mail/mot de passe obligatoire
+- **Verrou 1 appareil** (heartbeat cloud + prise forcée si appareil perdu)
 - **Autosave cloud** debounced (~1,2 s) vers un projet Supabase Free dédié
 - **Hors ligne** : file locale + retry + bandeau
 - **Import one-shot** JSON v9 V1 → V2
