@@ -468,11 +468,11 @@ input[type=file]{display:none}
       <p id="v2-auth-msg" style="font-size:12px;color:var(--text3);line-height:1.4;min-height:1.2em;"></p>
     </div>
     <div id="v2-device-lock-panel" style="display:none;margin-top:8px;">
-      <h2 style="font-size:17px;font-weight:800;margin-bottom:6px;">Autre appareil actif</h2>
+      <h2 id="v2-device-lock-title" style="font-size:17px;font-weight:800;margin-bottom:6px;">Autre appareil actif</h2>
       <p id="v2-device-lock-msg" style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:14px;">Un autre appareil utilise déjà COMMERCEbox.</p>
       <button type="button" class="btn btn-primary" id="v2-device-takeover" style="width:100%;margin-bottom:8px;">Utiliser cet appareil à la place</button>
       <button type="button" class="btn btn-ghost" id="v2-device-lock-out" style="width:100%;">Se déconnecter</button>
-      <p style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.45;">À utiliser si vous avez perdu l’autre appareil (ou fermé l’app ailleurs). L’autre session sera déconnectée dès qu’elle tentera de sync.</p>
+      <p id="v2-device-lock-hint" style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.45;">À utiliser si vous avez perdu l’autre appareil (ou fermé l’app ailleurs). L’autre session synchronise puis se déconnecte automatiquement.</p>
     </div>
     <div id="v2-import-panel" style="display:none;margin-top:8px;">
       <h2 style="font-size:17px;font-weight:800;margin-bottom:6px;">Import unique V1 → V2</h2>
@@ -490,7 +490,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-17-v2-device-lock-001';
+const APP_BUILD='2026-11-17-v2-device-eject-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -14276,7 +14276,7 @@ document.addEventListener('DOMContentLoaded',function(){
   var CHUNK=280000;
   var DEBOUNCE_MS=1200;
   var RETRY_MS=8000;
-  var HEARTBEAT_MS=45000;
+  var HEARTBEAT_MS=10000; // poll rapide pour éjecter l’ancien appareil après prise forcée
   var ACTIVE_MS=3*60*1000; // session « active » si heartbeat < 3 min
   var LS_SESSION='daf_v2_cloud_session';
   var LS_EMAIL='daf_v2_cloud_email';
@@ -14288,6 +14288,7 @@ document.addEventListener('DOMContentLoaded',function(){
   var LS_LAST_OK='daf_v2_cloud_last_ok';
   var LS_HAS_CLOUD='daf_v2_cloud_has_snapshot';
   var LS_APPLY='daf_v2_cloud_apply';
+  var LS_EJECT_NOTICE='daf_v2_cloud_eject_notice';
 
   var _status={state:'local',label:'Local',short:'Sync'};
   var _timer=null;
@@ -14299,6 +14300,7 @@ document.addEventListener('DOMContentLoaded',function(){
   var _startApp=null;
   var _lockHeld=false;
   var _lockCheckBusy=false;
+  var _ejecting=false;
 
   function lsGet(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
   function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
@@ -14420,6 +14422,10 @@ document.addEventListener('DOMContentLoaded',function(){
       throw err;
     });
   }
+  function lockColumnsMissing(err){
+    var m=String(err&&err.message||'');
+    return /active_device_id|heartbeat_at|column/i.test(m);
+  }
   function writeDeviceLock(token, uid, clear){
     var now=new Date().toISOString();
     var body=clear
@@ -14433,9 +14439,7 @@ document.addEventListener('DOMContentLoaded',function(){
           prefer:'resolution=merge-duplicates,return=minimal',
           body:{user_id:uid,device:deviceName(),clients:0,vehicles:0,parts:0,revision:0,updated_at:now,active_device_id:deviceId(),heartbeat_at:now}
         }).catch(function(err){
-          // Schéma sans colonnes verrou : ignorer (app utilisable, verrou inactif jusqu’au SQL)
-          var m=String(err&&err.message||'');
-          if(/active_device_id|heartbeat_at|column/i.test(m))return null;
+          if(lockColumnsMissing(err))return null;
           throw err;
         });
       }
@@ -14444,10 +14448,21 @@ document.addEventListener('DOMContentLoaded',function(){
         prefer:'return=minimal',
         body:body
       }).catch(function(err){
-        var m=String(err&&err.message||'');
-        if(/active_device_id|heartbeat_at|column/i.test(m))return null;
+        if(lockColumnsMissing(err))return null;
         throw err;
       });
+    });
+  }
+  /** Heartbeat sans voler le verrou : PATCH seulement si on est encore le propriétaire. */
+  function refreshHeartbeatIfOwner(token, uid){
+    var now=new Date().toISOString();
+    return api('/rest/v1/v2_store?user_id=eq.'+encodeURIComponent(uid)+'&active_device_id=eq.'+encodeURIComponent(deviceId()),{
+      method:'PATCH',token:token,
+      prefer:'return=minimal',
+      body:{heartbeat_at:now, device:deviceName()}
+    }).catch(function(err){
+      if(lockColumnsMissing(err))return null;
+      throw err;
     });
   }
   function evaluateDeviceLock(meta){
@@ -14466,13 +14481,30 @@ document.addEventListener('DOMContentLoaded',function(){
       heartbeat_at:meta.heartbeat_at
     };
   }
+  function isStolenByOther(meta){
+    if(!meta||typeof meta.active_device_id==='undefined')return false;
+    if(!meta.active_device_id)return false;
+    if(meta.active_device_id===deviceId())return false;
+    return isLockFresh(meta);
+  }
   function claimDeviceLock(token, uid, force){
     return loadMeta(token, uid).then(function(meta){
       var ev=evaluateDeviceLock(meta);
       if(!ev.ok && !force)return {claimed:false, blocked:ev, meta:meta};
+      // Prise forcée : écrire le verrou immédiatement pour que l’ancien appareil détecte au prochain poll
       return writeDeviceLock(token, uid, false).then(function(){
-        _lockHeld=true;
-        return {claimed:true, blocked:null, meta:meta, takeover:!!force && !ev.ok};
+        return loadMeta(token, uid).then(function(after){
+          var mine=after&&after.active_device_id===deviceId();
+          if(force && !mine && after&&typeof after.active_device_id!=='undefined'){
+            // 2ᵉ tentative immédiate (course rare)
+            return writeDeviceLock(token, uid, false).then(function(){
+              _lockHeld=true;
+              return {claimed:true, blocked:null, meta:after, takeover:!!force && !ev.ok};
+            });
+          }
+          _lockHeld=true;
+          return {claimed:true, blocked:null, meta:meta, takeover:!!force && !ev.ok};
+        });
       });
     });
   }
@@ -14492,50 +14524,105 @@ document.addEventListener('DOMContentLoaded',function(){
     clearInterval(_heartbeatTimer);
     _heartbeatTimer=null;
   }
-  function onLockLost(meta){
+  function showEjectingGate(meta){
+    showGate('device-lock');
+    var title=$('v2-device-lock-title'), msg=$('v2-device-lock-msg'), hint=$('v2-device-lock-hint');
+    var take=$('v2-device-takeover'), out=$('v2-device-lock-out');
+    if(title)title.textContent='Session reprise ailleurs';
+    if(msg)msg.textContent='Un autre appareil (« '+((meta&&meta.device)||'inconnu')+' ») a pris la main. Synchronisation des dernières modifications, puis déconnexion…';
+    if(hint)hint.textContent='Ne fermez pas l’app pendant la sync. Vous pourrez vous reconnecter ici ensuite si besoin.';
+    if(take)take.style.display='none';
+    if(out)out.style.display='none';
+  }
+  function finishEjectLogout(meta, syncOk){
+    var name=(meta&&meta.device)||'un autre appareil';
+    var notice=syncOk
+      ? 'Session reprise ailleurs (« '+name+' »). Dernières modifications synchronisées — reconnectez-vous seulement si cet appareil doit reprendre.'
+      : 'Session reprise ailleurs (« '+name+' »). Sync incomplète ou hors ligne — vérifiez l’autre appareil ou réessayez la connexion.';
+    try{lsSet(LS_EJECT_NOTICE, notice);}catch(e){}
+    stopHeartbeat();
+    clearTimeout(_timer);
+    clearTimeout(_retryTimer);
+    _lockHeld=false;
+    _userId=null;
+    _booted=false;
+    saveSession(null);
+    setStatus('error','Session reprise ailleurs','Verrou');
+    try{toast('Session reprise ailleurs');}catch(e){}
+    location.reload();
+  }
+  /** Flush final sans réécrire active_device_id (l’autre appareil garde le verrou). */
+  function flushForEject(){
+    if(!configured()||!online())return Promise.resolve(false);
+    if(lsGet(LS_APPLY)==='1')return Promise.resolve(true);
+    var data;
+    try{data=getBackupData();}catch(e){return Promise.resolve(false);}
+    return ensureAuth().then(function(s){
+      return fetchUserId(s.access_token).then(function(uid){
+        return upsertCloud(s.access_token, uid, data, null, {skipLock:true});
+      });
+    }).then(function(){return true;}).catch(function(){return false;});
+  }
+  function handleSessionStolen(meta){
+    if(_ejecting)return;
+    _ejecting=true;
     _lockHeld=false;
     stopHeartbeat();
     clearTimeout(_timer);
     clearTimeout(_retryTimer);
-    var name=(meta&&meta.device)||'un autre appareil';
-    showDeviceLockGate({
-      otherName:name,
-      heartbeat_at:meta&&meta.heartbeat_at,
-      stolen:true
+    setStatus('error','Session reprise ailleurs — sync…','Verrou');
+    showEjectingGate(meta);
+    var p=flushForEject();
+    // Timeout de sécurité : ne pas rester bloqué si le réseau rame
+    var timed=new Promise(function(resolve){
+      var done=false;
+      p.then(function(ok){if(!done){done=true;resolve(!!ok);}});
+      setTimeout(function(){if(!done){done=true;resolve(false);}}, 20000);
     });
-    setStatus('error','Session reprise ailleurs','Verrou');
+    timed.then(function(ok){finishEjectLogout(meta, ok);});
+  }
+  function onLockLost(meta){
+    handleSessionStolen(meta);
   }
   function tickHeartbeat(){
-    if(!_lockHeld||!online()||!configured()||_lockCheckBusy)return;
+    if(_ejecting||!_lockHeld||!online()||!configured()||_lockCheckBusy)return;
     _lockCheckBusy=true;
     ensureAuth().then(function(s){
       return fetchUserId(s.access_token).then(function(uid){
         return loadMeta(s.access_token, uid).then(function(meta){
+          if(isStolenByOther(meta)){
+            handleSessionStolen(meta);
+            return null;
+          }
+          // Verrou étranger périmé → on reprend ; sinon heartbeat conditionnel (ne vole pas)
           var ev=evaluateDeviceLock(meta);
-          if(!ev.ok){onLockLost(meta);return null;}
-          return writeDeviceLock(s.access_token, uid, false);
+          if(ev.ok && ev.reason==='stale'){
+            return writeDeviceLock(s.access_token, uid, false);
+          }
+          return refreshHeartbeatIfOwner(s.access_token, uid);
         });
       });
     }).catch(function(){return null;}).then(function(){_lockCheckBusy=false;});
   }
   function startHeartbeat(){
     stopHeartbeat();
-    if(!_lockHeld)return;
+    if(!_lockHeld||_ejecting)return;
     _heartbeatTimer=setInterval(tickHeartbeat, HEARTBEAT_MS);
-    // Premier ping rapide après claim
-    setTimeout(tickHeartbeat, 2500);
+    // Premier ping rapide après claim (détection prise forcée ~quelques secondes)
+    setTimeout(tickHeartbeat, 1500);
   }
   function showDeviceLockGate(info){
     info=info||{};
     showGate('device-lock');
-    var msg=$('v2-device-lock-msg');
+    var title=$('v2-device-lock-title'), msg=$('v2-device-lock-msg'), hint=$('v2-device-lock-hint');
+    var take=$('v2-device-takeover'), out=$('v2-device-lock-out');
+    if(title)title.textContent='Autre appareil actif';
     if(msg){
-      if(info.stolen){
-        msg.textContent='La session a été reprise sur « '+(info.otherName||'un autre appareil')+' ». Cet appareil est bloqué pour éviter deux copies actives.';
-      }else{
-        msg.textContent='« '+(info.otherName||'Un autre appareil')+' » utilise déjà COMMERCEbox (activité '+(info.heartbeat_at?formatLockAge(info.heartbeat_at):'récente')+'). Un seul appareil à la fois.';
-      }
+      msg.textContent='« '+(info.otherName||'Un autre appareil')+' » utilise déjà COMMERCEbox (activité '+(info.heartbeat_at?formatLockAge(info.heartbeat_at):'récente')+'). Un seul appareil à la fois.';
     }
+    if(hint)hint.textContent='À utiliser si vous avez perdu l’autre appareil (ou fermé l’app ailleurs). L’autre session synchronise puis se déconnecte automatiquement.';
+    if(take){take.style.display='block'; take.disabled=false; take.textContent='Utiliser cet appareil à la place';}
+    if(out)out.style.display='block';
     wireDeviceLock();
   }
   function wireDeviceLock(){
@@ -14547,14 +14634,14 @@ document.addEventListener('DOMContentLoaded',function(){
         take.textContent='Prise en cours…';
         ensureAuth().then(function(s){
           return fetchUserId(s.access_token).then(function(uid){
+            // Écriture immédiate du verrou cloud → l’ancien appareil poll et s’éjecte
             return claimDeviceLock(s.access_token, uid, true);
           });
         }).then(function(res){
           take.disabled=false;
           take.textContent='Utiliser cet appareil à la place';
           if(res&&res.claimed){
-            toast('Cet appareil a pris la main');
-            // Après prise forcée : recharger le cloud (source de vérité de l’autre appareil)
+            toast('Cet appareil a pris la main — l’autre va se déconnecter');
             continueAfterLock(true);
           }else{
             showDeviceLockGate(res&&res.blocked);
@@ -14576,6 +14663,14 @@ document.addEventListener('DOMContentLoaded',function(){
         location.reload();
       };
     }
+  }
+  function consumeEjectNotice(){
+    var n=lsGet(LS_EJECT_NOTICE);
+    if(!n)return;
+    lsDel(LS_EJECT_NOTICE);
+    var msg=$('v2-auth-msg');
+    if(msg)msg.textContent=n;
+    setStatus('error','Session reprise ailleurs','Verrou');
   }
   function localHasData(){
     try{
@@ -14602,7 +14697,8 @@ document.addEventListener('DOMContentLoaded',function(){
       return data;
     });
   }
-  function upsertCloud(token, uid, data, migratedAt, lockExtra){
+  function upsertCloud(token, uid, data, migratedAt, opts){
+    opts=opts||{};
     var str=JSON.stringify(data);
     var chunks=[], i; for(i=0;i<str.length;i+=CHUNK)chunks.push(str.slice(i,i+CHUNK));
     if(!chunks.length)chunks.push('');
@@ -14622,41 +14718,23 @@ document.addEventListener('DOMContentLoaded',function(){
       // drop leftover parts from a larger previous snapshot
       return api('/rest/v1/v2_parts?user_id=eq.'+encodeURIComponent(uid)+'&idx=gte.'+chunks.length,{method:'DELETE',token:token,prefer:'return=minimal'}).catch(function(){return null;});
     }).then(function(){
+      // Ne pas écrire active_device_id ici : éviter de « reprendre » le verrou après une prise forcée.
       var body={user_id:uid,device:deviceName(),clients:c.clients,vehicles:c.vehicles,parts:chunks.length,revision:rev,updated_at:new Date().toISOString()};
       if(migratedAt)body.migrated_at=migratedAt;
       else if(lsGet(LS_MIGRATED))body.migrated_at=lsGet(LS_MIGRATED);
-      if(lockExtra){
-        if(lockExtra.active_device_id)body.active_device_id=lockExtra.active_device_id;
-        if(lockExtra.heartbeat_at)body.heartbeat_at=lockExtra.heartbeat_at;
-        if(lockExtra.device)body.device=lockExtra.device;
-      }else if(_lockHeld){
-        body.active_device_id=deviceId();
-        body.heartbeat_at=new Date().toISOString();
-      }
       return api('/rest/v1/v2_store?on_conflict=user_id',{
         method:'POST',token:token,
         prefer:'resolution=merge-duplicates,return=representation',
         body:body
-      }).catch(function(err){
-        // Si colonnes verrou absentes, réessayer sans (app reste utilisable)
-        var m=String(err&&err.message||'');
-        if(/active_device_id|heartbeat_at|column/i.test(m)){
-          delete body.active_device_id;
-          delete body.heartbeat_at;
-          return api('/rest/v1/v2_store?on_conflict=user_id',{
-            method:'POST',token:token,
-            prefer:'resolution=merge-duplicates,return=representation',
-            body:body
-          });
-        }
-        throw err;
       });
     }).then(function(){
       lsSet(LS_REV,String(rev));
       lsSet(LS_LAST_OK,new Date().toISOString());
       lsSet(LS_HAS_CLOUD,'1');
       lsDel(LS_QUEUE);
-      return true;
+      if(opts.skipLock||_ejecting)return true;
+      // Heartbeat conditionnel après sync (no-op si on n’est plus propriétaire)
+      return refreshHeartbeatIfOwner(token, uid).then(function(){return true;}).catch(function(){return true;});
     });
   }
   function queueLocal(reason){
@@ -14669,6 +14747,7 @@ document.addEventListener('DOMContentLoaded',function(){
     _retryTimer=setTimeout(function(){flush(false);}, RETRY_MS);
   }
   function doSave(force){
+    if(_ejecting)return Promise.resolve();
     if(_saving){if(force)queueLocal('busy');return Promise.resolve();}
     if(!configured()){setStatus('error','Config Supabase V2 manquante','Config');return Promise.resolve();}
     if(!online()){queueLocal('offline');return Promise.resolve();}
@@ -14683,26 +14762,24 @@ document.addEventListener('DOMContentLoaded',function(){
     return ensureAuth().then(function(s){
       return fetchUserId(s.access_token).then(function(uid){
         return loadMeta(s.access_token, uid).then(function(meta){
-          var ev=evaluateDeviceLock(meta);
-          if(!ev.ok){
+          if(isStolenByOther(meta)){
             _saving=false;
-            onLockLost(meta);
+            handleSessionStolen(meta);
             throw new Error('DEVICE_LOCK');
           }
-          // Rafraîchir heartbeat en même temps que l’upsert (évite une course avec un 2ᵉ appareil)
-          var bodyExtra={active_device_id:deviceId(), heartbeat_at:new Date().toISOString(), device:deviceName()};
-          return upsertCloud(s.access_token, uid, data, null, bodyExtra);
+          return upsertCloud(s.access_token, uid, data, null, null);
         });
       });
     }).then(function(){
       _saving=false;
-      _lockHeld=true;
+      if(_ejecting)return;
       var t=new Date();
       var timeStr=t.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
       setStatus('ok','Synchronisé '+timeStr,'Sync OK');
     }).catch(function(err){
       _saving=false;
       if(err&&err.message==='DEVICE_LOCK')return;
+      if(_ejecting)return;
       if(tableMissing(err)){
         setStatus('error','Tables V2 absentes — exécutez le SQL','SQL');
         return;
@@ -14955,19 +15032,24 @@ document.addEventListener('DOMContentLoaded',function(){
     // Garantir un deviceId stable dès l’ouverture
     try{deviceId();}catch(e){}
     window.addEventListener('online',function(){
+      if(_ejecting)return;
       setStatus('queued','Reconnexion…','Sync…');
       if(_lockHeld)flush(false);
       else if(session())afterAuth();
     });
     window.addEventListener('offline',function(){queueLocal('offline');});
     document.addEventListener('visibilitychange',function(){
-      if(document.visibilityState==='visible'&&_lockHeld)_booted&&tickHeartbeat();
+      if(document.visibilityState==='visible'&&_lockHeld&&_booted&&!_ejecting)tickHeartbeat();
+    });
+    window.addEventListener('focus',function(){
+      if(_lockHeld&&_booted&&!_ejecting)tickHeartbeat();
     });
     // Ouvrir IndexedDB AVANT import / pull cloud (sinon saveVehicles tombe en localStorage et échoue sur grosses bases)
     function proceed(){
       var s=session();
       if(!s||!s.access_token){
         showGate('auth');
+        consumeEjectNotice();
         setStatus('error','Connexion requise','Login');
         return;
       }
@@ -14995,7 +15077,7 @@ document.addEventListener('DOMContentLoaded',function(){
       html+='<input id="v2-device" class="form-input" value="'+escH(deviceName())+'" style="margin-bottom:8px;">';
       html+='<button type="button" class="btn btn-secondary" id="v2-force-sync" style="width:100%;margin-bottom:6px;">Forcer sync maintenant</button>';
       html+='<button type="button" class="btn btn-ghost" id="v2-logout" style="width:100%;">Se déconnecter</button>';
-      html+='<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.4;">Un seul appareil à la fois (heartbeat 3 min). Déconnexion libère le verrou. Hors ligne = file locale + bandeau. Export JSON = secours seulement.</div>';
+      html+='<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.4;">Un seul appareil à la fois (poll ~10 s). Une prise forcée ailleurs sync puis déconnecte cet appareil. Hors ligne = file locale + bandeau. Export JSON = secours seulement.</div>';
     }else{
       html+='<button type="button" class="btn btn-primary" id="v2-relogin" style="width:100%;">Se connecter</button>';
     }

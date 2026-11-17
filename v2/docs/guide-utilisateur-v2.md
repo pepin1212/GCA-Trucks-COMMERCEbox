@@ -41,7 +41,7 @@ Sur iPhone : ouvrir V2 dans Safari une fois, puis « Sur l’écran d’accueil 
 V2 enregistre un **deviceId** local + un **heartbeat** cloud (~45 s) sur `v2_store` (`active_device_id`, `heartbeat_at`).
 
 - Si un autre appareil a un heartbeat **récent (&lt; 3 min)**, la connexion est refusée avec un message clair.
-- Bouton **« Utiliser cet appareil à la place »** : force la prise (téléphone perdu / app fermée ailleurs). L’autre session sera bloquée au prochain sync.
+- Bouton **« Utiliser cet appareil à la place »** : force la prise tout de suite. L’**ancien** appareil détecte le vol (poll ~10 s), **synchronise** ses dernières modifs, puis **se déconnecte** avec le message « Session reprise ailleurs ».
 - **Se déconnecter** (Plus → Cloud) libère le verrou tout de suite.
 - Sans activité pendant ~3 min, le verrou expire tout seul → un autre appareil peut entrer sans forcer.
 - Deux onglets sur **le même** navigateur = même appareil (OK).
@@ -59,7 +59,8 @@ V2 enregistre un **deviceId** local + un **heartbeat** cloud (~45 s) sur `v2_sto
 | « Config Supabase V2 manquante » | `URL_` / `KEY` encore en `YOUR_…` dans `v2/index.html` |
 | « Invalid JWT » | Rare avec ce client ; sinon coller la legacy anon JWT (View legacy API keys) à la place de `KEY` |
 | « Tables V2 absentes » | Relancer `supabase-v2-rls.sql` |
-| « Autre appareil actif » | Attendre ~3 min **ou** taper « Utiliser cet appareil à la place » |
+| « Autre appareil actif » | Attendre ~3 min **ou** taper « Utiliser cet appareil à la place » (l’ancien sync puis se déconnecte) |
+| « Session reprise ailleurs » | Normal après prise forcée sur un autre appareil — se reconnecter seulement si celui-ci doit reprendre |
 | Verrou ne bloque pas le 2ᵉ appareil | Rejouer le SQL (colonnes `active_device_id` / `heartbeat_at`) + forcer la mise à jour app |
 | Projet Free en pause (7 j) | Dashboard Supabase → Restore / unpause |
 | Sync en attente | Vérifier le réseau ; la file repart seule |
