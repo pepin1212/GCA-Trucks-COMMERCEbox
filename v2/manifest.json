@@ -2,7 +2,7 @@
   "name": "DAF-Trucks CommerceBox V2",
   "short_name": "CommerceBox V2",
   "description": "COMMERCEbox V2 — sauvegarde cloud temps réel (auth obligatoire).",
-  "start_url": "./index.html?v=2026-11-17-v2-device-eject-001",
+  "start_url": "./index.html?v=2026-11-17-v2-comm-scroll-001",
   "display": "standalone",
   "background_color": "#0a0c0f",
   "theme_color": "#0a0c0f",
