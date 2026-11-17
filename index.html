@@ -8793,7 +8793,7 @@ document.addEventListener('DOMContentLoaded',function(){
     var html='<div style="padding:10px 12px 20px;"><h3 style="margin-bottom:8px;">Mode d’emploi — DAF CommerceBox</h3><div style="font-size:12px;color:var(--text3);margin-bottom:10px;">Build '+APP_BUILD+'</div>';
     html+=sec('1. Principe','<p>L’application travaille sur sa propre copie : fiches clients et immatriculations. Marché analyse le parc. IMMAT liste les immatriculations par site. Tournées prépare les visites. Affaires suit les projets et les affaires chaudes. Commissions suit les commandes et les livraisons. Activité est le journal de l’appareil. Plus réunit l’import, le JSON, le coffre et Qualité.</p><p>Les filtres de Marché, de Tournées et d’IMMAT sont indépendants.</p>');
     html+=sec('2. Enregistrer','<p>Le bouton <strong>Enregistrer</strong> en bas de l’écran télécharge le fichier <strong>DAF_Professional_sauvegarde.json</strong> puis propose l’envoi au coffre. Sur iPhone, iOS peut demander où ranger le fichier. L’application n’écrit pas dans le fichier Excel d’origine.</p><p>Plus → <strong>Exporter sauvegarde JSON</strong> crée un fichier daté, sans envoi au coffre. Plus → <strong>Charger sauvegarde JSON</strong> remplace la base de cet appareil après confirmation.</p><p>Il n’y a plus de téléchargement automatique.</p>');
-    html+=sec('3. Coffre','<p>Le coffre transporte une copie entre iPhone, iPad et Mac. Chaque envoi remplace la copie déjà là : une seule reste. La fenêtre d’envoi montre deux lignes en gris : <strong>Nouvelle copie enregistrée</strong>, puis <strong>Ancienne copie effacée</strong>. Chacune passe en blanc gras avec une coche verte quand elle est finie. <strong>Fermer</strong> apparaît ensuite. Rien ne remplace un appareil sans confirmation, avec la date, le nom de l’appareil, le nombre de clients et le nombre de véhicules. Un envoi sans client est refusé. Une base beaucoup plus petite demande une seconde confirmation. Si deux appareils ont changé chacun de leur côté, vous choisissez avant que le coffre soit remplacé.</p><p>Le coffre a besoin d’une connexion et d’un compte. S’il est injoignable, le JSON reste le moyen de récupérer la base.</p>');
+    html+=sec('3. Coffre','<p>Le coffre transporte une copie entre iPhone, iPad et Mac. Chaque envoi remplace la copie déjà là : une seule reste. À l’ouverture de l’application, si vous êtes connecté au coffre, une petite fenêtre charge automatiquement la dernière sauvegarde (sauf s’il y a des modifications locales non envoyées).</p><p>La fenêtre d’envoi montre deux lignes en gris : <strong>Nouvelle copie enregistrée</strong>, puis <strong>Ancienne copie effacée</strong>. Chacune passe en blanc gras avec une coche verte quand elle est finie. <strong>Fermer</strong> apparaît ensuite. Un envoi sans client est refusé. Une base beaucoup plus petite demande une seconde confirmation. Si deux appareils ont changé chacun de leur côté, vous choisissez avant que le coffre soit remplacé.</p><p>Le coffre a besoin d’une connexion et d’un compte. S’il est injoignable, le JSON reste le moyen de récupérer la base.</p>');
     html+=sec('4. Marché','<p>Recherche client, ville, TVA ou immatriculation. Périmètre : site seul ou tout le groupe. Filtres EXCLUS, ACCESSIBLES, INACTIFS, en trois états : neutre, OFF (retire), ON (ne garde que). <strong>Sites sec.</strong> est neutre à l’ouverture : les sites secondaires restent visibles. Profils commerciaux, type tracteur ou porteur, cantons et villes. Un clic sur un chiffre du tableau ouvre la liste, avec export Excel. Cet export contient la colonne <strong>Possession</strong>, OUI ou NON.</p>');
     html+=sec('5. IMMAT','<p>Une ligne par site, avec les volumes par année et le score. La recherche, les filtres de page, les tris et les filtres de colonnes sont enregistrés avec le JSON et le coffre. Le défilement n’est pas enregistré.</p><p>Le filtre <strong>PROJET</strong> en OFF retire les projets de l’année en cours, les projets <strong>FUTUR</strong> quelle que soit leur date, et les pas de projet de l’année en cours. En ON, il ne garde que ces fiches.</p><p>La colonne visite distingue A visiter, Visité et Ne pas visiter. Le bouton <strong>P</strong> propose Projet, Pas de projet et Simple visite.</p><p>L’export Excel d’une case contient la colonne Possession.</p>');
     html+=sec('6. Tournées','<p>Mêmes masques en trois états : EXCLUS, ACCESSIBLES, INACTIFS, Projets, Sites sec., Sans fiche. Le filtre Projets suit la même règle que sur IMMAT. Types : tous, tracteurs, porteurs. Profils commerciaux à la place des anciens boutons Flotte. Le bouton <strong>P</strong> ouvre Projet, Pas de projet ou Simple visite. + Créer groupe, Ouvrir et Fermer agissent sur la liste.</p>');
@@ -14566,6 +14566,83 @@ document.addEventListener('DOMContentLoaded',function(){
   }
   window.coffreEnvoyer=function(){doUpload(false);};
   window.coffreEnvoyerAuto=function(data){doUpload(false,{auto:true,data:data||null});};
+
+  function bootMsg(title, detail){
+    var t=document.getElementById('coffre-boot-msg');
+    var d=document.getElementById('coffre-boot-detail');
+    if(t&&title!=null)t.textContent=title;
+    if(d&&detail!=null)d.textContent=detail;
+  }
+  function openBootLoader(){
+    var ov=$('modal-ov'); if(ov)ov.setAttribute('data-lock','1');
+    openModal('☁ Coffre',
+      '<div style="text-align:center;padding:14px 6px 8px;">'
+      +'<div style="font-size:30px;margin-bottom:10px;line-height:1;">☁</div>'
+      +'<div id="coffre-boot-msg" style="font-size:14px;font-weight:800;color:var(--text);">Chargement de la sauvegarde…</div>'
+      +'<div id="coffre-boot-detail" style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.4;">Connexion au coffre</div>'
+      +'<div style="margin:16px auto 4px;width:28px;height:28px;border:3px solid var(--border2);border-top-color:var(--daf);border-radius:50%;animation:coffre-spin .8s linear infinite;"></div>'
+      +'</div>',
+      []
+    );
+    if(!document.getElementById('coffre-spin-style')){
+      var st=document.createElement('style');
+      st.id='coffre-spin-style';
+      st.textContent='@keyframes coffre-spin{to{transform:rotate(360deg)}}';
+      document.head.appendChild(st);
+    }
+  }
+  function finishBootLoader(title, detail, autoCloseMs){
+    bootMsg(title, detail);
+    var ov=$('modal-ov'); if(ov)ov.removeAttribute('data-lock');
+    var foot=$('modal-foot');
+    if(foot){
+      foot.innerHTML='<button class="btn btn-primary" id="coffre-boot-close" style="width:100%;">Fermer</button>';
+      var b=$('coffre-boot-close');
+      if(b)b.onclick=function(){closeModal();};
+    }
+    if(autoCloseMs!=null){
+      clearTimeout(finishBootLoader._t);
+      finishBootLoader._t=setTimeout(function(){
+        var o=$('modal-ov');
+        if(o&&o.classList.contains('open')&&document.getElementById('coffre-boot-msg'))closeModal();
+      }, autoCloseMs);
+    }
+  }
+  function autoReceiveOnOpen(){
+    if(window._coffreBootDone)return;
+    window._coffreBootDone=true;
+    if(!session())return; // pas connecté → silencieux
+    if(!navigator.onLine){toast('Hors ligne — coffre non chargé');return;}
+    openBootLoader();
+    ensureAuth().then(function(s){
+      bootMsg('Chargement de la sauvegarde…', 'Lecture des copies du coffre');
+      return listSnapshots(s.access_token).then(function(rows){
+        var latest=(rows&&rows[0])||null;
+        if(!latest){
+          finishBootLoader('Coffre vide', 'Aucune sauvegarde à charger. Les données locales restent.', 2200);
+          return;
+        }
+        if(latest.id===baseId() && !isDirty()){
+          finishBootLoader('Déjà à jour', lineCounts(latest)+' · '+fmtDate(latest.created_at), 1600);
+          return;
+        }
+        if(isDirty()){
+          finishBootLoader('Modifications locales non envoyées', 'Récupération auto annulée pour ne rien écraser. Utilisez Plus → Coffre si besoin.', 3200);
+          return;
+        }
+        bootMsg('Chargement de la sauvegarde…', (latest.device||'Appareil')+' · '+lineCounts(latest));
+        return applySnap(s.access_token, latest).then(function(){
+          finishBootLoader('Sauvegarde chargée', lineCounts(latest)+' · '+fmtDate(latest.created_at), 1800);
+        });
+      });
+    }).catch(function(err){
+      var msg=tableMissing(err)?'Le coffre n’est pas encore préparé.':(err&&err.message?err.message:'Coffre indisponible');
+      finishBootLoader('Chargement impossible', msg, 2800);
+    });
+  }
+  window.coffreChargerAuto=autoReceiveOnOpen;
+  // Au démarrage : charge la dernière sauvegarde coffre si connecté
+  setTimeout(function(){try{autoReceiveOnOpen();}catch(e){console.error(e);}}, 900);
 })();
 </script>
 <script>
