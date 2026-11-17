@@ -483,7 +483,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-17-v2-autosave-001';
+const APP_BUILD='2026-11-17-v2-idb-import-002';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -794,14 +794,20 @@ const DB = (() => {
       LS.del(self.key('vehicles'));
       return new Promise(function(resolve){
         function done(ok){if(ok)updateSaveStatus();resolve(!!ok);}
-        if(_idb){
-          idbSet(_vehIdbKey(base),arr).then(function(idbOk){
-            if(idbOk)done(true);
-            else done(_saveVehiclesChunked(base,arr));
-          });
-        }else{
-          done(_saveVehiclesChunked(base,arr)||LS.set(self.key('vehicles'),arr));
+        function write(){
+          if(_idb){
+            idbSet(_vehIdbKey(base),arr).then(function(idbOk){
+              if(idbOk)done(true);
+              else done(_saveVehiclesChunked(base,arr));
+            });
+          }else{
+            // Sans IndexedDB (Safari privé / quota), tenter le découpage localStorage
+            done(_saveVehiclesChunked(base,arr)||LS.set(self.key('vehicles'),arr));
+          }
         }
+        // V2 : l’import cloud / JSON peut arriver avant initStorage — ouvrir IDB à la volée
+        if(_idb)write();
+        else idbOpen().then(function(){write();});
       });
     },
     copyVehiclesToBase(fromId,toId){
@@ -6645,7 +6651,7 @@ function applyBackupData(data){
       restoreCommerceFromBackup(data);
       var p=data.vehicles?DB.saveVehicles(data.vehicles):Promise.resolve(true);
       p.then(function(ok){
-        if(ok===false){localStorage.removeItem('daf_v2_cloud_apply');reject(new Error('véhicules non enregistrés'));return;}
+        if(ok===false){localStorage.removeItem('daf_v2_cloud_apply');reject(new Error('Les véhicules n’ont pas pu être enregistrés (mémoire navigateur / IndexedDB). Réessayez l’import, ou videz le cache du site puis recommencez.'));return;}
         buildIndex();autoSave();
         restoreActivityFromBackup(data);
         localStorage.removeItem('daf_v2_cloud_apply');
@@ -14625,7 +14631,9 @@ document.addEventListener('DOMContentLoaded',function(){
               });
             }).catch(function(err){
               lsDel(LS_APPLY);
-              if(msg)msg.textContent=err&&err.message?err.message:'Import échoué';
+              var m=err&&err.message?err.message:'Import échoué';
+              if(msg)msg.textContent=m;
+              try{toast(m);}catch(e){}
             });
           }catch(err){
             if(msg)msg.textContent=err&&err.message?err.message:'JSON illisible';
@@ -14648,13 +14656,21 @@ document.addEventListener('DOMContentLoaded',function(){
     wireAuthForm();
     window.addEventListener('online',function(){setStatus('queued','Reconnexion…','Sync…');flush(false);});
     window.addEventListener('offline',function(){queueLocal('offline');});
-    var s=session();
-    if(!s||!s.access_token){
-      showGate('auth');
-      setStatus('error','Connexion requise','Login');
-      return;
+    // Ouvrir IndexedDB AVANT import / pull cloud (sinon saveVehicles tombe en localStorage et échoue sur grosses bases)
+    function proceed(){
+      var s=session();
+      if(!s||!s.access_token){
+        showGate('auth');
+        setStatus('error','Connexion requise','Login');
+        return;
+      }
+      afterAuth();
     }
-    afterAuth();
+    if(typeof DB!=='undefined'&&typeof DB.initStorage==='function'){
+      try{DB.initStorage(proceed);}catch(e){proceed();}
+    }else{
+      proceed();
+    }
   }
 
   // More screen: compact cloud status + logout (no V1 coffre)
