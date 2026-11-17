@@ -51,6 +51,7 @@ Sur iPhone : ouvrir V2 dans Safari une fois, puis « Sur l’écran d’accueil 
 | « Tables V2 absentes » | Relancer `supabase-v2-rls.sql` |
 | Projet Free en pause (7 j) | Dashboard Supabase → Restore / unpause |
 | Sync en attente | Vérifier le réseau ; la file repart seule |
+| « véhicules non enregistrés » / import échoué | Bug corrigé (IndexedDB avant import). Forcer la mise à jour V2 (Plus → Forcer la mise à jour, ou Safari → recharger `/v2/?v=…`). Puis réimporter le JSON. Si ça continue : Safari pas en navigation privée, libérer de l’espace iPhone. |
 
 ## Fichiers utiles
 
