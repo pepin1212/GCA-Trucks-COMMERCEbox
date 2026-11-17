@@ -490,7 +490,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-17-v2-device-eject-001';
+const APP_BUILD='2026-11-17-v2-comm-scroll-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -12050,7 +12050,7 @@ document.addEventListener('DOMContentLoaded',function(){
   function payArrived(v){var m=payYm(v);return !!m&&m<=currentYm();}
   function excelGrid(list){
     var heads=['Date de commande','Client','N° production','Modèle','VN ou VO','Carrossier','Prix de vente','Marge','% de marge','Banque','Date de livraison','CER','Prime commande','Prime CER','Prime marge ≥7%','Prime PACCAR','Prime exceptionnelle'];
-    var html='<div style="overflow-x:auto;margin:0 0 8px;"><table style="border-collapse:collapse;min-width:1680px;width:100%;font-size:11px;background:var(--bg);"><tr>';
+    var html='<div id="comm-excel-scroll" style="overflow-x:auto;margin:0 0 8px;"><table style="border-collapse:collapse;min-width:1680px;width:100%;font-size:11px;background:var(--bg);"><tr>';
     heads.forEach(function(h){html+='<th style="border:1px solid var(--border);padding:5px;background:var(--bg3);color:var(--text2);text-align:left;white-space:nowrap;font-size:10px;">'+esc(h)+'</th>';});
     html+='</tr>';
     list.forEach(function(d){
@@ -12083,6 +12083,31 @@ document.addEventListener('DOMContentLoaded',function(){
     });
     return html+'</table></div>';
   }
+  function captureCommScroll(){
+    var out={screenLeft:0,screenTop:0,excelLeft:0,excelTop:0};
+    try{
+      var sc=byId('screen-livraisons');
+      if(sc){out.screenLeft=sc.scrollLeft||0; out.screenTop=sc.scrollTop||0;}
+      var excel=byId('comm-excel-scroll');
+      if(excel){out.excelLeft=excel.scrollLeft||0; out.excelTop=excel.scrollTop||0;}
+    }catch(e){}
+    return out;
+  }
+  function restoreCommScroll(pos){
+    if(!pos)return;
+    function apply(){
+      try{
+        var sc=byId('screen-livraisons');
+        if(sc){sc.scrollLeft=pos.screenLeft||0; sc.scrollTop=pos.screenTop||0;}
+        var excel=byId('comm-excel-scroll');
+        if(excel){excel.scrollLeft=pos.excelLeft||0; excel.scrollTop=pos.excelTop||0;}
+      }catch(e){}
+    }
+    apply();
+    // 2e passe après layout (Safari / large table)
+    if(typeof requestAnimationFrame==='function')requestAnimationFrame(function(){requestAnimationFrame(apply);});
+    else setTimeout(apply,0);
+  }
   function saveUnitFlag(id, unit, key, value){
     var list=getDeliveries();
     var d=list.find(function(x){return String(x.id)===String(id);});
@@ -12093,6 +12118,14 @@ document.addEventListener('DOMContentLoaded',function(){
     while(units.length<q)units.push({});
     units[unit]=Object.assign({}, units[unit]||{}, (function(){var o={};o[key]=value;return o;})());
     d.units=units;
+    // Aussi refléter les flags « ligne » pour les quantités 1 (KPI / listes)
+    if(q===1||unit===0){
+      if(key==='rcvOrder')d.rcvOrder=!!value;
+      if(key==='rcvMaint')d.rcvMaint=!!value;
+      if(key==='rcvPaccar')d.rcvPaccar=!!value;
+      if(key==='rcvPrime')d.rcvPrime=!!value;
+      if(key==='rcvEx')d.rcvEx=!!value;
+    }
     saveDeliveries(list);
     renderCommissionsStable();
   }
@@ -12106,6 +12139,7 @@ document.addEventListener('DOMContentLoaded',function(){
     renderCommissionsStable();
   }
   function renderCommissionsStable(){
+    var scrollPos=captureCommScroll();
     try{if(typeof window.syncAllDeliveries==='function')window.syncAllDeliveries();}catch(e){}
     var cont=byId('livraisons-content'); if(!cont)return;
     var rows=syncWonDealsToDeliveriesFinal();
@@ -12123,6 +12157,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if(!keys.length)html+='<div class="card"><div style="font-size:11px;color:var(--text3);">Aucune commission selon le filtre actuel.</div></div>';
     keys.forEach(function(k){var es=map[k].slice().sort(function(a,b){return sort==='asc'?a.date.localeCompare(b.date):b.date.localeCompare(a.date)}), theo=es.reduce(function(a,e){return a+totalEntryAmount(e)},0), rec=es.reduce(function(a,e){return a+receivedEntryAmount(e)},0), rest=theo-rec, open=Object.prototype.hasOwnProperty.call(window.commOpenStateFinal,k)?!!window.commOpenStateFinal[k]:(k===cm);html+='<div style="margin:0 12px 8px;"><div class="comm-final-month" data-k="'+esc(k)+'" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg3);border-radius:'+(open?'var(--radius) var(--radius) 0 0':'var(--radius)')+';cursor:pointer;border-left:3px solid '+(rest<=0?'var(--green)':'var(--daf)')+';"><div><div style="font-size:13px;font-weight:800;color:var(--text);">'+esc(labelMonth(k))+' '+(open?'▼':'▶')+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px;">'+euro(theo)+' · <span style="color:'+(rest<=0?'var(--green)':'var(--red)')+';">'+euro(rest)+' restant</span>'+(rest<=0?' ✅':'')+'</div></div><div style="font-size:20px;font-weight:900;color:var(--daf);">'+euro(theo)+'</div></div>';if(open){var orders=es.filter(function(e){return e.kind==='order'}), livs=es.filter(function(e){return e.kind==='delivery'});html+='<div style="background:var(--bg2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius) var(--radius);padding:0 12px;"><div style="padding:10px 0 4px;"><div style="font-size:12px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:var(--daf);border-bottom:2px solid var(--daf);padding-bottom:5px;margin-bottom:8px;">COMMANDES · '+orders.length+' camion'+(orders.length>1?'s':'')+'</div>';if(!orders.length)html+='<div style="font-size:11px;color:var(--text3);padding-bottom:8px;">Aucune commande sur ce mois.</div>';orders.forEach(function(e){html+=rowHtml(e)});html+='</div><div style="padding:4px 0 10px;"><div style="font-size:12px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:var(--green);border-bottom:2px solid var(--green);padding-bottom:5px;margin-bottom:8px;">LIVRAISONS · '+livs.length+' camion'+(livs.length>1?'s':'')+'</div>';if(!livs.length)html+='<div style="font-size:11px;color:var(--text3);">Aucune livraison sur ce mois.</div>';livs.forEach(function(e){html+=rowHtml(e)});html+='</div></div>'}html+='</div>'});
     cont.innerHTML=html; bindCommissionsStable(); bindCommSuivi();
+    restoreCommScroll(scrollPos);
   }
   function bindCommissionsStable(){var qEl=byId('comm-search-sticky');if(qEl&&!qEl._commStable){qEl._commStable=true;qEl.oninput=function(){window.commSearchFinal=this.value;renderCommissionsStable()}}var sort=byId('comm-final-sort');if(sort)sort.onclick=function(){window.commSortFinal=(window.commSortFinal||localStorage.getItem('commSortFinal')||'desc')==='asc'?'desc':'asc';localStorage.setItem('commSortFinal',window.commSortFinal);renderCommissionsStable()};qsa('.comm-final-kpi').forEach(function(x){x.onclick=function(){window.commFilterFinal=this.dataset.f||'all';renderCommissionsStable()}});qsa('.comm-final-month').forEach(function(x){x.onclick=function(){var k=this.dataset.k, cur=Object.prototype.hasOwnProperty.call(window.commOpenStateFinal,k)?!!window.commOpenStateFinal[k]:(k===currentYm());window.commOpenStateFinal[k]=!cur;renderCommissionsStable()}});qsa('.comm-final-open,.comm-final-line').forEach(function(el){el.onclick=function(){var id=this.dataset.id||this.dataset.deal;if(id)openDealFromCommission(id)}});qsa('.comm-final-check').forEach(function(c){c.onchange=function(e){e.stopPropagation();var list=getDeliveries(), d=list.find(function(x){return String(x.id)===String(c.dataset.id)});if(!d)return;if(c.dataset.k==='rcvDelivery'){d.rcvMaint=c.checked;d.rcvPaccar=c.checked;d.rcvPrime=c.checked}else d[c.dataset.k]=c.checked;saveDeliveries(list);renderCommissionsStable()}});qsa('.comm-prime-check').forEach(function(c){c.onchange=function(e){e.stopPropagation();saveUnitFlag(c.dataset.id,Number(c.dataset.unit)||0,c.dataset.k,c.checked);}});qsa('.comm-bank').forEach(function(s){s.onchange=function(e){e.stopPropagation();saveLineBank(s.dataset.deal,s.dataset.line,s.value);}});}
   var previousRenderScreen=window.renderScreen;
