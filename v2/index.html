@@ -458,7 +458,7 @@ input[type=file]{display:none}
   <div style="max-width:420px;margin:0 auto;">
     <div style="font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--daf);margin-bottom:8px;">COMMERCEbox V2</div>
     <h1 style="font-size:22px;font-weight:800;margin-bottom:6px;">Connexion obligatoire</h1>
-    <p style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:14px;">La base vit dans le cloud (projet Supabase V2). Un seul utilisateur, un seul appareil actif. Hors ligne : file locale + retry.</p>
+    <p style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:14px;">La base vit dans le cloud (projet Supabase V2). Un seul utilisateur, un seul appareil actif. Au démarrage le cloud est chargé en premier. Hors ligne : lecture seule.</p>
     <div id="v2-auth-config-warn" style="display:none;margin-bottom:12px;padding:10px;border-radius:10px;background:var(--orange-bg);border:1px solid rgba(224,120,48,.35);font-size:12px;color:var(--text2);line-height:1.45;"></div>
     <div id="v2-auth-form">
       <input id="v2-auth-email" class="form-input" type="email" autocomplete="username" placeholder="E-mail" style="margin-bottom:8px;width:100%;">
@@ -490,7 +490,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-17-v2-comm-scroll-001';
+const APP_BUILD='2026-11-24-v2-cloud-first-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -863,6 +863,11 @@ let _backupTimer = null;
 let _unsavedChanges = false;
 
 function autoSave(){
+  if(typeof window.v2CloudIsReadOnly==='function' && window.v2CloudIsReadOnly()){
+    try{toast('Hors ligne — lecture seule');}catch(e){}
+    updateSaveStatus();
+    return;
+  }
   DB.touch();
   _unsavedChanges = false;
   updateSaveStatus();
@@ -875,20 +880,20 @@ function updateSaveStatus(){
   const navIcon=$('nav-save-icon'), navLbl=$('nav-save-lbl');
   var st=(typeof window.v2CloudGetStatus==='function')?window.v2CloudGetStatus():{state:'local',label:'Local'};
   if(dot){
-    if(st.state==='error'||st.state==='offline')dot.className='save-dot warn';
+    if(st.state==='error'||st.state==='offline'||st.state==='readonly'||st.state==='behind')dot.className='save-dot warn';
     else if(st.state==='syncing'||st.state==='queued')dot.className='save-dot warn';
     else dot.className='save-dot ok';
   }
   if(lbl) lbl.textContent=st.label||'—';
   if(navIcon){
-    if(st.state==='offline'||st.state==='queued')navIcon.textContent='☁';
+    if(st.state==='offline'||st.state==='readonly'||st.state==='queued'||st.state==='behind')navIcon.textContent='☁';
     else if(st.state==='syncing')navIcon.textContent='↻';
     else if(st.state==='error')navIcon.textContent='⚠';
     else navIcon.textContent='☁';
   }
   if(navLbl){
     navLbl.textContent=st.short||'Sync';
-    navLbl.style.color=(st.state==='ok')?'var(--green)':(st.state==='error'?'var(--red)':(st.state==='offline'||st.state==='queued'?'var(--orange)':'var(--text3)'));
+    navLbl.style.color=(st.state==='ok')?'var(--green)':(st.state==='error'?'var(--red)':(st.state==='offline'||st.state==='readonly'||st.state==='queued'||st.state==='behind'?'var(--orange)':'var(--text3)'));
   }
 }
 
@@ -4686,13 +4691,13 @@ function bindEvents(){
   safeOn('btn-base-hdr','click',function(){showScreen('more');});
   safeOn('nav-save-btn','click',function(){
     if(typeof window.v2CloudFlush==='function')window.v2CloudFlush();
-    openModal('☁ Sync cloud + secours JSON','<p style="font-size:12px;color:var(--text2);line-height:1.5;">En V2, chaque modification part automatiquement vers le cloud (debounce). Le bouton Sync force un envoi immédiat. L’export JSON reste un <strong>secours</strong> optionnel — plus besoin pour le cloud.</p>',[
+    openModal('☁ Sync cloud + secours JSON','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Cloud-first : au démarrage le cloud est chargé avant affichage. Chaque modification part vers le cloud (~1,2 s). Hors ligne = <strong>lecture seule</strong> (pas de file locale). En conflit le cloud gagne. L’export JSON est le <strong>secours manuel</strong>.</p>',[
       {label:'Forcer sync cloud',cls:'btn-primary',action:function(){if(typeof window.v2CloudFlush==='function')window.v2CloudFlush(true);}},
       {label:'Exporter JSON secours',cls:'btn-secondary',action:function(){if(typeof exportBackupJSONFixed==='function')exportBackupJSONFixed();else if(typeof triggerBackupDownload==='function')triggerBackupDownload();}},
       {label:'Fermer',cls:'btn-ghost'}
     ]);
   });
-  window.addEventListener('beforeunload',function(e){var st=(typeof window.v2CloudGetStatus==='function')?window.v2CloudGetStatus():{};if(st.state==='queued'||st.state==='syncing'){e.preventDefault();e.returnValue='Synchronisation cloud en cours.';}});
+  window.addEventListener('beforeunload',function(e){var st=(typeof window.v2CloudGetStatus==='function')?window.v2CloudGetStatus():{};if(st.state==='syncing'){e.preventDefault();e.returnValue='Synchronisation cloud en cours.';}});
   scheduleAutoBackup();
   initToursDefaultFilters();
   bindMarcheSearchEvents();
@@ -14301,7 +14306,13 @@ document.addEventListener('DOMContentLoaded',function(){
 })();
 </script>
 <script>
-/* COMMERCEbox V2 — auth obligatoire + autosave cloud debounced + offline queue A + verrou 1 appareil.
+/* COMMERCEbox V2 — cloud-first (1A–6A) + auth + autosave debounced + verrou 1 appareil.
+   1A Hors ligne = lecture seule (pas de file locale qui sync plus tard)
+   2A Au démarrage : TOUJOURS charger le cloud avant d’afficher
+   3A Interdit de pousser une base vide si un snapshot cloud existe
+   4A En conflit : le cloud gagne toujours
+   5A Indicateur SYNC : n° de révision + « à jour » / « en retard »
+   6A Secours : export JSON manuel
    Projet Supabase SÉPARÉ de V1. Ne touche jamais coffre_snapshots / coffre_parts. */
 (function(){
   // Projet Supabase Free V2 (séparé de V1). Clé publishable nouvelle UI — compatible fetch REST (pas de supabase-js).
@@ -14319,11 +14330,12 @@ document.addEventListener('DOMContentLoaded',function(){
   var LS_DEVICE_ID='daf_v2_cloud_device_id';
   var LS_REV='daf_v2_cloud_rev';
   var LS_MIGRATED='daf_v2_cloud_migrated';
-  var LS_QUEUE='daf_v2_cloud_queue';
   var LS_LAST_OK='daf_v2_cloud_last_ok';
   var LS_HAS_CLOUD='daf_v2_cloud_has_snapshot';
   var LS_APPLY='daf_v2_cloud_apply';
   var LS_EJECT_NOTICE='daf_v2_cloud_eject_notice';
+  // Ancienne file offline (option A) — nettoyée au boot cloud-first ; ne plus écrire
+  var LS_QUEUE_LEGACY='daf_v2_cloud_queue';
 
   var _status={state:'local',label:'Local',short:'Sync'};
   var _timer=null;
@@ -14336,6 +14348,8 @@ document.addEventListener('DOMContentLoaded',function(){
   var _lockHeld=false;
   var _lockCheckBusy=false;
   var _ejecting=false;
+  var _readOnly=false;
+  var _cloudRev=0;
 
   function lsGet(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
   function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
@@ -14384,16 +14398,49 @@ document.addEventListener('DOMContentLoaded',function(){
     return heartbeatAgeMs(meta.heartbeat_at)<ACTIVE_MS;
   }
   function countsOf(data){return {clients:(data&&data.clients||[]).length, vehicles:(data&&data.vehicles||[]).length};}
+  function isDataEmpty(data){
+    var c=countsOf(data);
+    return c.clients===0 && c.vehicles===0;
+  }
+  function cloudHasSnapshot(meta){
+    if(!meta)return false;
+    if(Number(meta.parts||0)>0)return true;
+    if(Number(meta.clients||0)>0)return true;
+    if(Number(meta.vehicles||0)>0)return true;
+    return false;
+  }
+  function localRev(){return Number(lsGet(LS_REV)||'0')||0;}
+  function syncRevLabel(suffix){
+    var rev=_cloudRev||localRev();
+    return 'R'+rev+' · '+suffix;
+  }
   function setStatus(state,label,short){
     _status={state:state,label:label,short:short||label};
     try{if(typeof updateSaveStatus==='function')updateSaveStatus();}catch(e){}
     paintBanner();
   }
+  function setSyncStatus(state, suffix, shortOverride){
+    var label=syncRevLabel(suffix);
+    var short=shortOverride||('R'+(_cloudRev||localRev())+' · '+(suffix.length>12?suffix.slice(0,10)+'…':suffix));
+    setStatus(state, label, short);
+  }
+  function enterReadOnly(reason){
+    _readOnly=true;
+    setSyncStatus('readonly', 'hors ligne · lecture seule', 'R'+localRev()+' · hors ligne');
+    paintBanner();
+  }
+  function exitReadOnly(){
+    _readOnly=false;
+  }
   function paintBanner(){
     var el=$('v2-sync-banner'); if(!el)return;
-    if(_status.state==='offline'||_status.state==='queued'){
+    if(_readOnly || _status.state==='offline' || _status.state==='readonly'){
       el.style.display='block';
-      el.textContent=_status.state==='offline'?'Hors ligne — sync en attente (file locale)':'Sync en attente — reconnexion…';
+      el.textContent='Hors ligne — lecture seule (aucune modification cloud)';
+      el.style.background='#5a3a12';
+    }else if(_status.state==='behind'){
+      el.style.display='block';
+      el.textContent=_status.label||'Cloud en avance — rechargement…';
       el.style.background='#5a3a12';
     }else if(_status.state==='error'){
       el.style.display='block';
@@ -14594,9 +14641,15 @@ document.addEventListener('DOMContentLoaded',function(){
     try{data=getBackupData();}catch(e){return Promise.resolve(false);}
     return ensureAuth().then(function(s){
       return fetchUserId(s.access_token).then(function(uid){
-        return upsertCloud(s.access_token, uid, data, null, {skipLock:true});
+        return loadMeta(s.access_token, uid).then(function(meta){
+          // 3A : ne jamais écraser le cloud avec une base vide au moment de l’éjection
+          if(isDataEmpty(data) && cloudHasSnapshot(meta))return false;
+          // 4A : si cloud déjà en avance, ne pas pousser un local périmé
+          if(cloudHasSnapshot(meta) && Number(meta.revision||0)>localRev())return false;
+          return upsertCloud(s.access_token, uid, data, null, {skipLock:true, meta:meta});
+        });
       });
-    }).then(function(){return true;}).catch(function(){return false;});
+    }).then(function(ok){return ok!==false;}).catch(function(){return false;});
   }
   function handleSessionStolen(meta){
     if(_ejecting)return;
@@ -14677,7 +14730,7 @@ document.addEventListener('DOMContentLoaded',function(){
           take.textContent='Utiliser cet appareil à la place';
           if(res&&res.claimed){
             toast('Cet appareil a pris la main — l’autre va se déconnecter');
-            continueAfterLock(true);
+            continueAfterLock();
           }else{
             showDeviceLockGate(res&&res.blocked);
           }
@@ -14712,14 +14765,11 @@ document.addEventListener('DOMContentLoaded',function(){
       if((DB.getClients()||[]).length>0)return true;
       if((DB.getVehicles()||[]).length>0)return true;
     }catch(e){}
-    return !!lsGet(LS_HAS_CLOUD) || !!lsGet(LS_QUEUE) || !!lsGet(LS_MIGRATED);
+    return !!lsGet(LS_HAS_CLOUD) || !!lsGet(LS_MIGRATED);
   }
-  function shouldPullCloud(meta, forcePull){
-    if(forcePull)return !!(meta&&meta.parts);
-    if(!(meta&&meta.parts))return false;
-    if(lsGet(LS_QUEUE))return false; // file offline prioritaire → push, pas pull
-    if(localHasData())return false; // même appareil / données locales : ne pas écraser
-    return true;
+  /** Cloud-first 2A/4A : toujours tirer le cloud s’il y a un snapshot (le cloud gagne). */
+  function shouldPullCloud(meta){
+    return cloudHasSnapshot(meta);
   }
   function loadPayload(token, uid, parts){
     return api('/rest/v1/v2_parts?select=idx,data&user_id=eq.'+encodeURIComponent(uid)+'&order=idx.asc',{token:token}).then(function(rows){
@@ -14734,11 +14784,24 @@ document.addEventListener('DOMContentLoaded',function(){
   }
   function upsertCloud(token, uid, data, migratedAt, opts){
     opts=opts||{};
+    // 3A — ne jamais pousser une base vide si le cloud a déjà un snapshot
+    if(isDataEmpty(data) && !opts.allowEmpty){
+      return loadMeta(token, uid).then(function(meta){
+        if(cloudHasSnapshot(meta)){
+          var err=new Error('REFUSE_EMPTY_OVERWRITE');
+          err.code='REFUSE_EMPTY_OVERWRITE';
+          err.meta=meta;
+          throw err;
+        }
+        return upsertCloud(token, uid, data, migratedAt, Object.assign({}, opts, {allowEmpty:true}));
+      });
+    }
     var str=JSON.stringify(data);
     var chunks=[], i; for(i=0;i<str.length;i+=CHUNK)chunks.push(str.slice(i,i+CHUNK));
     if(!chunks.length)chunks.push('');
     var c=countsOf(data);
-    var rev=Number(lsGet(LS_REV)||'0')+1;
+    var baseRev=Math.max(localRev(), Number((opts.meta&&opts.meta.revision)||0)||0);
+    var rev=baseRev+1;
     var chain=Promise.resolve();
     chunks.forEach(function(part,idx){
       chain=chain.then(function(){
@@ -14763,29 +14826,29 @@ document.addEventListener('DOMContentLoaded',function(){
         body:body
       });
     }).then(function(){
+      _cloudRev=rev;
       lsSet(LS_REV,String(rev));
       lsSet(LS_LAST_OK,new Date().toISOString());
       lsSet(LS_HAS_CLOUD,'1');
-      lsDel(LS_QUEUE);
       if(opts.skipLock||_ejecting)return true;
       // Heartbeat conditionnel après sync (no-op si on n’est plus propriétaire)
       return refreshHeartbeatIfOwner(token, uid).then(function(){return true;}).catch(function(){return true;});
     });
   }
-  function queueLocal(reason){
-    try{lsSet(LS_QUEUE,JSON.stringify({at:new Date().toISOString(),reason:reason||'offline'}));}catch(e){}
-    setStatus(online()?'queued':'offline', online()?'Sync en attente':'Hors ligne — sync en attente', online()?'Attente':'Hors ligne');
-    scheduleRetry();
-  }
   function scheduleRetry(){
     clearTimeout(_retryTimer);
+    if(_readOnly||!online())return;
     _retryTimer=setTimeout(function(){flush(false);}, RETRY_MS);
   }
   function doSave(force){
     if(_ejecting)return Promise.resolve();
-    if(_saving){if(force)queueLocal('busy');return Promise.resolve();}
+    if(_readOnly || !online()){
+      enterReadOnly('offline');
+      if(force)try{toast('Hors ligne — lecture seule');}catch(e){}
+      return Promise.resolve();
+    }
+    if(_saving){if(force)scheduleRetry();return Promise.resolve();}
     if(!configured()){setStatus('error','Config Supabase V2 manquante','Config');return Promise.resolve();}
-    if(!online()){queueLocal('offline');return Promise.resolve();}
     if(!_lockHeld && _booted){setStatus('error','Autre appareil actif — sync bloquée','Verrou');return Promise.resolve();}
     var data;
     try{
@@ -14793,7 +14856,7 @@ document.addEventListener('DOMContentLoaded',function(){
       data=getBackupData();
     }catch(e){setStatus('error','Lecture locale impossible','Erreur');return Promise.resolve();}
     _saving=true;
-    setStatus('syncing','Sync…','Sync…');
+    setSyncStatus('syncing','Sync…','R'+localRev()+' · Sync…');
     return ensureAuth().then(function(s){
       return fetchUserId(s.access_token).then(function(uid){
         return loadMeta(s.access_token, uid).then(function(meta){
@@ -14802,31 +14865,65 @@ document.addEventListener('DOMContentLoaded',function(){
             handleSessionStolen(meta);
             throw new Error('DEVICE_LOCK');
           }
-          return upsertCloud(s.access_token, uid, data, null, null);
+          var cloudRev=Number(meta&&meta.revision||0)||0;
+          _cloudRev=cloudRev;
+          // 4A — si le cloud a avancé sans nous, il gagne : pull, pas push
+          if(cloudHasSnapshot(meta) && cloudRev>localRev()){
+            setSyncStatus('behind','en retard','R'+cloudRev+' · en retard');
+            return pullCloudAlways(s.access_token, uid, meta).then(function(){
+              return {pulled:true};
+            });
+          }
+          // 3A — refuse empty overwrite (aussi dans upsertCloud)
+          if(isDataEmpty(data) && cloudHasSnapshot(meta)){
+            setSyncStatus('behind','cloud préservé','R'+cloudRev+' · protégé');
+            return pullCloudAlways(s.access_token, uid, meta).then(function(){
+              return {pulled:true, refusedEmpty:true};
+            });
+          }
+          return upsertCloud(s.access_token, uid, data, null, {meta:meta}).then(function(){
+            return {pulled:false};
+          });
         });
       });
-    }).then(function(){
+    }).then(function(res){
       _saving=false;
       if(_ejecting)return;
-      var t=new Date();
-      var timeStr=t.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-      setStatus('ok','Synchronisé '+timeStr,'Sync OK');
+      if(res&&res.refusedEmpty){
+        try{toast('Base locale vide — cloud préservé (rechargé)');}catch(e){}
+      }
+      setSyncStatus('ok','à jour','R'+(_cloudRev||localRev())+' · à jour');
     }).catch(function(err){
       _saving=false;
       if(err&&err.message==='DEVICE_LOCK')return;
       if(_ejecting)return;
+      if(err&&err.code==='REFUSE_EMPTY_OVERWRITE'){
+        setSyncStatus('behind','cloud préservé','R'+localRev()+' · protégé');
+        try{toast('Refus d’écraser le cloud avec une base vide');}catch(e){}
+        return;
+      }
       if(tableMissing(err)){
         setStatus('error','Tables V2 absentes — exécutez le SQL','SQL');
         return;
       }
-      queueLocal(err&&err.message?err.message:'error');
+      if(!online()){
+        enterReadOnly('offline');
+        return;
+      }
+      setSyncStatus('error', (err&&err.message)||'erreur sync', 'R'+localRev()+' · erreur');
+      scheduleRetry();
       if(force)toast(err&&err.message?err.message:'Sync cloud échouée');
     });
   }
   function scheduleSave(){
     if(lsGet(LS_APPLY)==='1')return;
+    if(_readOnly || !online()){
+      enterReadOnly('offline');
+      try{toast('Hors ligne — lecture seule');}catch(e){}
+      return;
+    }
     clearTimeout(_timer);
-    setStatus(online()?'syncing':'offline', online()?'Sync…':'Hors ligne — sync en attente', online()?'Sync…':'Hors ligne');
+    setSyncStatus('syncing','Sync…','R'+localRev()+' · Sync…');
     _timer=setTimeout(function(){doSave(false);}, DEBOUNCE_MS);
   }
   function flush(forceToast){
@@ -14878,28 +14975,48 @@ document.addEventListener('DOMContentLoaded',function(){
     });
   }
 
-  function finishBoot(){
+  function refreshUiAfterCloudPull(){
+    try{
+      if(typeof currentScreen==='undefined')return;
+      if(currentScreen==='marche'&&typeof renderMarche==='function')renderMarche();
+      else if(currentScreen==='tours'&&typeof renderTours==='function')renderTours();
+      else if(currentScreen==='affaires'&&typeof renderAffaires==='function')renderAffaires();
+      else if(currentScreen==='projets'&&typeof renderProjets==='function')renderProjets();
+      else if(currentScreen==='immat'&&typeof renderImmat==='function')renderImmat();
+      else if(currentScreen==='more'&&typeof renderMore==='function')renderMore();
+    }catch(e){}
+  }
+
+  function finishBoot(opts){
+    opts=opts||{};
     hideGate();
+    var first=!_booted;
     _booted=true;
-    setStatus('ok','Cloud prêt','Sync');
-    if(typeof _startApp==='function')_startApp();
-    startHeartbeat();
-    // ping anti-pause Free + flush queue
-    flush(false);
+    if(opts.readOnly){
+      enterReadOnly('offline-boot');
+    }else{
+      exitReadOnly();
+      setSyncStatus('ok','à jour','R'+(_cloudRev||localRev())+' · à jour');
+    }
+    if(first && typeof _startApp==='function')_startApp();
+    else refreshUiAfterCloudPull();
+    if(!opts.readOnly)startHeartbeat();
+    // Pas de flush auto au boot : évite d’écraser le cloud avec un cache local stale/vide
   }
 
   function needImport(meta){
     if(lsGet(LS_MIGRATED))return false;
     if(meta&&meta.migrated_at){lsSet(LS_MIGRATED,meta.migrated_at);return false;}
+    if(cloudHasSnapshot(meta))return false;
     var localClients=0;
     try{localClients=(DB.getClients()||[]).length;}catch(e){}
-    if(meta&&(meta.clients||0)>0)return false;
     if(localClients>0)return false;
     return true;
   }
 
-  function pullCloudIfNeeded(token, uid, meta, forcePull){
-    if(!shouldPullCloud(meta, forcePull))return Promise.resolve({meta:meta,data:null,pulled:false});
+  function pullCloudAlways(token, uid, meta){
+    if(!shouldPullCloud(meta))return Promise.resolve({meta:meta,data:null,pulled:false});
+    setSyncStatus('syncing','chargement cloud…','R'+(meta.revision!=null?meta.revision:localRev())+' · load');
     return loadPayload(token, uid, meta.parts).then(function(data){
       if(!data)return {meta:meta,data:null,pulled:false};
       lsSet(LS_APPLY,'1');
@@ -14907,7 +15024,10 @@ document.addEventListener('DOMContentLoaded',function(){
         lsDel(LS_APPLY);
         if(meta.migrated_at)lsSet(LS_MIGRATED,meta.migrated_at);
         lsSet(LS_HAS_CLOUD,'1');
-        if(meta.revision!=null)lsSet(LS_REV,String(meta.revision));
+        if(meta.revision!=null){
+          _cloudRev=Number(meta.revision)||0;
+          lsSet(LS_REV,String(meta.revision));
+        }
         return {meta:meta,data:data,pulled:true};
       }).catch(function(err){
         lsDel(LS_APPLY);
@@ -14916,29 +15036,46 @@ document.addEventListener('DOMContentLoaded',function(){
     });
   }
 
-  function continueAfterLock(forcePull){
+  function continueAfterLock(){
+    if(!online()){
+      if(lsGet(LS_HAS_CLOUD)){
+        finishBoot({readOnly:true});
+        return;
+      }
+      showGate('auth');
+      var msg0=$('v2-auth-msg');
+      if(msg0)msg0.textContent='Internet requis pour charger le cloud.';
+      return;
+    }
+    setSyncStatus('syncing','chargement cloud…','R'+localRev()+' · load');
     ensureAuth().then(function(s){
       return fetchUserId(s.access_token).then(function(uid){
         return loadMeta(s.access_token, uid).then(function(meta){
-          // File offline : pousser le local avant tout pull
-          var pushFirst=!!lsGet(LS_QUEUE) && !forcePull;
-          var chain=pushFirst?doSave(false).then(function(){return loadMeta(s.access_token, uid);}):Promise.resolve(meta);
-          return chain.then(function(meta2){
-            return pullCloudIfNeeded(s.access_token, uid, meta2||meta, !!forcePull);
+          if(meta&&meta.revision!=null)_cloudRev=Number(meta.revision)||0;
+          // 2A + 4A : toujours charger le cloud avant d’afficher / de continuer
+          return pullCloudAlways(s.access_token, uid, meta).then(function(pack){
+            return {meta:meta, pack:pack};
           });
-        }).then(function(pack){
-          if(needImport(pack&&pack.meta)){
+        }).then(function(res){
+          if(needImport(res&&res.meta)){
             showGate('import');
             wireImport();
             return;
           }
-          finishBoot();
+          finishBoot({readOnly:false});
         });
       });
     }).catch(function(err){
       if(lsGet(LS_HAS_CLOUD)&&!online()){
-        finishBoot();
-        queueLocal('offline');
+        finishBoot({readOnly:true});
+        return;
+      }
+      // Réseau flaky mais cache connu : lecture seule plutôt que base vide
+      if(lsGet(LS_HAS_CLOUD)){
+        finishBoot({readOnly:true});
+        var msgCache=$('v2-auth-msg');
+        try{toast('Cloud indisponible — cache local en lecture seule');}catch(e){}
+        if(msgCache)msgCache.textContent='';
         return;
       }
       showGate('auth');
@@ -14948,6 +15085,8 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   function afterAuth(){
+    // Purge ancienne file offline (option A abandonnée → 1A lecture seule)
+    try{lsDel(LS_QUEUE_LEGACY);}catch(e){}
     if(!online() && !lsGet(LS_HAS_CLOUD)){
       showGate('auth');
       var msg=$('v2-auth-msg');
@@ -14955,10 +15094,9 @@ document.addEventListener('DOMContentLoaded',function(){
       return;
     }
     if(!online() && lsGet(LS_HAS_CLOUD)){
-      // Hors ligne : reprendre si cet appareil tenait déjà la session (pas de verrou cloud vérifiable)
+      // Hors ligne : cache local en lecture seule uniquement (1A) — pas de file à sync plus tard
       _lockHeld=true;
-      finishBoot();
-      queueLocal('offline');
+      finishBoot({readOnly:true});
       return;
     }
     ensureAuth().then(function(s){
@@ -14968,20 +15106,19 @@ document.addEventListener('DOMContentLoaded',function(){
             showDeviceLockGate(res.blocked);
             return null;
           }
-          continueAfterLock(!!res.takeover);
+          continueAfterLock();
           return res;
         });
       });
     }).catch(function(err){
-      if(lsGet(LS_HAS_CLOUD)&&!online()){
+      if(lsGet(LS_HAS_CLOUD)){
         _lockHeld=true;
-        finishBoot();
-        queueLocal('offline');
+        finishBoot({readOnly:true});
         return;
       }
       showGate('auth');
-      var msg=$('v2-auth-msg');
-      if(msg)msg.textContent=tableMissing(err)?'Exécutez le SQL V2 dans Supabase.':(err&&err.message)||'Cloud indisponible';
+      var msg2=$('v2-auth-msg');
+      if(msg2)msg2.textContent=tableMissing(err)?'Exécutez le SQL V2 dans Supabase.':(err&&err.message)||'Cloud indisponible';
     });
   }
 
@@ -14996,18 +15133,29 @@ document.addEventListener('DOMContentLoaded',function(){
       skip.onclick=function(){
         var at=new Date().toISOString();
         lsSet(LS_MIGRATED,at);
-        flush(false).then(function(){
-          // ensure migrated_at persisted even on empty base
-          return ensureAuth().then(function(s){
-            return fetchUserId(s.access_token).then(function(uid){
+        // Base vide volontaire : seulement si needImport a confirmé l’absence de snapshot cloud
+        ensureAuth().then(function(s){
+          return fetchUserId(s.access_token).then(function(uid){
+            return loadMeta(s.access_token, uid).then(function(meta){
+              if(cloudHasSnapshot(meta)){
+                if(msg)msg.textContent='Un snapshot cloud existe déjà — import / chargement cloud requis.';
+                return pullCloudAlways(s.access_token, uid, meta).then(function(){finishBoot();});
+              }
               return api('/rest/v1/v2_store?on_conflict=user_id',{
                 method:'POST',token:s.access_token,
                 prefer:'resolution=merge-duplicates,return=minimal',
                 body:{user_id:uid,device:deviceName(),clients:0,vehicles:0,parts:0,revision:1,updated_at:at,migrated_at:at}
+              }).then(function(){
+                _cloudRev=1;
+                lsSet(LS_REV,'1');
+                lsSet(LS_HAS_CLOUD,'1');
+                finishBoot();
               });
             });
-          }).catch(function(){return null;});
-        }).then(finishBoot);
+          });
+        }).catch(function(err){
+          if(msg)msg.textContent=(err&&err.message)||'Impossible d’initialiser le cloud';
+        });
       };
     }
     if(file&&!file._wired){
@@ -15036,7 +15184,7 @@ document.addEventListener('DOMContentLoaded',function(){
                 });
               }).then(function(){
                 if(msg)msg.textContent='Import V1 terminé. Coffres désormais séparés.';
-                setTimeout(finishBoot, 400);
+                setTimeout(function(){finishBoot();}, 400);
               });
             }).catch(function(err){
               lsDel(LS_APPLY);
@@ -15068,11 +15216,16 @@ document.addEventListener('DOMContentLoaded',function(){
     try{deviceId();}catch(e){}
     window.addEventListener('online',function(){
       if(_ejecting)return;
-      setStatus('queued','Reconnexion…','Sync…');
-      if(_lockHeld)flush(false);
-      else if(session())afterAuth();
+      exitReadOnly();
+      setSyncStatus('syncing','reconnexion…','R'+localRev()+' · sync');
+      // 2A/4A : reclaim verrou + recharger le cloud (gagne) — pas de flush de file locale
+      if(session())afterAuth();
     });
-    window.addEventListener('offline',function(){queueLocal('offline');});
+    window.addEventListener('offline',function(){
+      clearTimeout(_timer);
+      clearTimeout(_retryTimer);
+      enterReadOnly('offline');
+    });
     document.addEventListener('visibilitychange',function(){
       if(document.visibilityState==='visible'&&_lockHeld&&_booted&&!_ejecting)tickHeartbeat();
     });
@@ -15104,15 +15257,15 @@ document.addEventListener('DOMContentLoaded',function(){
     var card=document.createElement('div');
     card.className='card'; card.id='v2-cloud-card';
     var s=session();
-    var html='<div class="card-title">☁ Cloud V2 (temps réel)</div>';
-    html+='<div style="font-size:12px;color:var(--text2);line-height:1.45;margin-bottom:8px;">État : <strong>'+escH(_status.label)+'</strong>'+(s?' · '+escH(s.email||''):'')+'</div>';
+    var html='<div class="card-title">☁ Cloud V2 (cloud-first)</div>';
+    html+='<div style="font-size:12px;color:var(--text2);line-height:1.45;margin-bottom:8px;">SYNC : <strong>'+escH(_status.label)+'</strong>'+(s?' · '+escH(s.email||''):'')+'</div>';
     if(s){
-      html+='<div style="font-size:11px;color:var(--text2);margin-bottom:8px;line-height:1.4;">Appareil actif : <strong>'+escH(deviceName())+'</strong>'+(_lockHeld?' · verrou OK':' · verrou non tenu')+'</div>';
+      html+='<div style="font-size:11px;color:var(--text2);margin-bottom:8px;line-height:1.4;">Appareil actif : <strong>'+escH(deviceName())+'</strong>'+(_lockHeld?' · verrou OK':' · verrou non tenu')+(_readOnly?' · <strong>lecture seule</strong>':'')+'</div>';
       html+='<label style="font-size:10px;color:var(--text3);">Nom de cet appareil</label>';
       html+='<input id="v2-device" class="form-input" value="'+escH(deviceName())+'" style="margin-bottom:8px;">';
-      html+='<button type="button" class="btn btn-secondary" id="v2-force-sync" style="width:100%;margin-bottom:6px;">Forcer sync maintenant</button>';
+      html+='<button type="button" class="btn btn-secondary" id="v2-force-sync" style="width:100%;margin-bottom:6px;"'+(_readOnly?' disabled':'')+'>Forcer sync maintenant</button>';
       html+='<button type="button" class="btn btn-ghost" id="v2-logout" style="width:100%;">Se déconnecter</button>';
-      html+='<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.4;">Un seul appareil à la fois (poll ~10 s). Une prise forcée ailleurs sync puis déconnecte cet appareil. Hors ligne = file locale + bandeau. Export JSON = secours seulement.</div>';
+      html+='<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.4;">Cloud-first : chargement cloud au démarrage · chaque clic écrit vers le cloud (debounce) · hors ligne = lecture seule · conflit = cloud gagne · export JSON = secours manuel. Un seul appareil à la fois (poll ~10 s).</div>';
     }else{
       html+='<button type="button" class="btn btn-primary" id="v2-relogin" style="width:100%;">Se connecter</button>';
     }
@@ -15150,6 +15303,7 @@ document.addEventListener('DOMContentLoaded',function(){
   window.v2CloudScheduleSave=scheduleSave;
   window.v2CloudFlush=flush;
   window.v2CloudGetStatus=function(){return _status;};
+  window.v2CloudIsReadOnly=function(){return !!_readOnly || !online();};
 })();
 </script>
 <script>
