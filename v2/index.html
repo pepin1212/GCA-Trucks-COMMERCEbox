@@ -81,13 +81,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .immat-table tr.immat-pad td{height:auto;max-height:none;padding:0;border:none;background:transparent;}
 .immat-num{cursor:pointer;}
 .immat-num:active{background:var(--daf-bg);}
-.immat-visit-btn,.immat-col,.plan-col{background:none;border:none;color:inherit;font:inherit;font-weight:800;cursor:pointer;padding:1px 2px;}
-.immat-visit-btn{font-size:9px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);max-width:108px;}
+.immat-visit-btn,.plan-visit-btn,.immat-col,.plan-col{background:none;border:none;color:inherit;font:inherit;font-weight:800;cursor:pointer;padding:1px 2px;}
+.immat-visit-btn,.plan-visit-btn{font-size:9px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);max-width:108px;}
 .immat-col.on,.plan-col.on{color:var(--daf);}
+.plan-score{font-weight:800;color:var(--daf);}
+.plan-table input[type=checkbox]:disabled{accent-color:var(--text3);opacity:.85;}
 #immat-filters.collapsed{display:none;}
 #immat-detail:empty{display:none;}
 #immat-detail{flex:0 1 auto;max-height:38vh;overflow:auto;background:var(--bg);border-bottom:1px solid var(--border);}
-#immat-visit-menu,#immat-col-pop,#plan-col-pop{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
+#immat-visit-menu,#immat-col-pop,#plan-col-pop,#plan-visit-menu{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
 #screen-plan.screen.active{display:flex;flex-direction:column;overflow:hidden;padding-bottom:calc(var(--nav-h) + 28px);}
 /* iOS : les menus position:fixed dans Plan peuvent rester cliquables après changement d’onglet */
 #screen-plan:not(.active){pointer-events:none!important;visibility:hidden!important;}
@@ -422,6 +424,7 @@ input[type=file]{display:none}
   <div id="plan-compact" class="show"></div>
   <div id="plan-scroll"></div>
   <div id="plan-col-pop" style="display:none;"></div>
+  <div id="plan-visit-menu" style="display:none;"></div>
 </div>
 
 <nav id="nav">
@@ -490,7 +493,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-24-v2-cloud-first-001';
+const APP_BUILD='2026-11-24-v2-plan-n9-cols-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -3207,7 +3210,7 @@ function dismissBlockingOverlays(){
     _modalExportGetter=null;
   }catch(e){}
   try{if(typeof closeSheet==='function')closeSheet();}catch(e){}
-  ['immat-col-pop','plan-col-pop','immat-visit-menu','immat-vend-drop','immat-geo-drop','plan-vend-drop','plan-geo-drop','marche-geo-drop'].forEach(function(id){
+  ['immat-col-pop','plan-col-pop','immat-visit-menu','plan-visit-menu','immat-vend-drop','immat-geo-drop','plan-vend-drop','plan-geo-drop','marche-geo-drop'].forEach(function(id){
     var el=$(id); if(el)el.style.display='none';
   });
   try{QA('[id^="gf-vendeur-drop-"],[id^="vf-drop-"]').forEach(function(el){el.style.display='none';});}catch(e){}
@@ -15653,6 +15656,8 @@ document.addEventListener('DOMContentLoaded',function(){
     if(!Array.isArray(GF.planVilles))GF.planVilles=[];
   }
 
+  var VISIT=[['Prospecté','VISITÉ'],['À prospecter','A VISITER'],['Ne pas prospecter','NE PAS VISITER']];
+  var YEAR_AGE_KEYS=['n9','n8','n7','n6','n5','n4','n3','n2','n1','n0'];
   function prjCode(r){
     var f=r&&r.flags||{};
     if(f.hasProjet)return 'prj';
@@ -15660,11 +15665,36 @@ document.addEventListener('DOMContentLoaded',function(){
     if(f.simpleVisite)return 'vis';
     return '';
   }
+  function visitLabel(v){
+    var i; for(i=0;i<VISIT.length;i++) if(VISIT[i][0]===v) return VISIT[i][1];
+    return v||'—';
+  }
+  function planRowScore(sk, c, veh){
+    var tf=GF.planTypeFilter||'tous', list=[], i, v, y, ren=0, ac=0, daf=false, urg=false;
+    veh=veh||((IDX.vBySite&&IDX.vBySite[sk])||[]);
+    for(i=0;i<veh.length;i++){
+      v=veh[i];
+      if(tf==='tracteur'&&!isTracteur(v))continue;
+      if(tf==='porteur'&&!isPorteur(v))continue;
+      list.push(v);
+      if(isDaf(v))daf=true;
+      if(typeof isVehicleRenewableCore==='function'&&isVehicleRenewableCore(v))ren++;
+      y=getYear(v.date);
+      if(y&&y>=YEAR-4)ac++;
+    }
+    urg=!!(c&&typeof isClientUrgent==='function'&&isClientUrgent(c));
+    var s=Math.min(Math.min(ren,8)*12+Math.min(ac,6)*2,100);
+    if(daf)s+=5;
+    if(urg)s+=5;
+    if(c&&typeof isDefenseActive==='function'&&isDefenseActive(c))s+=5;
+    return Math.min(s,100);
+  }
   function pairSum(pair){return (pair&&pair.d||0)+(pair&&pair.h||0);}
   function numVal(r,col){
     if(col==='objectif')return r.objectif||0;
     if(col==='pf')return r.pf||0;
-    var m=/^(n3|n2|n1|n0|tr|po|tot)([dh])?$/.exec(col);
+    if(col==='score')return typeof r.score==='number'?r.score:0;
+    var m=/^(n9|n8|n7|n6|n5|n4|n3|n2|n1|n0|tr|po|tot)([dh])?$/.exec(col);
     if(!m)return null;
     var pair=r[m[1]]||{d:0,h:0};
     if(!m[2])return pairSum(pair);
@@ -15677,6 +15707,10 @@ document.addEventListener('DOMContentLoaded',function(){
     if(key==='inc')return r.included?1:0;
     if(key==='cp')return r.cp||'';
     if(key==='prj')return prjCode(r);
+    if(key==='acc')return r.acc?1:0;
+    if(key==='exc')return r.exc?1:0;
+    if(key==='ina')return r.ina?1:0;
+    if(key==='visit')return r.visit||'';
     if(key.indexOf('act_')===0){
       var st=(r.actions&&r.actions[key.slice(4)])||'';
       return st==='done'?2:(st==='X'?1:0);
@@ -15708,8 +15742,8 @@ document.addEventListener('DOMContentLoaded',function(){
         if(f.q){qq=String(f.q).toLowerCase(); if(String(r[col]||'').toLowerCase().indexOf(qq)<0)return false;}
         continue;
       }
-      if(col==='inc'){
-        v=!!r.included;
+      if(col==='inc'||col==='acc'||col==='exc'||col==='ina'){
+        v=col==='inc'?!!r.included:!!r[col];
         if(f.mode==='on'&&!v)return false;
         if(f.mode==='off'&&v)return false;
         continue;
@@ -15720,6 +15754,17 @@ document.addEventListener('DOMContentLoaded',function(){
       }
       if(col==='prj'){
         if(f.vals&&f.vals.length&&f.vals.indexOf(prjCode(r))<0)return false;
+        continue;
+      }
+      if(col==='visit'){
+        if(f.vals&&f.vals.length){
+          var rv=typeof normalizeEtatProspection==='function'?normalizeEtatProspection(r.visit||''):(r.visit||'');
+          var ok=f.vals.some(function(x){
+            var xv=typeof normalizeEtatProspection==='function'?normalizeEtatProspection(x||''):x;
+            return xv===rv;
+          });
+          if(!ok)return false;
+        }
         continue;
       }
       if(col.indexOf('act_')===0){
@@ -15780,8 +15825,9 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   function statsFromVehicles(veh, n, yearType){
-    var n3={d:0,h:0}, n2={d:0,h:0}, n1={d:0,h:0}, n0={d:0,h:0}, tr={d:0,h:0}, po={d:0,h:0}, tot={d:0,h:0};
-    var parc=0, dafCount=0, cp=false, i, v, y, daf, age;
+    var ages={}, ai, tr={d:0,h:0}, po={d:0,h:0}, tot={d:0,h:0};
+    for(ai=0;ai<=9;ai++)ages['n'+ai]={d:0,h:0};
+    var parc=0, dafCount=0, cp=false, i, v, y, daf, age, slot;
     for(i=0;i<veh.length;i++){
       v=veh[i];
       y=getYear(v.date);
@@ -15793,10 +15839,10 @@ document.addEventListener('DOMContentLoaded',function(){
         if(daf)dafCount++;
         if(y){
           age=n-y;
-          if(age===3){if(daf)n3.d++; else n3.h++;}
-          else if(age===2){if(daf)n2.d++; else n2.h++;}
-          else if(age===1){if(daf)n1.d++; else n1.h++;}
-          else if(age===0){if(daf)n0.d++; else n0.h++;}
+          if(age>=0&&age<=9){
+            slot=ages['n'+age];
+            if(daf)slot.d++; else slot.h++;
+          }
           if(age>=1&&age<=10){if(daf)tot.d++; else tot.h++;}
         }
       }
@@ -15810,7 +15856,11 @@ document.addEventListener('DOMContentLoaded',function(){
       }
       if(!cp&&daf&&y&&y>=n-5&&y<=n-1)cp=true;
     }
-    return {n3:n3,n2:n2,n1:n1,n0:n0,tr:tr,po:po,tot:tot,parc:parc,dafCount:dafCount,cp:cp?'C':'P'};
+    return {
+      n9:ages.n9,n8:ages.n8,n7:ages.n7,n6:ages.n6,n5:ages.n5,n4:ages.n4,
+      n3:ages.n3,n2:ages.n2,n1:ages.n1,n0:ages.n0,
+      tr:tr,po:po,tot:tot,parc:parc,dafCount:dafCount,cp:cp?'C':'P'
+    };
   }
   function modelSig(){
     var nc=0, nv=0, ng=0;
@@ -15837,13 +15887,21 @@ document.addEventListener('DOMContentLoaded',function(){
         var info=getSitePrincipalInfo(sk);
         sec=!!(info&&info.hasGroup&&!info.principal);
       }
+      var c=ent.principal||null;
+      var scoreVeh=sk?((IDX.vBySite&&IDX.vBySite[sk])||[]):[];
       rows.push({
         ent:ent, key:key, included:!!st.included, objectif:parseInt(st.objectif,10)||0, actions:Object.assign({}, st.actions||{}),
         cp:stats.cp,
+        n9:stats.n9, n8:stats.n8, n7:stats.n7, n6:stats.n6, n5:stats.n5, n4:stats.n4,
         n3:stats.n3, n2:stats.n2, n1:stats.n1, n0:stats.n0,
         tr:stats.tr, po:stats.po, tot:stats.tot,
         pf:portefeuilleForEntity(ent,n,pfMap), flags:flags, nom:ent.nom, ville:ent.ville, canton:ent.canton,
-        sk:sk, parc:stats.parc, dafCount:stats.dafCount, sec:sec
+        sk:sk, parc:stats.parc, dafCount:stats.dafCount, sec:sec,
+        acc:!!(c&&typeof isClientAccessible==='function'&&isClientAccessible(c)),
+        exc:!!(c&&typeof isClientExcludedMarche==='function'&&isClientExcludedMarche(c)),
+        ina:!!(c&&typeof isInactiveClient==='function'&&isInactiveClient(c.tva, sk)),
+        visit:c&&typeof getSiteEtatProspection==='function'?getSiteEtatProspection(sk,c):(c&&c.etatProspection)||'',
+        score:planRowScore(sk, c, scoreVeh)
       });
     }
     PLAN_MODEL_CACHE={ver:PLAN_CACHE_VER, sig:sig, rows:rows};
@@ -15882,11 +15940,12 @@ document.addEventListener('DOMContentLoaded',function(){
     if(typeof XLSX==='undefined'){toast('Export Excel impossible — xlsx.full.min.js absent');return;}
     var rows=VIEW.rows||[];
     if(!rows.length){toast('Aucune ligne à exporter avec ces filtres');return;}
-    var n=activeYear(), acts=actionsList();
-    var headers=['INCL.','Projet','C/P','CLIENT',
-      (n-3)+' DAF',(n-3)+' HORS',(n-2)+' DAF',(n-2)+' HORS',(n-1)+' DAF',(n-1)+' HORS',n+' DAF',n+' HORS',
+    var n=activeYear(), acts=actionsList(), headers=['INCL.','Projet','C/P','CLIENT','ACCESSIBLE','EXCLUS','INACTIFS','VISITES','SCORE'], yi;
+    for(yi=9;yi>=0;yi--){headers.push((n-yi)+' DAF',(n-yi)+' HORS');}
+    headers.push(
       'TRACT. 4-6 DAF','TRACT. 4-6 HORS','PORT. 5-7 DAF','PORT. 5-7 HORS','TOTAL 10 ANS DAF','TOTAL 10 ANS HORS',
-      'OBJECTIF'];
+      'OBJECTIF'
+    );
     acts.forEach(function(a){headers.push(a.label||a.id);});
     headers.push('CANTON','VILLE');
     var aoa=[headers];
@@ -15896,15 +15955,21 @@ document.addEventListener('DOMContentLoaded',function(){
         prjExportLabel(r),
         r.cp||'',
         r.nom||'',
-        pairVal(r.n3,'d'),pairVal(r.n3,'h'),
-        pairVal(r.n2,'d'),pairVal(r.n2,'h'),
-        pairVal(r.n1,'d'),pairVal(r.n1,'h'),
-        pairVal(r.n0,'d'),pairVal(r.n0,'h'),
+        r.acc?'OUI':'NON',
+        r.exc?'OUI':'NON',
+        r.ina?'OUI':'NON',
+        visitLabel(r.visit),
+        typeof r.score==='number'?r.score:0
+      ];
+      YEAR_AGE_KEYS.forEach(function(k){
+        line.push(pairVal(r[k],'d'),pairVal(r[k],'h'));
+      });
+      line.push(
         pairVal(r.tr,'d'),pairVal(r.tr,'h'),
         pairVal(r.po,'d'),pairVal(r.po,'h'),
         pairVal(r.tot,'d'),pairVal(r.tot,'h'),
         r.objectif||0
-      ];
+      );
       acts.forEach(function(a){
         var st=(r.actions&&r.actions[a.id])||'';
         line.push(st==='done'?'X':(st==='X'?'X':''));
@@ -15920,22 +15985,31 @@ document.addEventListener('DOMContentLoaded',function(){
     }catch(e){console.error(e);toast('Export Excel impossible');}
   }
 
-  function colSpan(){return 4 + 8 + 6 + 1 + actionsList().length + 2;}
+  function colSpan(){return 4 + 5 + 20 + 6 + 1 + actionsList().length + 2;}
 
   function headHtml(){
-    var n=activeYear(), acts=actionsList(), html='<tr>';
+    var n=activeYear(), acts=actionsList(), html='<tr>', yi, sub=[];
     html+='<th class="c-inc" rowspan="2">'+colBtn('inc','INCL.')+'</th>';
     html+='<th class="c-prj" rowspan="2">'+colBtn('prj','PRJ')+'</th>';
     html+='<th class="c-cp" rowspan="2">'+colBtn('cp','C/P')+'</th>';
     html+='<th class="c-nom" rowspan="2">'+colBtn('client','CLIENT')+'</th>';
-    html+='<th colspan="2">'+colBtn('n3',String(n-3))+'</th><th colspan="2">'+colBtn('n2',String(n-2))+'</th><th colspan="2">'+colBtn('n1',String(n-1))+'</th><th colspan="2">'+colBtn('n0',String(n))+'</th>';
+    html+='<th rowspan="2">'+colBtn('acc','ACCESSIBLE')+'</th>';
+    html+='<th rowspan="2">'+colBtn('exc','EXCLUS')+'</th>';
+    html+='<th rowspan="2" title="Calculé : aucune immatriculation sur les '+INACTIVE_PURCHASE_YEARS+' dernières années, ou parc vide.">'+colBtn('ina','INACTIFS')+'</th>';
+    html+='<th rowspan="2" title="VISITÉ / A VISITER / NE PAS VISITER">'+colBtn('visit','VISITES')+'</th>';
+    html+='<th rowspan="2" title="Même score que la fiche : renouvelables, actifs, DAF, urgent.">'+colBtn('score','SCORE')+'</th>';
+    for(yi=9;yi>=0;yi--){
+      html+='<th colspan="2">'+colBtn('n'+yi,String(n-yi))+'</th>';
+      sub.push(['n'+yi,'d'],['n'+yi,'h']);
+    }
     html+='<th colspan="2" title="Tracteurs immat. N-6 → N-4">'+colBtn('tr','TRACT. 4-6')+'</th>';
     html+='<th colspan="2" title="Porteurs immat. N-7 → N-5">'+colBtn('po','PORT. 5-7')+'</th>';
     html+='<th colspan="2" title="Total immat. N-10 → N-1">'+colBtn('tot','TOTAL 10 ANS')+'</th>';
+    sub.push(['tr','d'],['tr','h'],['po','d'],['po','h'],['tot','d'],['tot','h']);
     html+='<th rowspan="2">'+colBtn('objectif','OBJECTIF')+'</th>';
     acts.forEach(function(a){html+='<th rowspan="2" title="'+attr(a.label)+'">'+colBtn('act_'+a.id, escH(a.label))+'</th>';});
     html+='<th rowspan="2">'+colBtn('canton','CANTON')+'</th><th rowspan="2">'+colBtn('ville','VILLE')+'</th></tr><tr>';
-    [['n3','d'],['n3','h'],['n2','d'],['n2','h'],['n1','d'],['n1','h'],['n0','d'],['n0','h'],['tr','d'],['tr','h'],['po','d'],['po','h'],['tot','d'],['tot','h']].forEach(function(p){
+    sub.forEach(function(p){
       html+='<th>'+colBtn(p[0]+p[1], p[1]==='d'?'DAF':'HORS')+'</th>';
     });
     html+='</tr>';
@@ -15947,7 +16021,8 @@ document.addEventListener('DOMContentLoaded',function(){
     var f=COLF[col]||{};
     var kind='num';
     if(col==='client'||col==='canton'||col==='ville')kind='text';
-    else if(col==='inc')kind='check';
+    else if(col==='inc'||col==='acc'||col==='exc'||col==='ina')kind='check';
+    else if(col==='visit')kind='visit';
     else if(col==='cp'||col==='prj'||col.indexOf('act_')===0)kind='vals';
     var html='<div style="padding:8px;">';
     html+='<button type="button" class="btn btn-secondary btn-sm plan-sort-go" data-dir="1" style="width:100%;margin-bottom:4px;">Trier croissant</button>';
@@ -15956,9 +16031,15 @@ document.addEventListener('DOMContentLoaded',function(){
       var ph=col==='client'?'Le nom contient…':(col==='canton'?'Le canton contient…':'La ville contient…');
       html+='<input id="plan-col-q" class="form-input" placeholder="'+attr(ph)+'" value="'+attr(f.q||'')+'" style="font-size:13px;margin-bottom:6px;">';
     }else if(kind==='check'){
-      html+='<button type="button" class="gf-chip plan-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip plan-fmode" data-mode="on">Inclus</button> <button type="button" class="gf-chip plan-fmode" data-mode="off">Non inclus</button>';
+      var onLab=col==='inc'?'Inclus':'Cochés';
+      var offLab=col==='inc'?'Non inclus':'Non cochés';
+      html+='<button type="button" class="gf-chip plan-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip plan-fmode" data-mode="on">'+onLab+'</button> <button type="button" class="gf-chip plan-fmode" data-mode="off">'+offLab+'</button>';
     }else if(kind==='num'){
       html+='<button type="button" class="gf-chip plan-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip plan-fmode" data-mode="pos">&gt; 0</button> <button type="button" class="gf-chip plan-fmode" data-mode="zero">= 0</button>';
+    }else if(kind==='visit'){
+      html+='<label style="display:flex;gap:6px;padding:4px 0;font-size:12px;"><input type="checkbox" class="plan-vfilt" value=""'+((f.vals||[]).indexOf('')>=0?' checked':'')+'> —</label>';
+      VISIT.forEach(function(o){html+='<label style="display:flex;gap:6px;padding:4px 0;font-size:12px;"><input type="checkbox" class="plan-vfilt" value="'+attr(o[0])+'"'+((f.vals||[]).indexOf(o[0])>=0?' checked':'')+'> '+o[1]+'</label>';});
+      html+='<button type="button" class="btn btn-primary btn-sm" id="plan-vfilt-apply" style="width:100%;margin-top:6px;">Filtrer</button>';
     }else{
       var opts=col==='cp'?[['C','Client C'],['P','Prospect P']]:(col==='prj'?[['prj','PROJET'],['pas','PAS DE PROJET'],['vis','SIMPLE VISITE'],['','Vide']]:[['','Vide'],['X','X'],['done','Fait ✓']]);
       opts.forEach(function(o){
@@ -15979,7 +16060,12 @@ document.addEventListener('DOMContentLoaded',function(){
     html+='<td class="c-prj">'+projectCell(r)+'</td>';
     html+='<td class="c-cp '+(r.cp==='C'?'plan-cp-c':'plan-cp-p')+'">'+r.cp+'</td>';
     html+='<td class="c-nom"><button type="button" class="plan-name" data-sk="'+attr(r.sk)+'">'+escH(r.nom||'—')+'</button><div class="plan-ville">'+escH(r.ville||'')+'</div></td>';
-    html+=numTd(r.n3,'d')+numTd(r.n3,'h')+numTd(r.n2,'d')+numTd(r.n2,'h')+numTd(r.n1,'d')+numTd(r.n1,'h')+numTd(r.n0,'d')+numTd(r.n0,'h');
+    html+='<td><input type="checkbox" class="plan-acc" data-key="'+attr(r.key)+'" data-sk="'+attr(r.sk)+'"'+(r.acc?' checked':'')+'></td>';
+    html+='<td><input type="checkbox" class="plan-exc" data-key="'+attr(r.key)+'" data-sk="'+attr(r.sk)+'"'+(r.exc?' checked':'')+'></td>';
+    html+='<td><input type="checkbox" class="plan-inact" disabled'+(r.ina?' checked':'')+' title="Calculé sur les dates d\'immatriculation"></td>';
+    html+='<td><button type="button" class="plan-visit-btn" data-key="'+attr(r.key)+'" data-sk="'+attr(r.sk)+'">'+escH(visitLabel(r.visit))+'</button></td>';
+    html+='<td class="plan-score" title="Score du site">'+r.score+'</td>';
+    YEAR_AGE_KEYS.forEach(function(k){html+=numTd(r[k],'d')+numTd(r[k],'h');});
     html+=numTd(r.tr,'d')+numTd(r.tr,'h')+numTd(r.po,'d')+numTd(r.po,'h')+numTd(r.tot,'d')+numTd(r.tot,'h');
     html+='<td><input class="plan-obj" type="number" min="0" step="1" data-key="'+attr(r.key)+'" value="'+(r.objectif||0)+'"></td>';
     acts.forEach(function(a){
@@ -16379,6 +16465,7 @@ document.addEventListener('DOMContentLoaded',function(){
       sc.addEventListener('scroll',function(){
         VIEW.start=-1; paintBody();
         var pop=$('plan-col-pop'); if(pop)pop.style.display='none';
+        var vm=$('plan-visit-menu'); if(vm)vm.style.display='none';
       },{passive:true});
       sc.addEventListener('change',function(e){
         var t=e.target; if(!t||!sc.contains(t))return;
@@ -16392,10 +16479,28 @@ document.addEventListener('DOMContentLoaded',function(){
           (VIEW.rows||[]).forEach(function(r){if(r.key===t.dataset.key)r.objectif=objVal;});
           paintKpi(VIEW.rows||[]);
         }
+        if(t.classList.contains('plan-acc')||t.classList.contains('plan-exc')){
+          var sk=t.getAttribute('data-sk')||'';
+          var c=(IDX.cBySite&&IDX.cBySite[sk])||null;
+          if(!c){
+            (VIEW.rows||[]).some(function(r){if(r.key===t.dataset.key){c=r.ent&&r.ent.principal; return true;} return false;});
+          }
+          if(t.classList.contains('plan-acc')){
+            if(c&&typeof saveAccessibleRec==='function'){saveAccessibleRec(c,{accessible:!!t.checked,manual:true},sk); try{syncClientAccessibleToggles(sk);}catch(err){}}
+            (VIEW.rows||[]).forEach(function(r){if(r.key===t.dataset.key)r.acc=!!t.checked;});
+          }else{
+            if(c&&typeof saveExclusionRec==='function'){saveExclusionRec(c,{excluded:!!t.checked,manual:true},sk); try{syncClientExcluToggles(sk);}catch(err){}}
+            (VIEW.rows||[]).forEach(function(r){if(r.key===t.dataset.key)r.exc=!!t.checked;});
+          }
+          PLAN_MODEL_CACHE.sig='';
+          renderPlanVentes({keepScroll:true});
+        }
       });
       sc.addEventListener('click',function(e){
         var col=e.target.closest&&e.target.closest('.plan-col');
         if(col&&sc.contains(col)){e.preventDefault();e.stopPropagation();openColPop(col);return;}
+        var vb=e.target.closest&&e.target.closest('.plan-visit-btn');
+        if(vb&&sc.contains(vb)){e.preventDefault();e.stopPropagation();openVisitMenu(vb);return;}
         var name=e.target.closest&&e.target.closest('.plan-name');
         if(name&&sc.contains(name)){if(name.dataset.sk&&typeof openSiteSheet==='function')openSiteSheet(name.dataset.sk);return;}
         var act=e.target.closest&&e.target.closest('.plan-act');
@@ -16405,6 +16510,36 @@ document.addEventListener('DOMContentLoaded',function(){
           e.preventDefault(); e.stopPropagation();
           if(typeof openToursProjectShortcut==='function')openToursProjectShortcut(quick.dataset.tva, quick.dataset.nom, quick.dataset.sk);
         }
+      });
+    }
+    function openVisitMenu(btn){
+      var sk=btn.getAttribute('data-sk'), key=btn.getAttribute('data-key'), menu=$('plan-visit-menu');
+      if(!menu)return;
+      var row=null;
+      (VIEW.rows||[]).some(function(r){if(r.key===key){row=r; return true;} return false;});
+      var cur=row?row.visit:'';
+      var html='<button type="button" class="plan-vopt" data-val="" style="display:block;width:100%;text-align:left;padding:9px 12px;background:none;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:12px;">—</button>';
+      VISIT.forEach(function(o){
+        html+='<button type="button" class="plan-vopt" data-val="'+attr(o[0])+'" style="display:block;width:100%;text-align:left;padding:9px 12px;background:'+(cur===o[0]?'var(--daf-bg)':'none')+';border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:12px;font-weight:700;">'+o[1]+'</button>';
+      });
+      menu.innerHTML=html; menu.style.display='block'; menu._sk=sk; menu._key=key;
+      var rc=btn.getBoundingClientRect();
+      menu.style.top=Math.max(8, Math.min(rc.bottom+4, window.innerHeight-170))+'px';
+      menu.style.left=Math.max(8, Math.min(rc.left, window.innerWidth-180))+'px';
+      menu.style.width='168px';
+    }
+    var vmenu=$('plan-visit-menu');
+    if(vmenu&&!vmenu._bound){
+      vmenu._bound=true;
+      vmenu.addEventListener('click',function(e){
+        var b=e.target.closest&&e.target.closest('.plan-vopt'); if(!b)return;
+        var sk=vmenu._sk, key=vmenu._key, val=b.getAttribute('data-val')||'';
+        if(typeof setSiteEtatProspection==='function')setSiteEtatProspection(sk, val);
+        var normalized=typeof normalizeEtatProspection==='function'?normalizeEtatProspection(val):val;
+        (VIEW.rows||[]).forEach(function(r){if(r.key===key)r.visit=normalized;});
+        PLAN_MODEL_CACHE.sig='';
+        vmenu.style.display='none';
+        renderPlanVentes({keepScroll:true});
       });
     }
     var pop=$('plan-col-pop');
@@ -16440,13 +16575,14 @@ document.addEventListener('DOMContentLoaded',function(){
       if(!e.target.closest('#plan-vend-wrap')&&$('plan-vend-drop')){$('plan-vend-drop').style.display='none'; UI.vend=false;}
       if(!e.target.closest('#plan-geo-wrap')&&$('plan-geo-drop')){$('plan-geo-drop').style.display='none'; UI.geo=false;}
       if(!e.target.closest('#plan-col-pop')&&!e.target.closest('.plan-col')&&$('plan-col-pop'))$('plan-col-pop').style.display='none';
+      if(!e.target.closest('#plan-visit-menu')&&!e.target.closest('.plan-visit-btn')&&$('plan-visit-menu'))$('plan-visit-menu').style.display='none';
     });
   }
 
   var _planRenderTimer=null;
   function hidePlanFloating(){
     UI.vend=false; UI.geo=false;
-    ['plan-col-pop','plan-vend-drop','plan-geo-drop'].forEach(function(id){
+    ['plan-col-pop','plan-vend-drop','plan-geo-drop','plan-visit-menu'].forEach(function(id){
       var el=$(id); if(el)el.style.display='none';
     });
   }
@@ -16455,6 +16591,7 @@ document.addEventListener('DOMContentLoaded',function(){
     hidePlanFloating();
     try{
       var pop=$('plan-col-pop'); if(pop){pop.style.display='none'; pop.innerHTML='';}
+      var vm=$('plan-visit-menu'); if(vm){vm.style.display='none'; vm.innerHTML='';}
     }catch(e){}
   };
   function renderPlanVentesNow(opts){
