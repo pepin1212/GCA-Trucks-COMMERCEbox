@@ -124,9 +124,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .plan-act{min-width:34px;height:28px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);font-weight:800;font-size:12px;cursor:pointer;padding:0 4px;}
 .plan-act.x{color:var(--daf);border-color:var(--daf-border);background:var(--daf-bg);}
 .plan-act.done{color:var(--green);border-color:rgba(58,184,122,.45);background:var(--green-bg);}
+.plan-incl{min-width:30px;width:30px;height:30px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text3);font-weight:900;font-size:14px;line-height:1;cursor:pointer;padding:0;}
+.plan-incl.ok{color:var(--green);border-color:rgba(58,184,122,.55);background:var(--green-bg);}
+.plan-incl.aside{color:var(--red);border-color:rgba(224,80,80,.55);background:var(--red-bg);}
 .plan-cp-c{color:var(--daf);}
 .plan-cp-p{color:var(--blue);}
 .plan-included td{background:rgba(232,160,32,.04);}
+.plan-aside-row td{background:var(--red-bg);}
 .badge.b-pv{background:rgba(232,160,32,.22);color:var(--daf);border:1px solid rgba(232,160,32,.55);font-weight:800;}
 .c-info{flex:1;min-width:0}
 .c-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -493,7 +497,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-24-v2-plan-fiche-sync-001';
+const APP_BUILD='2026-11-24-v2-plan-incl-tri-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -15438,9 +15442,30 @@ document.addEventListener('DOMContentLoaded',function(){
     return pv.years[y];
   }
 
+  // INCL. tri-état : '' (vide) | 'ok' (validé) | 'aside' (croix / mis de côté)
+  // Legacy boolean true → 'ok', false → ''
+  function normalizeIncl(v){
+    if(v===true||v===1||v==='1'||v==='ok'||v==='yes'||v==='included'||v==='oui')return 'ok';
+    if(v==='aside'||v==='x'||v==='X'||v==='cote'||v==='set_aside'||v==='off')return 'aside';
+    return '';
+  }
+  function isInclOk(v){return normalizeIncl(v)==='ok';}
+  function nextIncl(v){
+    var cur=normalizeIncl(v);
+    return cur===''?'ok':(cur==='ok'?'aside':'');
+  }
+  function inclLabel(v){
+    var s=normalizeIncl(v);
+    return s==='ok'?'OK':(s==='aside'?'Mis de côté':'Vide');
+  }
+  function inclGlyph(v){
+    var s=normalizeIncl(v);
+    return s==='ok'?'✓':(s==='aside'?'✕':'');
+  }
   function rowStateOf(yd, key){
-    if(!yd.rows[key])yd.rows[key]={included:false, objectif:0, actions:{}};
+    if(!yd.rows[key])yd.rows[key]={included:'', objectif:0, actions:{}};
     if(!yd.rows[key].actions)yd.rows[key].actions={};
+    yd.rows[key].included=normalizeIncl(yd.rows[key].included);
     return yd.rows[key];
   }
 
@@ -15579,7 +15604,7 @@ document.addEventListener('DOMContentLoaded',function(){
     var map={}, entities=buildEntities(), pv=read(), yd=yearDataOf(pv, y), i, ent, key, st;
     for(i=0;i<entities.length;i++){
       ent=entities[i]; key=entityKey(ent); st=rowStateOf(yd, key);
-      if(!st.included)continue;
+      if(!isInclOk(st.included))continue;
       (ent.siteKeys||[]).forEach(function(sk){map[sk]=true;});
     }
     PLAN_INCL_CACHE={ver:PLAN_CACHE_VER, year:y, map:map};
@@ -15610,13 +15635,13 @@ document.addEventListener('DOMContentLoaded',function(){
     var key=entityKey(ent);
     var y=activeYear();
     var st=rowStateOf(yearDataOf(read(), y), key);
-    var on=!!st.included;
+    var on=isInclOk(st.included);
     var label=ent.nom||'ce client';
     var groupNote=ent.kind==='group'
-      ?('<br><span style="font-size:11px;color:var(--text3);">Groupe : '+(on?'tous les sites liés seront retirés.':'tous les sites liés seront inclus.')+'</span>')
+      ?('<br><span style="font-size:11px;color:var(--text3);">Groupe : '+(on?'tous les sites liés seront retirés.':'tous les sites liés seront inclus (OK).')+'</span>')
       :'';
     function applyIncluded(next){
-      mutate(function(pv){rowStateOf(yearDataOf(pv, pv.activeYear), key).included=!!next;});
+      mutate(function(pv){rowStateOf(yearDataOf(pv, pv.activeYear), key).included=next?'ok':'';});
       try{if(typeof renderPlanVentes==='function'&&currentScreen==='plan')renderPlanVentes({keepScroll:true});}catch(e){}
       refreshMarkers();
       try{toast(next?('Inclus au Plan '+y):('Retiré du Plan '+y));}catch(e){}
@@ -15712,7 +15737,10 @@ document.addEventListener('DOMContentLoaded',function(){
     if(key==='client')return r.nom||'';
     if(key==='canton')return r.canton||'';
     if(key==='ville')return r.ville||'';
-    if(key==='inc')return r.included?1:0;
+    if(key==='inc'){
+      var iv=normalizeIncl(r.included);
+      return iv==='ok'?2:(iv==='aside'?1:0);
+    }
     if(key==='cp')return r.cp||'';
     if(key==='prj')return prjCode(r);
     if(key==='acc')return r.acc?1:0;
@@ -15750,8 +15778,12 @@ document.addEventListener('DOMContentLoaded',function(){
         if(f.q){qq=String(f.q).toLowerCase(); if(String(r[col]||'').toLowerCase().indexOf(qq)<0)return false;}
         continue;
       }
-      if(col==='inc'||col==='acc'||col==='exc'||col==='ina'){
-        v=col==='inc'?!!r.included:!!r[col];
+      if(col==='inc'){
+        if(f.vals&&f.vals.length&&f.vals.indexOf(normalizeIncl(r.included))<0)return false;
+        continue;
+      }
+      if(col==='acc'||col==='exc'||col==='ina'){
+        v=!!r[col];
         if(f.mode==='on'&&!v)return false;
         if(f.mode==='off'&&v)return false;
         continue;
@@ -15795,8 +15827,10 @@ document.addEventListener('DOMContentLoaded',function(){
       var hay=[ent.nom,ent.ville,ent.canton,ent.tva,(ent.principal&&ent.principal.vendeur)||'',(ent.principal&&ent.principal.profil)||''].join(' ').toLowerCase();
       if(hay.indexOf(q)<0)return false;
     }
-    if(GF.planShow==='inclus'&&!model.included)return false;
-    if(GF.planShow==='non'&&model.included)return false;
+    var inclShow=normalizeIncl(model.included);
+    if(GF.planShow==='inclus'&&inclShow!=='ok')return false;
+    if(GF.planShow==='aside'&&inclShow!=='aside')return false;
+    if(GF.planShow==='non'&&inclShow!=='')return false;
     var c=ent.principal;
     if(!c)return true;
     var sk=c._siteKey||makeSiteKey(c);
@@ -15898,7 +15932,7 @@ document.addEventListener('DOMContentLoaded',function(){
       var c=ent.principal||null;
       var scoreVeh=sk?((IDX.vBySite&&IDX.vBySite[sk])||[]):[];
       rows.push({
-        ent:ent, key:key, included:!!st.included, objectif:parseInt(st.objectif,10)||0, actions:Object.assign({}, st.actions||{}),
+        ent:ent, key:key, included:normalizeIncl(st.included), objectif:parseInt(st.objectif,10)||0, actions:Object.assign({}, st.actions||{}),
         cp:stats.cp,
         n9:stats.n9, n8:stats.n8, n7:stats.n7, n6:stats.n6, n5:stats.n5, n4:stats.n4,
         n3:stats.n3, n2:stats.n2, n1:stats.n1, n0:stats.n0,
@@ -15959,7 +15993,7 @@ document.addEventListener('DOMContentLoaded',function(){
     var aoa=[headers];
     rows.forEach(function(r){
       var line=[
-        r.included?'X':'',
+        inclLabel(r.included),
         prjExportLabel(r),
         r.cp||'',
         r.nom||'',
@@ -16029,9 +16063,9 @@ document.addEventListener('DOMContentLoaded',function(){
     var f=COLF[col]||{};
     var kind='num';
     if(col==='client'||col==='canton'||col==='ville')kind='text';
-    else if(col==='inc'||col==='acc'||col==='exc'||col==='ina')kind='check';
+    else if(col==='acc'||col==='exc'||col==='ina')kind='check';
     else if(col==='visit')kind='visit';
-    else if(col==='cp'||col==='prj'||col.indexOf('act_')===0)kind='vals';
+    else if(col==='inc'||col==='cp'||col==='prj'||col.indexOf('act_')===0)kind='vals';
     var html='<div style="padding:8px;">';
     html+='<button type="button" class="btn btn-secondary btn-sm plan-sort-go" data-dir="1" style="width:100%;margin-bottom:4px;">Trier croissant</button>';
     html+='<button type="button" class="btn btn-secondary btn-sm plan-sort-go" data-dir="-1" style="width:100%;margin-bottom:8px;">Trier décroissant</button>';
@@ -16039,9 +16073,7 @@ document.addEventListener('DOMContentLoaded',function(){
       var ph=col==='client'?'Le nom contient…':(col==='canton'?'Le canton contient…':'La ville contient…');
       html+='<input id="plan-col-q" class="form-input" placeholder="'+attr(ph)+'" value="'+attr(f.q||'')+'" style="font-size:13px;margin-bottom:6px;">';
     }else if(kind==='check'){
-      var onLab=col==='inc'?'Inclus':'Cochés';
-      var offLab=col==='inc'?'Non inclus':'Non cochés';
-      html+='<button type="button" class="gf-chip plan-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip plan-fmode" data-mode="on">'+onLab+'</button> <button type="button" class="gf-chip plan-fmode" data-mode="off">'+offLab+'</button>';
+      html+='<button type="button" class="gf-chip plan-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip plan-fmode" data-mode="on">Cochés</button> <button type="button" class="gf-chip plan-fmode" data-mode="off">Non cochés</button>';
     }else if(kind==='num'){
       html+='<button type="button" class="gf-chip plan-fmode" data-mode="all">Tous</button> <button type="button" class="gf-chip plan-fmode" data-mode="pos">&gt; 0</button> <button type="button" class="gf-chip plan-fmode" data-mode="zero">= 0</button>';
     }else if(kind==='visit'){
@@ -16049,7 +16081,9 @@ document.addEventListener('DOMContentLoaded',function(){
       VISIT.forEach(function(o){html+='<label style="display:flex;gap:6px;padding:4px 0;font-size:12px;"><input type="checkbox" class="plan-vfilt" value="'+attr(o[0])+'"'+((f.vals||[]).indexOf(o[0])>=0?' checked':'')+'> '+o[1]+'</label>';});
       html+='<button type="button" class="btn btn-primary btn-sm" id="plan-vfilt-apply" style="width:100%;margin-top:6px;">Filtrer</button>';
     }else{
-      var opts=col==='cp'?[['C','Client C'],['P','Prospect P']]:(col==='prj'?[['prj','PROJET'],['pas','PAS DE PROJET'],['vis','SIMPLE VISITE'],['','Vide']]:[['','Vide'],['X','X'],['done','Fait ✓']]);
+      var opts=col==='inc'
+        ?[['','Vide'],['ok','✓ OK'],['aside','✕ Mis de côté']]
+        :(col==='cp'?[['C','Client C'],['P','Prospect P']]:(col==='prj'?[['prj','PROJET'],['pas','PAS DE PROJET'],['vis','SIMPLE VISITE'],['','Vide']]:[['','Vide'],['X','X'],['done','Fait ✓']]));
       opts.forEach(function(o){
         html+='<label style="display:flex;gap:6px;padding:4px 0;font-size:12px;"><input type="checkbox" class="plan-vfilt" value="'+attr(o[0])+'"'+((f.vals||[]).indexOf(o[0])>=0?' checked':'')+'> '+escH(o[1])+'</label>';
       });
@@ -16063,8 +16097,11 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   function rowHtml(r){
-    var acts=actionsList(), html='<tr class="'+(r.included?'plan-included':'')+'" data-key="'+attr(r.key)+'">';
-    html+='<td class="c-inc"><input type="checkbox" class="plan-inc" data-key="'+attr(r.key)+'"'+(r.included?' checked':'')+'></td>';
+    var incl=normalizeIncl(r.included);
+    var rowCls=incl==='ok'?'plan-included':(incl==='aside'?'plan-aside-row':'');
+    var tip=incl==='ok'?'Inclus (OK) — clic → mis de côté':(incl==='aside'?'Mis de côté — clic → vide':'Vide — clic → inclus OK');
+    var acts=actionsList(), html='<tr class="'+rowCls+'" data-key="'+attr(r.key)+'">';
+    html+='<td class="c-inc"><button type="button" class="plan-incl'+(incl?' '+incl:'')+'" data-key="'+attr(r.key)+'" title="'+attr(tip)+'">'+inclGlyph(incl)+'</button></td>';
     html+='<td class="c-prj">'+projectCell(r)+'</td>';
     html+='<td class="c-cp '+(r.cp==='C'?'plan-cp-c':'plan-cp-p')+'">'+r.cp+'</td>';
     html+='<td class="c-nom"><button type="button" class="plan-name" data-sk="'+attr(r.sk)+'">'+escH(r.nom||'—')+'</button><div class="plan-ville">'+escH(r.ville||'')+'</div></td>';
@@ -16114,7 +16151,7 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   function kpiStats(rows){
-    var inclus=(rows||[]).filter(function(r){return r.included;});
+    var inclus=(rows||[]).filter(function(r){return isInclOk(r.included);});
     var obj=0, pf=0;
     inclus.forEach(function(r){obj+=r.objectif||0; pf+=r.pf||0;});
     var ecart=pf-obj, pct=obj>0?Math.round((pf/obj)*1000)/10:0;
@@ -16347,8 +16384,9 @@ document.addEventListener('DOMContentLoaded',function(){
     var html='<div style="display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;align-items:center;background:var(--bg2);">'
       +'<span style="font-size:9px;font-weight:800;color:var(--text3);">AFFICHAGE PLAN</span>'
       +'<button type="button" class="gf-btn'+(show==='tous'?' gf-on':'')+'" data-plan-show="tous">Tous</button>'
-      +'<button type="button" class="gf-btn'+(show==='inclus'?' gf-on':'')+'" data-plan-show="inclus">Inclus</button>'
-      +'<button type="button" class="gf-btn'+(show==='non'?' gf-on':'')+'" data-plan-show="non">Non inclus</button>'
+      +'<button type="button" class="gf-btn'+(show==='inclus'?' gf-on':'')+'" data-plan-show="inclus" title="INCL. = OK">Inclus ✓</button>'
+      +'<button type="button" class="gf-btn'+(show==='aside'?' gf-on':'')+'" data-plan-show="aside" title="INCL. = mis de côté">Mis de côté ✕</button>'
+      +'<button type="button" class="gf-btn'+(show==='non'?' gf-on':'')+'" data-plan-show="non" title="INCL. vide">Vide</button>'
       +'</div>';
     html+='<div style="display:flex;gap:5px;padding:5px 12px;flex-wrap:wrap;align-items:center;background:var(--bg2);border-top:1px solid var(--border);">'
       +vendHtml()
@@ -16420,7 +16458,7 @@ document.addEventListener('DOMContentLoaded',function(){
           if(copy){
             Object.keys(src.rows||{}).forEach(function(k){
               var r=src.rows[k]||{};
-              pv.years[String(next)].rows[k]={included:!!r.included, objectif:parseInt(r.objectif,10)||0, actions:Object.assign({}, r.actions||{})};
+              pv.years[String(next)].rows[k]={included:normalizeIncl(r.included), objectif:parseInt(r.objectif,10)||0, actions:Object.assign({}, r.actions||{})};
             });
           }
           pv.activeYear=next;
@@ -16477,10 +16515,6 @@ document.addEventListener('DOMContentLoaded',function(){
       },{passive:true});
       sc.addEventListener('change',function(e){
         var t=e.target; if(!t||!sc.contains(t))return;
-        if(t.classList.contains('plan-inc')){
-          mutate(function(pv){rowStateOf(yearDataOf(pv, pv.activeYear), t.dataset.key).included=!!t.checked;});
-          renderPlanVentes({keepScroll:true}); refreshMarkers();
-        }
         if(t.classList.contains('plan-obj')){
           var objVal=Math.max(0, parseInt(t.value,10)||0);
           mutate(function(pv){rowStateOf(yearDataOf(pv, pv.activeYear), t.dataset.key).objectif=objVal;});
@@ -16512,6 +16546,12 @@ document.addEventListener('DOMContentLoaded',function(){
       sc.addEventListener('click',function(e){
         var col=e.target.closest&&e.target.closest('.plan-col');
         if(col&&sc.contains(col)){e.preventDefault();e.stopPropagation();openColPop(col);return;}
+        var inclBtn=e.target.closest&&e.target.closest('.plan-incl');
+        if(inclBtn&&sc.contains(inclBtn)){
+          e.preventDefault(); e.stopPropagation();
+          cycleIncl(inclBtn.getAttribute('data-key')||'');
+          return;
+        }
         var vb=e.target.closest&&e.target.closest('.plan-visit-btn');
         if(vb&&sc.contains(vb)){e.preventDefault();e.stopPropagation();openVisitMenu(vb);return;}
         var name=e.target.closest&&e.target.closest('.plan-name');
@@ -16524,6 +16564,18 @@ document.addEventListener('DOMContentLoaded',function(){
           if(typeof openToursProjectShortcut==='function')openToursProjectShortcut(quick.dataset.tva, quick.dataset.nom, quick.dataset.sk);
         }
       });
+    }
+    function cycleIncl(key){
+      if(!key)return;
+      var next;
+      mutate(function(pv){
+        var st=rowStateOf(yearDataOf(pv, pv.activeYear), key);
+        next=nextIncl(st.included);
+        st.included=next;
+      });
+      try{toast(next==='ok'?'Inclus (OK)':(next==='aside'?'Mis de côté':'INCL. vidé'));}catch(e){}
+      renderPlanVentes({keepScroll:true});
+      refreshMarkers();
     }
     function openVisitMenu(btn){
       var sk=btn.getAttribute('data-sk'), key=btn.getAttribute('data-key'), menu=$('plan-visit-menu');
