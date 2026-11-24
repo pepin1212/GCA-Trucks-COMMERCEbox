@@ -493,7 +493,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-24-v2-plan-n9-cols-001';
+const APP_BUILD='2026-11-24-v2-plan-fiche-sync-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -2683,7 +2683,9 @@ function syncClientExcluToggles(sk){
 function syncClientAccessibleToggles(sk){
   var c=(IDX.cBySite&&IDX.cBySite[sk]);if(!c)return;
   var val=!!isClientAccessible(c);
-  var el=$('cb-tog-accessible');if(el)el.checked=val;
+  ['cb-tog-accessible','cb-tog-accessible-row','cb-tog-accessible-inline'].forEach(function(id){
+    var el=$(id);if(el)el.checked=val;
+  });
   QA('.q-tog-accessible').forEach(function(inp){if(inp.dataset.sk===sk)inp.checked=val;});
 }
 var _qualityRefreshTimer=null;
@@ -15670,13 +15672,19 @@ document.addEventListener('DOMContentLoaded',function(){
     return v||'—';
   }
   function planRowScore(sk, c, veh){
-    var tf=GF.planTypeFilter||'tous', list=[], i, v, y, ren=0, ac=0, daf=false, urg=false;
+    // Aligné sur la fiche (getSiteStats / computeScore), pas sur le score « tableau IMMAT »
+    if(sk&&typeof getSiteStats==='function'){
+      try{var st=getSiteStats(sk); if(st&&typeof st.score==='number')return st.score;}catch(e){}
+    }
+    if(c&&c.tva&&typeof scoreClient==='function'){
+      try{return scoreClient(c.tva, sk)||0;}catch(e){}
+    }
+    var tf=GF.planTypeFilter||'tous', i, v, y, ren=0, ac=0, daf=false, urg=false;
     veh=veh||((IDX.vBySite&&IDX.vBySite[sk])||[]);
     for(i=0;i<veh.length;i++){
       v=veh[i];
       if(tf==='tracteur'&&!isTracteur(v))continue;
       if(tf==='porteur'&&!isPorteur(v))continue;
-      list.push(v);
       if(isDaf(v))daf=true;
       if(typeof isVehicleRenewableCore==='function'&&isVehicleRenewableCore(v))ren++;
       y=getYear(v.date);
@@ -16485,13 +16493,18 @@ document.addEventListener('DOMContentLoaded',function(){
           if(!c){
             (VIEW.rows||[]).some(function(r){if(r.key===t.dataset.key){c=r.ent&&r.ent.principal; return true;} return false;});
           }
-          if(t.classList.contains('plan-acc')){
-            if(c&&typeof saveAccessibleRec==='function'){saveAccessibleRec(c,{accessible:!!t.checked,manual:true},sk); try{syncClientAccessibleToggles(sk);}catch(err){}}
-            (VIEW.rows||[]).forEach(function(r){if(r.key===t.dataset.key)r.acc=!!t.checked;});
-          }else{
-            if(c&&typeof saveExclusionRec==='function'){saveExclusionRec(c,{excluded:!!t.checked,manual:true},sk); try{syncClientExcluToggles(sk);}catch(err){}}
-            (VIEW.rows||[]).forEach(function(r){if(r.key===t.dataset.key)r.exc=!!t.checked;});
-          }
+          window._planLight=true;
+          try{
+            if(t.classList.contains('plan-acc')){
+              if(c&&typeof setClientAccessibleState==='function')setClientAccessibleState(c,!!t.checked,sk);
+              else if(c&&typeof saveAccessibleRec==='function'){saveAccessibleRec(c,{accessible:!!t.checked,manual:true},sk); try{syncClientAccessibleToggles(sk);}catch(err){}}
+              (VIEW.rows||[]).forEach(function(r){if(r.key===t.dataset.key)r.acc=!!t.checked;});
+            }else{
+              if(c&&typeof setClientExcludedState==='function')setClientExcludedState(c,!!t.checked,sk);
+              else if(c&&typeof saveExclusionRec==='function'){saveExclusionRec(c,{excluded:!!t.checked,manual:true},sk); try{syncClientExcluToggles(sk);}catch(err){}}
+              (VIEW.rows||[]).forEach(function(r){if(r.key===t.dataset.key)r.exc=!!t.checked;});
+            }
+          }finally{window._planLight=false;}
           PLAN_MODEL_CACHE.sig='';
           renderPlanVentes({keepScroll:true});
         }
@@ -16534,9 +16547,16 @@ document.addEventListener('DOMContentLoaded',function(){
       vmenu.addEventListener('click',function(e){
         var b=e.target.closest&&e.target.closest('.plan-vopt'); if(!b)return;
         var sk=vmenu._sk, key=vmenu._key, val=b.getAttribute('data-val')||'';
-        if(typeof setSiteEtatProspection==='function')setSiteEtatProspection(sk, val);
+        window._planLight=true;
+        try{if(typeof setSiteEtatProspection==='function')setSiteEtatProspection(sk, val);}finally{window._planLight=false;}
         var normalized=typeof normalizeEtatProspection==='function'?normalizeEtatProspection(val):val;
         (VIEW.rows||[]).forEach(function(r){if(r.key===key)r.visit=normalized;});
+        try{
+          if(window._planSheetSk&&String(window._planSheetSk)===String(sk)){
+            var sel=$('site-etat-prosp');
+            if(sel)sel.value=normalized;
+          }
+        }catch(err){}
         PLAN_MODEL_CACHE.sig='';
         vmenu.style.display='none';
         renderPlanVentes({keepScroll:true});
@@ -16637,6 +16657,40 @@ document.addEventListener('DOMContentLoaded',function(){
     }
     clearTimeout(_planRenderTimer);
     renderPlanVentesNow(opts);
+  };
+
+  // Fiche → Plan : même pattern que IMMAT (refresh si on est sur l’écran Plan)
+  function refreshPlanIfHere(){
+    if(window._planLight)return;
+    if(typeof currentScreen==='undefined'||currentScreen!=='plan')return;
+    PLAN_MODEL_CACHE.sig='';
+    try{bumpPlanCaches();}catch(e){PLAN_MODEL_CACHE={ver:-1,sig:'',rows:null};}
+    renderPlanVentes({keepScroll:true});
+  }
+  var _oldPlanEx=setClientExcludedState;
+  setClientExcludedState=window.setClientExcludedState=function(){
+    var r=_oldPlanEx.apply(this,arguments); refreshPlanIfHere(); return r;
+  };
+  var _oldPlanAcc=setClientAccessibleState;
+  setClientAccessibleState=window.setClientAccessibleState=function(){
+    var r=_oldPlanAcc.apply(this,arguments); refreshPlanIfHere(); return r;
+  };
+  var _oldPlanEtat=setSiteEtatProspection;
+  setSiteEtatProspection=window.setSiteEtatProspection=function(sk,val){
+    var r=_oldPlanEtat.apply(this,arguments);
+    try{
+      if(window._planSheetSk&&String(window._planSheetSk)===String(sk)){
+        var sel=$('site-etat-prosp');
+        if(sel)sel.value=typeof normalizeEtatProspection==='function'?normalizeEtatProspection(val):val;
+      }
+    }catch(e){}
+    refreshPlanIfHere();
+    return r;
+  };
+  var _oldPlanSheet=window.openSiteSheet;
+  window.openSiteSheet=function(sk){
+    window._planSheetSk=sk;
+    return _oldPlanSheet?_oldPlanSheet.apply(this,arguments):undefined;
   };
 })();
 </script>
