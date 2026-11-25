@@ -507,7 +507,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-25-v2-plan-ui-polish-003';
+const APP_BUILD='2026-11-25-v2-plan-agg-click-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -15967,7 +15967,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if(!n)return '<td class="plan-zero'+soft+'">'+label+'</td>';
     var cls=(kind==='d'?'plan-daf':'plan-hors')+soft;
     if(meta&&meta.clickable){
-      return '<td class="plan-num '+cls+'" data-key="'+attr(meta.key||'')+'" data-year="'+attr(meta.year||'')+'" data-kind="'+kind+'" title="Voir les immatriculations">'+label+'</td>';
+      return '<td class="plan-num '+cls+'" data-key="'+attr(meta.key||'')+'" data-year="'+attr(meta.year||'')+'" data-scope="'+attr(meta.scope||'')+'" data-kind="'+kind+'" title="Voir les immatriculations">'+label+'</td>';
     }
     return '<td class="'+cls+'">'+label+'</td>';
   }
@@ -15976,16 +15976,31 @@ document.addEventListener('DOMContentLoaded',function(){
     for(i=0;i<rows.length;i++) if(rows[i].key===key)return rows[i];
     return null;
   }
-  function planCellVehicles(r, year, kind){
+  function planCellVehicles(r, year, kind, scope){
     if(!r||!r.ent)return [];
     var veh=vehiclesForEntity(r.ent);
-    var tf=GF.planTypeFilter||'tous', out=[], i, v, y, daf;
+    var tf=GF.planTypeFilter||'tous', out=[], i, v, y, daf, age, n=activeYear();
+    scope=scope||'';
     for(i=0;i<veh.length;i++){
       v=veh[i];
-      if(tf==='tracteur'&&!isTracteur(v))continue;
-      if(tf==='porteur'&&!isPorteur(v))continue;
       y=getYear(v.date);
-      if(!y||Number(year)!==Number(y))continue;
+      if(!y)continue;
+      age=n-y;
+      if(scope==='tr'){
+        if(!isTracteur(v))continue;
+        if(age<4||age>6)continue;
+      }else if(scope==='po'){
+        if(!isPorteur(v))continue;
+        if(age<5||age>7)continue;
+      }else if(scope==='tot'){
+        if(tf==='tracteur'&&!isTracteur(v))continue;
+        if(tf==='porteur'&&!isPorteur(v))continue;
+        if(age<1||age>10)continue;
+      }else{
+        if(tf==='tracteur'&&!isTracteur(v))continue;
+        if(tf==='porteur'&&!isPorteur(v))continue;
+        if(Number(year)!==Number(y))continue;
+      }
       daf=isDaf(v);
       if(kind==='d'&&!daf)continue;
       if(kind==='h'&&daf)continue;
@@ -15994,13 +16009,19 @@ document.addEventListener('DOMContentLoaded',function(){
     out.sort(function(a,b){return String(b.date||'').localeCompare(String(a.date||''));});
     return out;
   }
-  function openPlanDetail(key, year, kind){
+  function openPlanDetail(key, year, kind, scope){
     var r=modelByKey(key), det=$('plan-detail');
     if(!r||!det)return;
-    var list=planCellVehicles(r, year, kind);
+    scope=scope||'';
+    var list=planCellVehicles(r, year, kind, scope);
     if(!list.length){det.innerHTML='';return;}
     var what=kind==='d'?'DAF':(kind==='h'?'HORS DAF':'toutes');
-    var title=(r.nom||'Site')+' — '+String(year||'')+' — '+what;
+    var n=activeYear(), when;
+    if(scope==='tr')when='TRACT. 4-6 ('+(n-6)+'–'+(n-4)+')';
+    else if(scope==='po')when='PORT. 5-7 ('+(n-7)+'–'+(n-5)+')';
+    else if(scope==='tot')when='TOTAL 10 ANS ('+(n-10)+'–'+(n-1)+')';
+    else when=String(year||'');
+    var title=(r.nom||'Site')+' — '+when+' — '+what;
     var rows='', sk=r.sk||'';
     list.slice(0,200).forEach(function(v,i){
       rows+='<tr style="border-bottom:1px solid var(--border);"><td style="padding:5px 8px;white-space:nowrap;color:var(--text2);">'+escH(fmtDate(v.date))+'</td><td style="padding:5px 8px;font-weight:600;">'+escH(r.nom||'—')+'</td><td style="padding:5px 8px;font-family:monospace;white-space:nowrap;">'+escH(v.plaque||'—')+'</td><td style="padding:5px 8px;white-space:nowrap;">'+escH(v.marque||'—')+'</td><td style="padding:5px 8px;white-space:nowrap;color:var(--text2);">'+escH(v.type||'—')+'</td><td style="padding:5px 8px;white-space:nowrap;color:var(--text2);">'+escH(v.carrosserie||'—')+'</td><td style="padding:5px 8px;text-align:right;">'+(sk?'<button type="button" class="btn btn-secondary btn-sm plan-det-fiche" data-i="'+i+'" style="font-size:9px;">Fiche</button>':'')+'</td></tr>';
@@ -16186,7 +16207,9 @@ document.addEventListener('DOMContentLoaded',function(){
       var meta={clickable:true,key:r.key,year:y};
       html+=numTd(r[k],'d',meta)+numTd(r[k],'h',meta);
     });
-    html+=numTd(r.tr,'d',{soft:true})+numTd(r.tr,'h',{soft:true})+numTd(r.po,'d',{soft:true})+numTd(r.po,'h',{soft:true})+numTd(r.tot,'d',{soft:true})+numTd(r.tot,'h',{soft:true});
+    html+=numTd(r.tr,'d',{soft:true,clickable:true,key:r.key,scope:'tr'})+numTd(r.tr,'h',{soft:true,clickable:true,key:r.key,scope:'tr'});
+    html+=numTd(r.po,'d',{soft:true,clickable:true,key:r.key,scope:'po'})+numTd(r.po,'h',{soft:true,clickable:true,key:r.key,scope:'po'});
+    html+=numTd(r.tot,'d',{soft:true,clickable:true,key:r.key,scope:'tot'})+numTd(r.tot,'h',{soft:true,clickable:true,key:r.key,scope:'tot'});
     html+='<td><input class="plan-obj" type="number" min="0" step="1" data-key="'+attr(r.key)+'" value="'+(r.objectif||0)+'"></td>';
     acts.forEach(function(a){
       var st=r.actions[a.id]||'';
@@ -16632,7 +16655,7 @@ document.addEventListener('DOMContentLoaded',function(){
         var num=e.target.closest&&e.target.closest('.plan-num');
         if(num&&sc.contains(num)){
           e.preventDefault(); e.stopPropagation();
-          openPlanDetail(num.getAttribute('data-key'), num.getAttribute('data-year'), num.getAttribute('data-kind'));
+          openPlanDetail(num.getAttribute('data-key'), num.getAttribute('data-year'), num.getAttribute('data-kind'), num.getAttribute('data-scope'));
           return;
         }
         var name=e.target.closest&&e.target.closest('.plan-name');

@@ -1,6 +1,6 @@
 // COMMERCEbox V2 — Service Worker (cache shell distinct de V1)
 // Incrémenter CACHE à chaque release V2.
-const CACHE = 'daf-commercebox-v2-plan-ui-polish-2026-11-25-003';
+const CACHE = 'daf-commercebox-v2-plan-agg-click-2026-11-25-001';
 
 function bustUrl(url) {
   if (!url || url.indexOf('http') !== 0) return url;
