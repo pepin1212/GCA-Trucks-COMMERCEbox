@@ -497,7 +497,7 @@ input[type=file]{display:none}
       <p id="v2-device-lock-msg" style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:14px;">Un autre appareil utilise déjà COMMERCEbox.</p>
       <button type="button" class="btn btn-primary" id="v2-device-takeover" style="width:100%;margin-bottom:8px;">Utiliser cet appareil à la place</button>
       <button type="button" class="btn btn-ghost" id="v2-device-lock-out" style="width:100%;">Se déconnecter</button>
-      <p id="v2-device-lock-hint" style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.45;">À utiliser si vous avez perdu l’autre appareil (ou fermé l’app ailleurs). L’autre session synchronise puis se déconnecte automatiquement.</p>
+      <p id="v2-device-lock-hint" style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.45;">À utiliser si vous avez perdu l’autre appareil (ou fermé l’app ailleurs). L’autre session synchronise puis se déconnecte. Cet appareil recharge ensuite le cloud (données à jour).</p>
     </div>
     <div id="v2-import-panel" style="display:none;margin-top:8px;">
       <h2 style="font-size:17px;font-weight:800;margin-bottom:6px;">Import unique V1 → V2</h2>
@@ -515,7 +515,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-25-v2-plan-total-10ans-white-001';
+const APP_BUILD='2026-11-25-v2-sync-cross-device-pull-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -4718,7 +4718,7 @@ function bindEvents(){
   safeOn('btn-base-hdr','click',function(){showScreen('more');});
   safeOn('nav-save-btn','click',function(){
     if(typeof window.v2CloudFlush==='function')window.v2CloudFlush();
-    openModal('☁ Sync cloud + secours JSON','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Cloud-first : au démarrage le cloud est chargé avant affichage. Chaque modification part vers le cloud (~1,2 s). Hors ligne = <strong>lecture seule</strong> (pas de file locale). En conflit le cloud gagne. L’export JSON est le <strong>secours manuel</strong>.</p>',[
+    openModal('☁ Sync cloud + secours JSON','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Cloud-first : au démarrage le cloud est chargé avant affichage. Chaque modification part vers le cloud (~1,2 s). Hors ligne = <strong>lecture seule</strong> (pas de file locale). En conflit le cloud gagne. Un seul appareil actif : l’autre doit « prendre la main » puis le cloud est rechargé (aussi au retour sur l’app). L’export JSON est le <strong>secours manuel</strong>.</p>',[
       {label:'Forcer sync cloud',cls:'btn-primary',action:function(){if(typeof window.v2CloudFlush==='function')window.v2CloudFlush(true);}},
       {label:'Exporter JSON secours',cls:'btn-secondary',action:function(){if(typeof exportBackupJSONFixed==='function')exportBackupJSONFixed();else if(typeof triggerBackupDownload==='function')triggerBackupDownload();}},
       {label:'Fermer',cls:'btn-ghost'}
@@ -14377,6 +14377,8 @@ document.addEventListener('DOMContentLoaded',function(){
   var _ejecting=false;
   var _readOnly=false;
   var _cloudRev=0;
+  var _reconcileBusy=false;
+  var _postTakeoverPullTimer=null;
 
   function lsGet(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
   function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
@@ -14607,12 +14609,15 @@ document.addEventListener('DOMContentLoaded',function(){
           if(force && !mine && after&&typeof after.active_device_id!=='undefined'){
             // 2ᵉ tentative immédiate (course rare)
             return writeDeviceLock(token, uid, false).then(function(){
-              _lockHeld=true;
-              return {claimed:true, blocked:null, meta:after, takeover:!!force && !ev.ok};
+              return loadMeta(token, uid).then(function(after2){
+                _lockHeld=true;
+                return {claimed:true, blocked:null, meta:after2||after, takeover:!!force && !ev.ok};
+              });
             });
           }
           _lockHeld=true;
-          return {claimed:true, blocked:null, meta:meta, takeover:!!force && !ev.ok};
+          // Toujours renvoyer le meta APRÈS claim (pas le snapshot d’avant écriture)
+          return {claimed:true, blocked:null, meta:after||meta, takeover:!!force && !ev.ok};
         });
       });
     });
@@ -14711,10 +14716,24 @@ document.addEventListener('DOMContentLoaded',function(){
           }
           // Verrou étranger périmé → on reprend ; sinon heartbeat conditionnel (ne vole pas)
           var ev=evaluateDeviceLock(meta);
-          if(ev.ok && ev.reason==='stale'){
-            return writeDeviceLock(s.access_token, uid, false);
-          }
-          return refreshHeartbeatIfOwner(s.access_token, uid);
+          var reclaimed=ev.ok && ev.reason==='stale';
+          var cloudRev=Number(meta&&meta.revision||0)||0;
+          var behind=cloudHasSnapshot(meta) && cloudRev>localRev();
+          var lockStep=reclaimed
+            ? writeDeviceLock(s.access_token, uid, false)
+            : refreshHeartbeatIfOwner(s.access_token, uid);
+          return lockStep.then(function(){
+            // Après reprise d’un verrou périmé, ou si le cloud a avancé : recharger le payload
+            if(!(reclaimed || behind) || _reconcileBusy || _saving || lsGet(LS_APPLY)==='1')return null;
+            if(behind)setSyncStatus('behind','en retard','R'+cloudRev+' · en retard');
+            return pullCloudAlways(s.access_token, uid, meta).then(function(pack){
+              if(pack&&pack.pulled){
+                refreshUiAfterCloudPull();
+                setSyncStatus('ok','à jour','R'+(_cloudRev||localRev())+' · à jour');
+              }
+              return pack;
+            });
+          });
         });
       });
     }).catch(function(){return null;}).then(function(){_lockCheckBusy=false;});
@@ -14735,7 +14754,7 @@ document.addEventListener('DOMContentLoaded',function(){
     if(msg){
       msg.textContent='« '+(info.otherName||'Un autre appareil')+' » utilise déjà COMMERCEbox (activité '+(info.heartbeat_at?formatLockAge(info.heartbeat_at):'récente')+'). Un seul appareil à la fois.';
     }
-    if(hint)hint.textContent='À utiliser si vous avez perdu l’autre appareil (ou fermé l’app ailleurs). L’autre session synchronise puis se déconnecte automatiquement.';
+    if(hint)hint.textContent='À utiliser si vous avez perdu l’autre appareil (ou fermé l’app ailleurs). L’autre session synchronise puis se déconnecte. Cet appareil recharge ensuite le cloud (données à jour).';
     if(take){take.style.display='block'; take.disabled=false; take.textContent='Utiliser cet appareil à la place';}
     if(out)out.style.display='block';
     wireDeviceLock();
@@ -14756,8 +14775,8 @@ document.addEventListener('DOMContentLoaded',function(){
           take.disabled=false;
           take.textContent='Utiliser cet appareil à la place';
           if(res&&res.claimed){
-            toast('Cet appareil a pris la main — l’autre va se déconnecter');
-            continueAfterLock();
+            toast('Cet appareil a pris la main — rechargement cloud…');
+            continueAfterLock({afterTakeover:true});
           }else{
             showDeviceLockGate(res&&res.blocked);
           }
@@ -14847,10 +14866,34 @@ document.addEventListener('DOMContentLoaded',function(){
       var body={user_id:uid,device:deviceName(),clients:c.clients,vehicles:c.vehicles,parts:chunks.length,revision:rev,updated_at:new Date().toISOString()};
       if(migratedAt)body.migrated_at=migratedAt;
       else if(lsGet(LS_MIGRATED))body.migrated_at=lsGet(LS_MIGRATED);
-      return api('/rest/v1/v2_store?on_conflict=user_id',{
-        method:'POST',token:token,
-        prefer:'resolution=merge-duplicates,return=representation',
-        body:body
+      // CAS sur revision : refuse d’écraser si un autre appareil a déjà bumpé (évite 2× R_n divergents)
+      return loadMeta(token, uid).then(function(metaNow){
+        var current=Number(metaNow&&metaNow.revision||0)||0;
+        if(metaNow && current!==baseRev){
+          var conflict=new Error('REV_CONFLICT');
+          conflict.code='REV_CONFLICT';
+          conflict.meta=metaNow;
+          throw conflict;
+        }
+        if(!metaNow){
+          return api('/rest/v1/v2_store?on_conflict=user_id',{
+            method:'POST',token:token,
+            prefer:'resolution=merge-duplicates,return=representation',
+            body:body
+          });
+        }
+        return api('/rest/v1/v2_store?user_id=eq.'+encodeURIComponent(uid)+'&revision=eq.'+encodeURIComponent(String(baseRev)),{
+          method:'PATCH',token:token,
+          prefer:'return=representation',
+          body:body
+        }).then(function(rows){
+          if(!rows||!rows.length){
+            var conflict2=new Error('REV_CONFLICT');
+            conflict2.code='REV_CONFLICT';
+            throw conflict2;
+          }
+          return rows;
+        });
       });
     }).then(function(){
       _cloudRev=rev;
@@ -14893,11 +14936,12 @@ document.addEventListener('DOMContentLoaded',function(){
             throw new Error('DEVICE_LOCK');
           }
           var cloudRev=Number(meta&&meta.revision||0)||0;
-          _cloudRev=cloudRev;
+          // Ne pas afficher cloudRev comme « à jour » avant apply — _cloudRev seulement après pull/push OK
           // 4A — si le cloud a avancé sans nous, il gagne : pull, pas push
           if(cloudHasSnapshot(meta) && cloudRev>localRev()){
             setSyncStatus('behind','en retard','R'+cloudRev+' · en retard');
             return pullCloudAlways(s.access_token, uid, meta).then(function(){
+              refreshUiAfterCloudPull();
               return {pulled:true};
             });
           }
@@ -14905,11 +14949,23 @@ document.addEventListener('DOMContentLoaded',function(){
           if(isDataEmpty(data) && cloudHasSnapshot(meta)){
             setSyncStatus('behind','cloud préservé','R'+cloudRev+' · protégé');
             return pullCloudAlways(s.access_token, uid, meta).then(function(){
+              refreshUiAfterCloudPull();
               return {pulled:true, refusedEmpty:true};
             });
           }
           return upsertCloud(s.access_token, uid, data, null, {meta:meta}).then(function(){
             return {pulled:false};
+          }).catch(function(err){
+            if(err&&err.code==='REV_CONFLICT'){
+              setSyncStatus('behind','en retard','R'+(err.meta&&err.meta.revision!=null?err.meta.revision:cloudRev)+' · en retard');
+              return loadMeta(s.access_token, uid).then(function(m2){
+                return pullCloudAlways(s.access_token, uid, m2||err.meta||meta).then(function(){
+                  refreshUiAfterCloudPull();
+                  return {pulled:true, conflict:true};
+                });
+              });
+            }
+            throw err;
           });
         });
       });
@@ -14918,6 +14974,9 @@ document.addEventListener('DOMContentLoaded',function(){
       if(_ejecting)return;
       if(res&&res.refusedEmpty){
         try{toast('Base locale vide — cloud préservé (rechargé)');}catch(e){}
+      }
+      if(res&&res.conflict){
+        try{toast('Cloud plus récent — données rechargées');}catch(e){}
       }
       setSyncStatus('ok','à jour','R'+(_cloudRev||localRev())+' · à jour');
     }).catch(function(err){
@@ -15063,7 +15122,51 @@ document.addEventListener('DOMContentLoaded',function(){
     });
   }
 
-  function continueAfterLock(){
+  /** Recharge le cloud si en retard (ou force). Appelé au focus / reprise / après takeover. */
+  function reconcileFromCloud(opts){
+    opts=opts||{};
+    if(_ejecting||!_booted||!_lockHeld||!online()||!configured())return Promise.resolve(null);
+    if(_reconcileBusy||_saving||lsGet(LS_APPLY)==='1')return Promise.resolve(null);
+    _reconcileBusy=true;
+    return ensureAuth().then(function(s){
+      return fetchUserId(s.access_token).then(function(uid){
+        return loadMeta(s.access_token, uid).then(function(meta){
+          if(isStolenByOther(meta)){
+            handleSessionStolen(meta);
+            return {stolen:true};
+          }
+          var cloudRev=Number(meta&&meta.revision||0)||0;
+          var needPull=!!opts.force || (cloudHasSnapshot(meta) && cloudRev>localRev());
+          if(!needPull){
+            return refreshHeartbeatIfOwner(s.access_token, uid).then(function(){return {pulled:false};});
+          }
+          if(cloudRev>localRev())setSyncStatus('behind','en retard','R'+cloudRev+' · en retard');
+          else setSyncStatus('syncing','chargement cloud…','R'+cloudRev+' · load');
+          return pullCloudAlways(s.access_token, uid, meta).then(function(pack){
+            if(pack&&pack.pulled){
+              refreshUiAfterCloudPull();
+              setSyncStatus('ok','à jour','R'+(_cloudRev||localRev())+' · à jour');
+            }
+            return refreshHeartbeatIfOwner(s.access_token, uid).then(function(){return pack||{pulled:false};});
+          });
+        });
+      });
+    }).catch(function(){
+      if(!online())enterReadOnly('offline');
+      return null;
+    }).then(function(r){_reconcileBusy=false;return r;});
+  }
+
+  function schedulePostTakeoverPull(){
+    clearTimeout(_postTakeoverPullTimer);
+    // L’ancien appareil sync encore ~1–10 s après la prise : 2ᵉ pull pour récupérer son flush
+    _postTakeoverPullTimer=setTimeout(function(){
+      if(_lockHeld&&_booted&&!_ejecting)reconcileFromCloud({force:true});
+    }, 2800);
+  }
+
+  function continueAfterLock(opts){
+    opts=opts||{};
     if(!online()){
       if(lsGet(LS_HAS_CLOUD)){
         finishBoot({readOnly:true});
@@ -15078,8 +15181,8 @@ document.addEventListener('DOMContentLoaded',function(){
     ensureAuth().then(function(s){
       return fetchUserId(s.access_token).then(function(uid){
         return loadMeta(s.access_token, uid).then(function(meta){
-          if(meta&&meta.revision!=null)_cloudRev=Number(meta.revision)||0;
           // 2A + 4A : toujours charger le cloud avant d’afficher / de continuer
+          // (_cloudRev seulement après apply réussi dans pullCloudAlways)
           return pullCloudAlways(s.access_token, uid, meta).then(function(pack){
             return {meta:meta, pack:pack};
           });
@@ -15090,6 +15193,8 @@ document.addEventListener('DOMContentLoaded',function(){
             return;
           }
           finishBoot({readOnly:false});
+          // Après prise forcée : 2ᵉ pull pour attraper le flush de l’ancien appareil
+          if(opts.afterTakeover)schedulePostTakeoverPull();
         });
       });
     }).catch(function(err){
@@ -15254,10 +15359,16 @@ document.addEventListener('DOMContentLoaded',function(){
       enterReadOnly('offline');
     });
     document.addEventListener('visibilitychange',function(){
-      if(document.visibilityState==='visible'&&_lockHeld&&_booted&&!_ejecting)tickHeartbeat();
+      if(document.visibilityState==='visible'&&_lockHeld&&_booted&&!_ejecting){
+        tickHeartbeat();
+        reconcileFromCloud({force:false});
+      }
     });
     window.addEventListener('focus',function(){
-      if(_lockHeld&&_booted&&!_ejecting)tickHeartbeat();
+      if(_lockHeld&&_booted&&!_ejecting){
+        tickHeartbeat();
+        reconcileFromCloud({force:false});
+      }
     });
     // Ouvrir IndexedDB AVANT import / pull cloud (sinon saveVehicles tombe en localStorage et échoue sur grosses bases)
     function proceed(){
@@ -15292,7 +15403,7 @@ document.addEventListener('DOMContentLoaded',function(){
       html+='<input id="v2-device" class="form-input" value="'+escH(deviceName())+'" style="margin-bottom:8px;">';
       html+='<button type="button" class="btn btn-secondary" id="v2-force-sync" style="width:100%;margin-bottom:6px;"'+(_readOnly?' disabled':'')+'>Forcer sync maintenant</button>';
       html+='<button type="button" class="btn btn-ghost" id="v2-logout" style="width:100%;">Se déconnecter</button>';
-      html+='<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.4;">Cloud-first : chargement cloud au démarrage · chaque clic écrit vers le cloud (debounce) · hors ligne = lecture seule · conflit = cloud gagne · export JSON = secours manuel. Un seul appareil à la fois (poll ~10 s).</div>';
+      html+='<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.4;">Cloud-first : chargement cloud au démarrage · chaque clic écrit vers le cloud (debounce) · hors ligne = lecture seule · conflit = cloud gagne · au retour sur l’app / après prise de session le cloud est rechargé · export JSON = secours manuel. Un seul appareil à la fois (poll ~10 s).</div>';
     }else{
       html+='<button type="button" class="btn btn-primary" id="v2-relogin" style="width:100%;">Se connecter</button>';
     }

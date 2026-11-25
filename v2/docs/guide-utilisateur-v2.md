@@ -54,10 +54,11 @@ Sur iPhone : ouvrir V2 dans Safari une fois, puis « Sur l’écran d’accueil 
 V2 enregistre un **deviceId** local + un **heartbeat** cloud (~10 s) sur `v2_store` (`active_device_id`, `heartbeat_at`).
 
 - Si un autre appareil a un heartbeat **récent (&lt; 3 min)**, la connexion est refusée avec un message clair.
-- Bouton **« Utiliser cet appareil à la place »** : force la prise tout de suite. L’**ancien** appareil détecte le vol (poll ~10 s), **synchronise** ses dernières modifs (sauf base vide), puis **se déconnecte** avec le message « Session reprise ailleurs ».
+- Bouton **« Utiliser cet appareil à la place »** : force la prise tout de suite. L’**ancien** appareil détecte le vol (poll ~10 s), **synchronise** ses dernières modifs (sauf base vide), puis **se déconnecte** avec le message « Session reprise ailleurs ». Le **nouvel** appareil **recharge le cloud** tout de suite, puis encore une fois ~3 s plus tard (pour récupérer le flush de l’ancien).
 - **Se déconnecter** (Plus → Cloud) libère le verrou tout de suite.
 - Sans activité pendant ~3 min, le verrou expire tout seul → un autre appareil peut entrer sans forcer.
 - Deux onglets sur **le même** navigateur = même appareil (OK).
+- L’appareil **inactif** (écran verrou) n’affiche pas les changements en live : il faut **prendre la main** (ou attendre l’expiration) pour devenir actif et charger le cloud.
 
 ## 5. Comportement sync (résumé)
 
@@ -65,8 +66,10 @@ V2 enregistre un **deviceId** local + un **heartbeat** cloud (~10 s) sur `v2_sto
 |--------|----------------|
 | **Démarrage** | Auth → verrou appareil → **pull cloud** → puis affichage. Jamais d’affichage sur une base locale seule si le cloud est joignable. |
 | **Écriture** | Chaque clic → debounce ~1,2 s → upsert cloud. Révision incrémentée. Indicateur `R… · à jour`. |
-| **Conflit** | Si le cloud a une révision plus haute : **pull** (cloud gagne), pas de push local. |
+| **Conflit** | Si le cloud a une révision plus haute : **pull** (cloud gagne), pas de push local. Écriture refusée si la révision a changé pendant l’envoi (CAS). |
 | **Base vide** | Si le local est vide et le cloud a un snapshot : **refus d’écraser** + rechargement cloud. |
+| **Retour app / focus** | Si le cloud a avancé : **rechargement automatique** du payload (pas seulement le n° SYNC). |
+| **Prise de session** | Pull cloud immédiat + 2ᵉ pull ~3 s (flush de l’ancien appareil). |
 | **Hors ligne** | Lecture seule. Au retour réseau : reclaim verrou + **rechargement cloud** (pas de file locale). |
 | **Secours** | Nav Sync → **Exporter JSON** (manuel). |
 
@@ -89,6 +92,7 @@ V2 enregistre un **deviceId** local + un **heartbeat** cloud (~10 s) sur `v2_sto
 | Projet Free en pause (7 j) | Dashboard Supabase → Restore / unpause |
 | « Hors ligne — lecture seule » | Normal sans réseau ; reconnectez-vous pour modifier. Le cloud n’est pas touché. |
 | `R… · en retard` / cloud préservé | Le cloud a gagné ou une base vide a été refusée — l’app recharge le cloud |
+| Même n° SYNC sur 2 appareils mais données différentes | Un seul appareil actif. Sur le 2ᵉ : « Utiliser cet appareil à la place », attendre le rechargement cloud (et le 2ᵉ pull ~3 s). Forcer la mise à jour app si besoin. |
 | Base locale vide qui écrasait le cloud | Corrigé (3A) : push vide refusé si snapshot cloud présent |
 | « véhicules non enregistrés » / import échoué | Bug corrigé (IndexedDB avant import). Forcer la mise à jour V2 (Plus → Forcer la mise à jour, ou Safari → recharger `/v2/?v=…`). Puis réimporter le JSON. Si ça continue : Safari pas en navigation privée, libérer de l’espace iPhone. |
 
