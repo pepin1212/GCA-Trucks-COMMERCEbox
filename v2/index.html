@@ -84,7 +84,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .immat-visit-btn,.plan-visit-btn,.immat-col,.plan-col{background:none;border:none;color:inherit;font:inherit;font-weight:800;cursor:pointer;padding:1px 2px;}
 .immat-visit-btn,.plan-visit-btn{font-size:9px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);max-width:108px;}
 .immat-col.on,.plan-col.on{color:var(--daf);}
-.plan-score{font-weight:800;color:var(--daf);}
+.plan-score{font-weight:800;color:var(--daf);font-size:12px;}
 .plan-table input[type=checkbox]:disabled{accent-color:var(--text3);opacity:.85;}
 #immat-filters.collapsed{display:none;}
 #immat-detail:empty{display:none;}
@@ -100,6 +100,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 #plan-compact{display:none;padding:4px 10px;border-bottom:1px solid var(--border);background:var(--bg2);font-size:10px;color:var(--text2);font-weight:700;line-height:1.35;}
 #plan-compact.show{display:block;}
 #plan-compact strong{color:var(--daf);}
+#plan-detail:empty{display:none;}
+#plan-detail{flex:0 1 auto;max-height:38vh;overflow:auto;background:var(--bg);border-bottom:1px solid var(--border);}
 #plan-scroll{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;}
 .plan-table{border-collapse:separate;border-spacing:0;font-size:10px;min-width:max-content;}
 .plan-table th,.plan-table td{border-bottom:1px solid var(--border);border-right:1px solid var(--border);padding:3px 4px;text-align:center;white-space:nowrap;background:var(--bg);vertical-align:middle;}
@@ -120,6 +122,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .plan-daf{color:var(--daf);font-weight:800;}
 .plan-hors{color:var(--text2);font-weight:700;}
 .plan-zero{color:var(--text3);font-weight:600;}
+.plan-num{cursor:pointer;}
+.plan-num:active{background:var(--daf-bg);}
+/* Légèrement plus clair que les colonnes voisines (SCORE / TRACT. 4-6 / PORT. 5-7) */
+.plan-table td.plan-col-soft{background:#12161c;}
+.plan-table thead th.plan-col-soft{background:#1f252e;}
 .plan-obj{width:42px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--green);font-weight:800;font-size:11px;text-align:center;padding:4px 2px;}
 .plan-act{min-width:34px;height:28px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);font-weight:800;font-size:12px;cursor:pointer;padding:0 4px;}
 .plan-act.x{color:var(--daf);border-color:var(--daf-border);background:var(--daf-bg);}
@@ -130,7 +137,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .plan-cp-c{color:var(--daf);}
 .plan-cp-p{color:var(--blue);}
 .plan-included td{background:rgba(232,160,32,.04);}
+.plan-included td.plan-col-soft{background:rgba(232,160,32,.09);}
 .plan-aside-row td{background:var(--red-bg);}
+.plan-aside-row td.plan-col-soft{background:rgba(224,80,80,.18);}
 .badge.b-pv{background:rgba(232,160,32,.22);color:var(--daf);border:1px solid rgba(232,160,32,.55);font-weight:800;}
 .c-info{flex:1;min-width:0}
 .c-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -426,6 +435,7 @@ input[type=file]{display:none}
   <div id="plan-filters" class="collapsed"></div>
   <div id="plan-kpi" class="collapsed"></div>
   <div id="plan-compact" class="show"></div>
+  <div id="plan-detail"></div>
   <div id="plan-scroll"></div>
   <div id="plan-col-pop" style="display:none;"></div>
   <div id="plan-visit-menu" style="display:none;"></div>
@@ -497,7 +507,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-24-v2-plan-incl-tri-001';
+const APP_BUILD='2026-11-25-v2-plan-ui-polish-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -15950,10 +15960,68 @@ document.addEventListener('DOMContentLoaded',function(){
     return rows;
   }
 
-  function numTd(pair, kind){
+  function numTd(pair, kind, meta){
     var n=pair?(pair[kind]||0):0;
-    if(!n)return '<td class="plan-zero">0</td>';
-    return '<td class="'+(kind==='d'?'plan-daf':'plan-hors')+'">'+n+'</td>';
+    var soft=meta&&meta.soft?' plan-col-soft':'';
+    if(!n)return '<td class="plan-zero'+soft+'">0</td>';
+    var cls=(kind==='d'?'plan-daf':'plan-hors')+soft;
+    if(meta&&meta.clickable){
+      return '<td class="plan-num '+cls+'" data-key="'+attr(meta.key||'')+'" data-year="'+attr(meta.year||'')+'" data-kind="'+kind+'" title="Voir les immatriculations">'+n+'</td>';
+    }
+    return '<td class="'+cls+'">'+n+'</td>';
+  }
+  function modelByKey(key){
+    var rows=VIEW.rows||[], i;
+    for(i=0;i<rows.length;i++) if(rows[i].key===key)return rows[i];
+    return null;
+  }
+  function planCellVehicles(r, year, kind){
+    if(!r||!r.ent)return [];
+    var veh=vehiclesForEntity(r.ent);
+    var tf=GF.planTypeFilter||'tous', out=[], i, v, y, daf;
+    for(i=0;i<veh.length;i++){
+      v=veh[i];
+      if(tf==='tracteur'&&!isTracteur(v))continue;
+      if(tf==='porteur'&&!isPorteur(v))continue;
+      y=getYear(v.date);
+      if(!y||Number(year)!==Number(y))continue;
+      daf=isDaf(v);
+      if(kind==='d'&&!daf)continue;
+      if(kind==='h'&&daf)continue;
+      out.push(v);
+    }
+    out.sort(function(a,b){return String(b.date||'').localeCompare(String(a.date||''));});
+    return out;
+  }
+  function openPlanDetail(key, year, kind){
+    var r=modelByKey(key), det=$('plan-detail');
+    if(!r||!det)return;
+    var list=planCellVehicles(r, year, kind);
+    if(!list.length){det.innerHTML='';return;}
+    var what=kind==='d'?'DAF':(kind==='h'?'HORS DAF':'toutes');
+    var title=(r.nom||'Site')+' — '+String(year||'')+' — '+what;
+    var rows='', sk=r.sk||'';
+    list.slice(0,200).forEach(function(v,i){
+      rows+='<tr style="border-bottom:1px solid var(--border);"><td style="padding:5px 8px;white-space:nowrap;color:var(--text2);">'+escH(fmtDate(v.date))+'</td><td style="padding:5px 8px;font-weight:600;">'+escH(r.nom||'—')+'</td><td style="padding:5px 8px;font-family:monospace;white-space:nowrap;">'+escH(v.plaque||'—')+'</td><td style="padding:5px 8px;white-space:nowrap;">'+escH(v.marque||'—')+'</td><td style="padding:5px 8px;white-space:nowrap;color:var(--text2);">'+escH(v.type||'—')+'</td><td style="padding:5px 8px;white-space:nowrap;color:var(--text2);">'+escH(v.carrosserie||'—')+'</td><td style="padding:5px 8px;text-align:right;">'+(sk?'<button type="button" class="btn btn-secondary btn-sm plan-det-fiche" data-i="'+i+'" style="font-size:9px;">Fiche</button>':'')+'</td></tr>';
+    });
+    det._rows=list; det._sk=sk; det._title=title;
+    det.innerHTML='<div style="background:var(--bg3);margin:6px 8px;border-radius:var(--radius);overflow:hidden;"><div style="padding:7px 12px;display:flex;align-items:center;gap:8px;justify-content:space-between;border-bottom:1px solid var(--border);"><span style="font-size:11px;font-weight:700;color:var(--daf);flex:1;">'+escH(title)+' — '+list.length+' immat.</span><button type="button" class="btn btn-primary btn-sm" id="plan-det-export" style="font-size:10px;">Exporter XLSX</button><button type="button" id="plan-det-close" style="background:none;border:none;color:var(--text3);font-size:14px;cursor:pointer;">✕</button></div><div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;width:100%;"><tr style="border-bottom:1px solid var(--border);"><th style="padding:4px 8px;text-align:left;color:var(--text3);">Date</th><th style="padding:4px 8px;text-align:left;color:var(--text3);">Client</th><th style="padding:4px 8px;text-align:left;color:var(--text3);">Plaque</th><th style="padding:4px 8px;text-align:left;color:var(--text3);">Marque</th><th style="padding:4px 8px;text-align:left;color:var(--text3);">Type</th><th style="padding:4px 8px;text-align:left;color:var(--text3);">Carross.</th><th></th></tr>'+rows+(list.length>200?'<tr><td colspan="7" style="padding:6px 8px;color:var(--text3);font-size:9px;">Liste limitée à 200 lignes. L’export contient tout.</td></tr>':'')+'</table></div></div>';
+    var exp=$('plan-det-export');
+    if(exp)exp.onclick=function(e){
+      e.stopPropagation();
+      if(typeof XLSX==='undefined'){try{toast('xlsx.full.min.js requis');}catch(err){}return;}
+      var aoa=[['Date','Client','TVA','Plaque','Marque','Type','Carrosserie','Modèle','Possession']];
+      var c=r.ent&&r.ent.principal;
+      list.forEach(function(v){aoa.push([fmtDate(v.date), r.nom||v.client||'', v.tva||(c&&c.tva)||'', v.plaque||'', v.marque||'', v.type||'', v.carrosserie||'', v.modele||'', typeof possessionExcelLabel==='function'?possessionExcelLabel(v):'']);});
+      var wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb,ws,'Cible');
+      XLSX.writeFile(wb,'DAF_CommerceBox_Plan_IMMAT.xlsx');
+    };
+    var close=$('plan-det-close');
+    if(close)close.onclick=function(e){e.stopPropagation(); det.innerHTML='';};
+    QA('#plan-detail .plan-det-fiche').forEach(function(b){
+      b.onclick=function(e){e.stopPropagation(); if(sk&&typeof openSiteSheet==='function')openSiteSheet(sk);};
+    });
   }
   function actLabel(state){return state==='X'?'X':(state==='done'?'✓':'');}
   function actClass(state){return state==='X'?' x':(state==='done'?' done':'');}
@@ -16039,20 +16107,21 @@ document.addEventListener('DOMContentLoaded',function(){
     html+='<th rowspan="2">'+colBtn('exc','EXCLUS')+'</th>';
     html+='<th rowspan="2" title="Calculé : aucune immatriculation sur les '+INACTIVE_PURCHASE_YEARS+' dernières années, ou parc vide.">'+colBtn('ina','INACTIFS')+'</th>';
     html+='<th rowspan="2" title="VISITÉ / A VISITER / NE PAS VISITER">'+colBtn('visit','VISITES')+'</th>';
-    html+='<th rowspan="2" title="Même score que la fiche : renouvelables, actifs, DAF, urgent.">'+colBtn('score','SCORE')+'</th>';
+    html+='<th rowspan="2" class="plan-col-soft" title="Même score que la fiche : renouvelables, actifs, DAF, urgent.">'+colBtn('score','SCORE')+'</th>';
     for(yi=9;yi>=0;yi--){
       html+='<th colspan="2">'+colBtn('n'+yi,String(n-yi))+'</th>';
       sub.push(['n'+yi,'d'],['n'+yi,'h']);
     }
-    html+='<th colspan="2" title="Tracteurs immat. N-6 → N-4">'+colBtn('tr','TRACT. 4-6')+'</th>';
-    html+='<th colspan="2" title="Porteurs immat. N-7 → N-5">'+colBtn('po','PORT. 5-7')+'</th>';
+    html+='<th colspan="2" class="plan-col-soft" title="Tracteurs immat. N-6 → N-4">'+colBtn('tr','TRACT. 4-6')+'</th>';
+    html+='<th colspan="2" class="plan-col-soft" title="Porteurs immat. N-7 → N-5">'+colBtn('po','PORT. 5-7')+'</th>';
     html+='<th colspan="2" title="Total immat. N-10 → N-1">'+colBtn('tot','TOTAL 10 ANS')+'</th>';
     sub.push(['tr','d'],['tr','h'],['po','d'],['po','h'],['tot','d'],['tot','h']);
     html+='<th rowspan="2">'+colBtn('objectif','OBJECTIF')+'</th>';
     acts.forEach(function(a){html+='<th rowspan="2" title="'+attr(a.label)+'">'+colBtn('act_'+a.id, escH(a.label))+'</th>';});
     html+='<th rowspan="2">'+colBtn('canton','CANTON')+'</th><th rowspan="2">'+colBtn('ville','VILLE')+'</th></tr><tr>';
     sub.forEach(function(p){
-      html+='<th>'+colBtn(p[0]+p[1], p[1]==='d'?'DAF':'HORS')+'</th>';
+      var soft=(p[0]==='tr'||p[0]==='po')?' class="plan-col-soft"':'';
+      html+='<th'+soft+'>'+colBtn(p[0]+p[1], p[1]==='d'?'DAF':'HORS')+'</th>';
     });
     html+='</tr>';
     return html;
@@ -16109,9 +16178,14 @@ document.addEventListener('DOMContentLoaded',function(){
     html+='<td><input type="checkbox" class="plan-exc" data-key="'+attr(r.key)+'" data-sk="'+attr(r.sk)+'"'+(r.exc?' checked':'')+'></td>';
     html+='<td><input type="checkbox" class="plan-inact" disabled'+(r.ina?' checked':'')+' title="Calculé sur les dates d\'immatriculation"></td>';
     html+='<td><button type="button" class="plan-visit-btn" data-key="'+attr(r.key)+'" data-sk="'+attr(r.sk)+'">'+escH(visitLabel(r.visit))+'</button></td>';
-    html+='<td class="plan-score" title="Score du site">'+r.score+'</td>';
-    YEAR_AGE_KEYS.forEach(function(k){html+=numTd(r[k],'d')+numTd(r[k],'h');});
-    html+=numTd(r.tr,'d')+numTd(r.tr,'h')+numTd(r.po,'d')+numTd(r.po,'h')+numTd(r.tot,'d')+numTd(r.tot,'h');
+    html+='<td class="plan-score plan-col-soft" title="Score du site"><strong>'+r.score+'</strong></td>';
+    YEAR_AGE_KEYS.forEach(function(k){
+      var age=parseInt(String(k).slice(1),10);
+      var y=activeYear()-age;
+      var meta={clickable:true,key:r.key,year:y};
+      html+=numTd(r[k],'d',meta)+numTd(r[k],'h',meta);
+    });
+    html+=numTd(r.tr,'d',{soft:true})+numTd(r.tr,'h',{soft:true})+numTd(r.po,'d',{soft:true})+numTd(r.po,'h',{soft:true})+numTd(r.tot,'d')+numTd(r.tot,'h');
     html+='<td><input class="plan-obj" type="number" min="0" step="1" data-key="'+attr(r.key)+'" value="'+(r.objectif||0)+'"></td>';
     acts.forEach(function(a){
       var st=r.actions[a.id]||'';
@@ -16554,6 +16628,12 @@ document.addEventListener('DOMContentLoaded',function(){
         }
         var vb=e.target.closest&&e.target.closest('.plan-visit-btn');
         if(vb&&sc.contains(vb)){e.preventDefault();e.stopPropagation();openVisitMenu(vb);return;}
+        var num=e.target.closest&&e.target.closest('.plan-num');
+        if(num&&sc.contains(num)){
+          e.preventDefault(); e.stopPropagation();
+          openPlanDetail(num.getAttribute('data-key'), num.getAttribute('data-year'), num.getAttribute('data-kind'));
+          return;
+        }
         var name=e.target.closest&&e.target.closest('.plan-name');
         if(name&&sc.contains(name)){if(name.dataset.sk&&typeof openSiteSheet==='function')openSiteSheet(name.dataset.sk);return;}
         var act=e.target.closest&&e.target.closest('.plan-act');
@@ -16664,6 +16744,7 @@ document.addEventListener('DOMContentLoaded',function(){
     try{
       var pop=$('plan-col-pop'); if(pop){pop.style.display='none'; pop.innerHTML='';}
       var vm=$('plan-visit-menu'); if(vm){vm.style.display='none'; vm.innerHTML='';}
+      var det=$('plan-detail'); if(det)det.innerHTML='';
     }catch(e){}
   };
   function renderPlanVentesNow(opts){
