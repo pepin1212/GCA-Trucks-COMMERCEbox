@@ -124,9 +124,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .plan-zero{color:var(--text3);font-weight:600;}
 .plan-num{cursor:pointer;}
 .plan-num:active{background:var(--daf-bg);}
-/* Légèrement plus clair que les colonnes voisines (SCORE / TRACT. 4-6 / PORT. 5-7) */
-.plan-table td.plan-col-soft{background:#12161c;}
-.plan-table thead th.plan-col-soft{background:#1f252e;}
+/* Encore un cran plus clair que les voisines (SCORE / TRACT. 4-6 / PORT. 5-7) ; typo = SCORE */
+.plan-table td.plan-col-soft{background:#1c222c;font-size:12px;font-weight:800;}
+.plan-table thead th.plan-col-soft{background:#2a313c;}
 .plan-obj{width:42px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--green);font-weight:800;font-size:11px;text-align:center;padding:4px 2px;}
 .plan-act{min-width:34px;height:28px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);font-weight:800;font-size:12px;cursor:pointer;padding:0 4px;}
 .plan-act.x{color:var(--daf);border-color:var(--daf-border);background:var(--daf-bg);}
@@ -507,7 +507,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-25-v2-plan-ui-polish-001';
+const APP_BUILD='2026-11-25-v2-plan-ui-polish-002';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -15963,12 +15963,13 @@ document.addEventListener('DOMContentLoaded',function(){
   function numTd(pair, kind, meta){
     var n=pair?(pair[kind]||0):0;
     var soft=meta&&meta.soft?' plan-col-soft':'';
-    if(!n)return '<td class="plan-zero'+soft+'">0</td>';
+    var label=meta&&meta.soft?'<strong>'+n+'</strong>':String(n);
+    if(!n)return '<td class="plan-zero'+soft+'">'+label+'</td>';
     var cls=(kind==='d'?'plan-daf':'plan-hors')+soft;
     if(meta&&meta.clickable){
-      return '<td class="plan-num '+cls+'" data-key="'+attr(meta.key||'')+'" data-year="'+attr(meta.year||'')+'" data-kind="'+kind+'" title="Voir les immatriculations">'+n+'</td>';
+      return '<td class="plan-num '+cls+'" data-key="'+attr(meta.key||'')+'" data-year="'+attr(meta.year||'')+'" data-kind="'+kind+'" title="Voir les immatriculations">'+label+'</td>';
     }
-    return '<td class="'+cls+'">'+n+'</td>';
+    return '<td class="'+cls+'">'+label+'</td>';
   }
   function modelByKey(key){
     var rows=VIEW.rows||[], i;
