@@ -515,7 +515,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-25-v2-sync-no-stale-push-001';
+const APP_BUILD='2026-11-25-v2-sync-work-views-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -951,10 +951,12 @@ function readActivityBackup(){
   return merged.slice(0,2000);
 }
 function restoreActivityFromBackup(data){
-  if(!data||!Object.prototype.hasOwnProperty.call(data,'activity'))return;
-  var arr=Array.isArray(data.activity)?data.activity.slice(0,2000):[];
-  try{localStorage.setItem('daf_v2_activity',JSON.stringify(arr));}catch(e){}
-  try{localStorage.removeItem('daf_v2_activity_log');}catch(e){}
+  if(!data)return;
+  if(Object.prototype.hasOwnProperty.call(data,'activity')){
+    var arr=Array.isArray(data.activity)?data.activity.slice(0,2000):[];
+    try{localStorage.setItem('daf_v2_activity',JSON.stringify(arr));}catch(e){}
+    try{localStorage.removeItem('daf_v2_activity_log');}catch(e){}
+  }
   var ui=data.uiState;
   if(!ui)return;
   try{
@@ -967,7 +969,19 @@ function restoreActivityFromBackup(data){
       if(ui.cbRemindersCollapsed)localStorage.setItem('cbRemindersCollapsed',ui.cbRemindersCollapsed);
       else localStorage.removeItem('cbRemindersCollapsed');
     }
+    if(Object.prototype.hasOwnProperty.call(ui,'commSuiviHidden')){
+      if(ui.commSuiviHidden)localStorage.setItem('commSuiviHidden',ui.commSuiviHidden);
+      else localStorage.removeItem('commSuiviHidden');
+    }
+    if(ui.toursF!=null){try{toursF=ui.toursF; window.toursF=ui.toursF;}catch(e){}}
+    if(ui.toursSearch!=null){try{toursSearch=ui.toursSearch;}catch(e){}}
+    if(ui.projetSort!=null){try{projetSort=ui.projetSort;}catch(e){}}
+    if(ui.projetFilter!=null){try{projetFilter=ui.projetFilter;}catch(e){}}
+    if(ui.projetSearch!=null){try{projetSearch=ui.projetSearch;}catch(e){}}
+    if(ui.affairesFilter!=null)window.affairesFilter=ui.affairesFilter;
+    if(ui.affairesSearch!=null)window.affairesSearch=ui.affairesSearch;
   }catch(e){}
+  try{if(typeof window.v2ApplyWorkViews==='function')window.v2ApplyWorkViews(ui.workViews||null);}catch(e){}
 }
 function getBackupData(){
   if(typeof window.migrateCommerceStorage==='function')window.migrateCommerceStorage();
@@ -975,9 +989,13 @@ function getBackupData(){
   var st=Object.assign({},DB.getSettings()||{});
   ['hotDeals','deliveries','archivedHotDeals','hotDealArchives','dealArchives'].forEach(function(k){delete st[k];});
   var archives=(typeof getArchivedHotDeals==='function'?getArchivedHotDeals():[])||[];
-  var sort=''; var reminders='';
+  var sort=''; var reminders=''; var suiviHidden='';
   try{sort=localStorage.getItem('commSortFinal')||'';}catch(e){}
   try{reminders=localStorage.getItem('cbRemindersCollapsed')||'';}catch(e){}
+  try{suiviHidden=localStorage.getItem('commSuiviHidden')||'';}catch(e){}
+  // Snapshot vues de travail (filtres / tris) — aussi dans settings.*WorkView pour persistance live
+  var workViews=null;
+  try{if(typeof window.v2CaptureWorkViews==='function')workViews=window.v2CaptureWorkViews();}catch(e){}
   return {
     version:9,
     app:'DAF_COMMERCE-Box_V2',
@@ -998,7 +1016,19 @@ function getBackupData(){
     archivedHotDeals:archives,
     hotDealArchives:archives,
     activity:readActivityBackup(),
-    uiState:{commSortFinal:sort,cbRemindersCollapsed:reminders},
+    uiState:{
+      commSortFinal:sort,
+      cbRemindersCollapsed:reminders,
+      commSuiviHidden:suiviHidden,
+      workViews:workViews,
+      toursF:(typeof toursF!=='undefined'?toursF:null),
+      toursSearch:(typeof toursSearch!=='undefined'?toursSearch:null),
+      projetSort:(typeof projetSort!=='undefined'?projetSort:null),
+      projetFilter:(typeof projetFilter!=='undefined'?projetFilter:null),
+      projetSearch:(typeof projetSearch!=='undefined'?projetSearch:null),
+      affairesFilter:(typeof window.affairesFilter!=='undefined'?window.affairesFilter:null),
+      affairesSearch:(typeof window.affairesSearch!=='undefined'?window.affairesSearch:null)
+    },
     exportDate:new Date().toISOString()
   };
 }
@@ -1143,6 +1173,168 @@ const GF = {
   immatAffichage: 'tous',
   immatSearch: '',
 };
+
+/* Vues de travail (filtres / tris / ordre d’affichage) — sync cloud via settings + uiState */
+(function(){
+  var MARCHE_KEYS=['vendeursMarche','exclFlotteNationaleMarche','marcheMaskExclusion','marcheMaskInactifs','marcheMaskAccessible','marcheFUrgent','marcheFProtocole','marcheCantons','marcheVilles','marcheMaskSitesSec','marcheMaskSansFiche','marcheMaskDaf3Ans','marcheF','marcheTypeFilter','profils'];
+  var TOURS_KEYS=['toursMaskExclus','toursMaskAccessible','toursMaskInactifs','toursMaskProjets','toursFUrgent','toursFProtocole','toursMaskSitesSec','toursMaskSansFiche','toursMaskPlanInclus','toursTypeFilter','cbToursProfils','masquerFlotteNationaleTours'];
+  var _marcheSig='';
+  var _toursSig='';
+  function pickGF(keys){
+    var o={}, i, k;
+    for(i=0;i<keys.length;i++){k=keys[i]; o[k]=GF[k];}
+    return o;
+  }
+  function putGF(keys, src){
+    if(!src)return;
+    var i, k;
+    for(i=0;i<keys.length;i++){k=keys[i]; if(src[k]!=null)GF[k]=src[k];}
+  }
+  function readNamed(name){
+    try{
+      var st=getAppSettings();
+      return (st.workViews&&st.workViews[name])||null;
+    }catch(e){return null;}
+  }
+  function writeNamed(name, payload, getSig, setSig){
+    var sig=JSON.stringify(payload);
+    if(sig===getSig())return;
+    setSig(sig);
+    try{
+      var st=getAppSettings();
+      if(!st.workViews)st.workViews={};
+      st.workViews[name]=payload;
+      saveAppSettings(st);
+    }catch(e){}
+  }
+  window.v2PersistMarcheWorkView=function(){
+    writeNamed('marche', {gf:pickGF(MARCHE_KEYS)}, function(){return _marcheSig;}, function(s){_marcheSig=s;});
+  };
+  window.v2RestoreMarcheWorkView=function(){
+    var v=readNamed('marche');
+    if(!v||!v.gf)return;
+    var sig=JSON.stringify(v);
+    if(sig===_marcheSig)return;
+    _marcheSig=sig;
+    putGF(MARCHE_KEYS, v.gf);
+  };
+  window.v2PersistToursWorkView=function(){
+    var sortEl=typeof $==='function'?$('tours-sort-sel'):null;
+    writeNamed('tours', {
+      gf:pickGF(TOURS_KEYS),
+      toursF:(typeof toursF!=='undefined'?toursF:'all'),
+      toursSearch:(typeof toursSearch!=='undefined'?toursSearch:''),
+      toursSort:sortEl?sortEl.value:'score'
+    }, function(){return _toursSig;}, function(s){_toursSig=s;});
+  };
+  window.v2RestoreToursWorkView=function(){
+    var v=readNamed('tours');
+    if(!v)return;
+    var sig=JSON.stringify(v);
+    if(sig===_toursSig)return;
+    _toursSig=sig;
+    if(v.gf)putGF(TOURS_KEYS, v.gf);
+    if(v.toursF!=null){try{toursF=v.toursF; window.toursF=v.toursF;}catch(e){}}
+    if(v.toursSearch!=null){try{toursSearch=v.toursSearch;}catch(e){}}
+    if(v.toursSort){
+      try{
+        var sortEl=typeof $==='function'?$('tours-sort-sel'):null;
+        if(sortEl)sortEl.value=v.toursSort;
+      }catch(e){}
+    }
+  };
+  window.v2CaptureWorkViews=function(){
+    var out={
+      marche:{gf:pickGF(MARCHE_KEYS)},
+      tours:{
+        gf:pickGF(TOURS_KEYS),
+        toursF:(typeof toursF!=='undefined'?toursF:'all'),
+        toursSearch:(typeof toursSearch!=='undefined'?toursSearch:''),
+        toursSort:(function(){try{var el=$('tours-sort-sel');return el?el.value:'score';}catch(e){return 'score';}})()
+      },
+      affaires:{
+        filter:window.affairesFilter||null,
+        search:window.affairesSearch||null
+      },
+      projets:{
+        sort:(typeof projetSort!=='undefined'?projetSort:null),
+        filter:(typeof projetFilter!=='undefined'?projetFilter:null),
+        search:(typeof projetSearch!=='undefined'?projetSearch:null)
+      }
+    };
+    try{if(typeof window.v2GetPlanWorkView==='function')out.plan=window.v2GetPlanWorkView();}catch(e){}
+    try{if(typeof window.v2GetImmatWorkView==='function')out.immat=window.v2GetImmatWorkView();}catch(e){}
+    return out;
+  };
+  window.v2ApplyWorkViews=function(views){
+    // settings.* déjà restaurés via DB.saveSettings ; on force relecture + reset signatures
+    _marcheSig='';
+    _toursSig='';
+    try{if(typeof window.v2ResetImmatWorkViewSig==='function')window.v2ResetImmatWorkViewSig();}catch(e){}
+    try{if(typeof window.v2ResetPlanWorkViewSig==='function')window.v2ResetPlanWorkViewSig();}catch(e){}
+    // Fallback si anciennes sauvegardes n’avaient que uiState.workViews
+    if(views){
+      try{
+        var st=getAppSettings();
+        if(!st.workViews)st.workViews={};
+        var dirty=false;
+        ['marche','tours','plan','affaires','projets'].forEach(function(k){
+          if(views[k] && !st.workViews[k]){st.workViews[k]=views[k]; dirty=true;}
+        });
+        if(views.immat && !st.immatWorkView){st.immatWorkView=views.immat; dirty=true;}
+        if(dirty){
+          DB.saveSettings(st);
+        }
+      }catch(e){}
+    }
+    try{window.v2RestoreMarcheWorkView();}catch(e){}
+    try{window.v2RestoreToursWorkView();}catch(e){}
+    try{if(typeof window.v2RestorePlanWorkView==='function')window.v2RestorePlanWorkView();}catch(e){}
+    try{if(typeof window.v2RestoreImmatWorkView==='function')window.v2RestoreImmatWorkView();}catch(e){}
+    try{
+      var st2=getAppSettings();
+      var aff=st2.workViews&&st2.workViews.affaires;
+      if(aff){
+        if(aff.filter!=null)window.affairesFilter=aff.filter;
+        if(aff.search!=null)window.affairesSearch=aff.search;
+      }
+      var pr=st2.workViews&&st2.workViews.projets;
+      if(pr){
+        if(pr.sort!=null){try{projetSort=pr.sort;}catch(e){}}
+        if(pr.filter!=null){try{projetFilter=pr.filter;}catch(e){}}
+        if(pr.search!=null){try{projetSearch=pr.search;}catch(e){}}
+      }
+    }catch(e){}
+  };
+  window.v2PersistAffairesWorkView=function(){
+    try{
+      var st=getAppSettings();
+      if(!st.workViews)st.workViews={};
+      var payload={filter:window.affairesFilter||null, search:window.affairesSearch||null};
+      var sig=JSON.stringify(payload);
+      if(st.workViews._affSig===sig)return;
+      st.workViews._affSig=sig;
+      st.workViews.affaires=payload;
+      saveAppSettings(st);
+    }catch(e){}
+  };
+  window.v2PersistProjetsWorkView=function(){
+    try{
+      var st=getAppSettings();
+      if(!st.workViews)st.workViews={};
+      var payload={
+        sort:(typeof projetSort!=='undefined'?projetSort:null),
+        filter:(typeof projetFilter!=='undefined'?projetFilter:null),
+        search:(typeof projetSearch!=='undefined'?projetSearch:null)
+      };
+      var sig=JSON.stringify(payload);
+      if(st.workViews._projSig===sig)return;
+      st.workViews._projSig=sig;
+      st.workViews.projets=payload;
+      saveAppSettings(st);
+    }catch(e){}
+  };
+})();
 function isMarcheFocusActive(){return !!(GF.marcheFocus&&GF.marcheFocus.active&&GF.marcheFocus.siteKey);}
 function marcheFocusHasGroup(sk){
   if(!sk)return false;
@@ -3556,6 +3748,8 @@ function _bindMarcheKpiClicks(filtered,filtVeh){
 }
 
 function renderMarche(){
+  try{if(typeof window.v2RestoreMarcheWorkView==='function')window.v2RestoreMarcheWorkView();}catch(e){}
+  try{
   var xlsxOk=typeof XLSX!=='undefined';
   var clients=DB.getClients();
   var vehicles=DB.getVehicles();
@@ -3669,6 +3863,9 @@ function renderMarche(){
     }
   },50);
   return;
+  }finally{
+    try{if(typeof window.v2PersistMarcheWorkView==='function')window.v2PersistMarcheWorkView();}catch(e){}
+  }
 }
 
 function _bindMarcheCoreControls(){
@@ -4415,6 +4612,15 @@ function deleteProjet(pid,tva,sk){
 let projetFilter='all', projetSearch='', projetSort='date_desc';
 
 function renderProjets(){
+  try{
+    var st=getAppSettings();
+    var pr=st.workViews&&st.workViews.projets;
+    if(pr){
+      if(pr.sort!=null)projetSort=pr.sort;
+      if(pr.filter!=null)projetFilter=pr.filter;
+      if(pr.search!=null)projetSearch=pr.search;
+    }
+  }catch(e){}
   if(!$('projets-content')){ if(typeof window.renderAffaires==='function')window.renderAffaires(); return; }
   const projects=DB.getProjects();
   const clients=DB.getClients();
@@ -4503,6 +4709,7 @@ function renderProjets(){
   QA('#projets-content .proj-card[data-tva]').forEach(el=>{
     el.onclick=()=>openClientSheet(el.dataset.tva);
   });
+  try{if(typeof window.v2PersistProjetsWorkView==='function')window.v2PersistProjetsWorkView();}catch(e){}
 }
 
 function exportJSON(){
@@ -4743,7 +4950,12 @@ function bindEvents(){
 
 // ===== PHASE 4 — GROUPES SIMPLIFIÉS / FICHES SITE ENRICHIES =====
 function getAppSettings(){return DB.getSettings()||{};}
-function saveAppSettings(st){DB.saveSettings(st||{});autoSave();}
+function saveAppSettings(st){
+  DB.saveSettings(st||{});
+  // Pendant un apply cloud, ne pas déclencher de push (les vues / ensureIn écrivent aussi settings)
+  try{if(localStorage.getItem('daf_v2_cloud_apply')==='1')return;}catch(e){}
+  autoSave();
+}
 function getManualGroups(){var st=getAppSettings();return st.manualGroups||[];}
 function saveManualGroups(groups){var st=getAppSettings();st.manualGroups=groups||[];saveAppSettings(st);}
 function groupIdForTva(tva){return 'AUTO_TVA_'+String(tva||'').replace(/[^A-Za-z0-9]/g,'_');}
@@ -5676,6 +5888,7 @@ function passesToursFpill(c, f){
   return true;
 }
 function renderTours(){
+  try{if(typeof window.v2RestoreToursWorkView==='function')window.v2RestoreToursWorkView();}catch(e){}
   try{
   initToursDefaultFilters();
   var scrollSave=_saveToursScroll();
@@ -5773,6 +5986,8 @@ function renderTours(){
     console.error('renderTours',err);
     var tl=$('tours-list');
     if(tl)tl.innerHTML='<div class="card" style="padding:12px;font-size:11px;color:var(--orange);">Erreur affichage Tournées — '+escH(err.message||String(err))+'</div>';
+  }finally{
+    try{if(typeof window.v2PersistToursWorkView==='function')window.v2PersistToursWorkView();}catch(e){}
   }
 }
 function openToursProjectShortcut(tva, nom, sk){
@@ -13450,7 +13665,7 @@ document.addEventListener('DOMContentLoaded',function(){
   }
   function restoreImmatView(){
     var st=getAppSettings();
-    var v=st.immatWorkView;
+    var v=st.immatWorkView||(st.workViews&&st.workViews.immat);
     if(!v||!v.gf)return;
     var sig=JSON.stringify(v);
     if(sig===_immatViewSig)return;
@@ -13469,6 +13684,9 @@ document.addEventListener('DOMContentLoaded',function(){
     st.immatWorkView=v;
     saveAppSettings(st);
   }
+  window.v2GetImmatWorkView=immatViewSnapshot;
+  window.v2RestoreImmatWorkView=restoreImmatView;
+  window.v2ResetImmatWorkViewSig=function(){_immatViewSig='';};
   function attr(s){return escH(s).replace(/"/g,'&quot;');}
   function affichageOn(sk){
     var st=getAppSettings();
@@ -15839,6 +16057,40 @@ document.addEventListener('DOMContentLoaded',function(){
     }
   };
 
+  var PLAN_VIEW_KEYS=['planSearch','planShow','planMaskExclusion','planMaskInactifs','planMaskAccessible','planFUrgent','planFProtocole','planFProjet','planMaskSitesSec','planMaskSansFiche','planMaskDaf3Ans','planF','planTypeFilter','planProfils','planVendeurs','planCantons','planVilles'];
+  var _planViewSig='';
+  function planViewSnapshot(){
+    var gf={};
+    PLAN_VIEW_KEYS.forEach(function(k){gf[k]=GF[k];});
+    return {gf:gf, sort:{key:SORT.key, dir:SORT.dir}, colf:COLF, filtersOpen:!!UI.filtersOpen};
+  }
+  function restorePlanView(){
+    var st=getAppSettings();
+    var v=(st.workViews&&st.workViews.plan)||st.planWorkView;
+    if(!v||!v.gf)return;
+    var sig=JSON.stringify(v);
+    if(sig===_planViewSig)return;
+    _planViewSig=sig;
+    PLAN_VIEW_KEYS.forEach(function(k){if(v.gf[k]!=null)GF[k]=v.gf[k];});
+    if(v.sort&&v.sort.key)SORT={key:v.sort.key, dir:v.sort.dir||1};
+    if(v.colf&&typeof v.colf==='object')COLF=v.colf;
+    if(v.filtersOpen!=null)UI.filtersOpen=!!v.filtersOpen;
+  }
+  function persistPlanView(){
+    var v=planViewSnapshot();
+    var sig=JSON.stringify(v);
+    if(sig===_planViewSig)return;
+    _planViewSig=sig;
+    var st=getAppSettings();
+    if(!st.workViews)st.workViews={};
+    st.workViews.plan=v;
+    st.planWorkView=v;
+    saveAppSettings(st);
+  }
+  window.v2GetPlanWorkView=planViewSnapshot;
+  window.v2RestorePlanWorkView=restorePlanView;
+  window.v2ResetPlanWorkViewSig=function(){_planViewSig='';};
+
   function ensureGF(){
     if(GF.planSearch==null)GF.planSearch='';
     if(!GF.planShow)GF.planShow='tous';
@@ -16942,6 +17194,7 @@ document.addEventListener('DOMContentLoaded',function(){
   function renderPlanVentesNow(opts){
     opts=opts||{};
     if(typeof currentScreen!=='undefined'&&currentScreen!=='plan')return;
+    try{restorePlanView();}catch(e){}
     ensurePlanReady();
     ensureGF(); bindStatic();
     var keep=!!opts.keepScroll;
@@ -16970,6 +17223,7 @@ document.addEventListener('DOMContentLoaded',function(){
     paintKpi(rows); paintBody();
     syncPlanPanel();
     if(keep&&$('plan-scroll'))$('plan-scroll').scrollTop=scTop;
+    try{persistPlanView();}catch(e){}
   }
   window.renderPlanVentes=function(opts){
     opts=opts||{};
