@@ -515,7 +515,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-25-v2-sync-cross-device-pull-001';
+const APP_BUILD='2026-11-25-v2-sync-no-stale-push-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -4718,7 +4718,7 @@ function bindEvents(){
   safeOn('btn-base-hdr','click',function(){showScreen('more');});
   safeOn('nav-save-btn','click',function(){
     if(typeof window.v2CloudFlush==='function')window.v2CloudFlush();
-    openModal('☁ Sync cloud + secours JSON','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Cloud-first : au démarrage le cloud est chargé avant affichage. Chaque modification part vers le cloud (~1,2 s). Hors ligne = <strong>lecture seule</strong> (pas de file locale). En conflit le cloud gagne. Un seul appareil actif : l’autre doit « prendre la main » puis le cloud est rechargé (aussi au retour sur l’app). L’export JSON est le <strong>secours manuel</strong>.</p>',[
+    openModal('☁ Sync cloud + secours JSON','<p style="font-size:12px;color:var(--text2);line-height:1.5;">Cloud-first : au démarrage le cloud est chargé avant affichage. Chaque <strong>modification</strong> part vers le cloud (~1,2 s). Sans modification, « Forcer sync » <strong>recharge le cloud</strong> (ne réécrit pas le local par-dessus). Hors ligne = lecture seule. Un seul appareil actif : l’autre doit « prendre la main ». L’export JSON est le secours manuel.</p>',[
       {label:'Forcer sync cloud',cls:'btn-primary',action:function(){if(typeof window.v2CloudFlush==='function')window.v2CloudFlush(true);}},
       {label:'Exporter JSON secours',cls:'btn-secondary',action:function(){if(typeof exportBackupJSONFixed==='function')exportBackupJSONFixed();else if(typeof triggerBackupDownload==='function')triggerBackupDownload();}},
       {label:'Fermer',cls:'btn-ghost'}
@@ -6676,25 +6676,35 @@ function bindImportEvents(){
 function applyBackupData(data){
   return new Promise(function(resolve,reject){
     try{
+      // Flag cloud-apply : bloque scheduleSave pendant tout l’apply + le render
+      // (sinon Plan/settings/hotDeals rappellent autoSave et poussent un local périmé).
       localStorage.setItem('daf_v2_cloud_apply','1');
-      if(data.clients)DB.saveClients(data.clients);
-      if(data.crm)DB.saveCRM(data.crm);
-      if(data.projects)DB.saveProjects(data.projects);
-      if(data.history)DB.saveHistory(data.history);
-      if(data.possession)DB.savePossession(data.possession);
-      if(data.settings)DB.saveSettings(data.settings);
-      if(data.exclusions)DB.saveExclusions(data.exclusions);
-      if(data.accessible)DB.saveAccessible(data.accessible);
+      // Toujours remplacer les stores présents (y compris tableaux vides)
+      if(Object.prototype.hasOwnProperty.call(data,'clients'))DB.saveClients(data.clients||[]);
+      if(Object.prototype.hasOwnProperty.call(data,'crm'))DB.saveCRM(data.crm||{});
+      if(Object.prototype.hasOwnProperty.call(data,'projects'))DB.saveProjects(data.projects||[]);
+      if(Object.prototype.hasOwnProperty.call(data,'history'))DB.saveHistory(data.history||{});
+      if(Object.prototype.hasOwnProperty.call(data,'possession'))DB.savePossession(data.possession||{});
+      if(Object.prototype.hasOwnProperty.call(data,'settings'))DB.saveSettings(data.settings||{});
+      if(Object.prototype.hasOwnProperty.call(data,'exclusions'))DB.saveExclusions(data.exclusions||{});
+      if(Object.prototype.hasOwnProperty.call(data,'accessible'))DB.saveAccessible(data.accessible||{});
       _accessibleStorageMigrated=false;
       if(typeof migrateAccessibleStorage==='function')migrateAccessibleStorage();
       restoreCommerceFromBackup(data);
-      var p=data.vehicles?DB.saveVehicles(data.vehicles):Promise.resolve(true);
+      // Véhicules : toujours écrire (IDB + mémoire), même liste vide — évite de garder l’ancien parc
+      var veh=Object.prototype.hasOwnProperty.call(data,'vehicles')?(data.vehicles||[]):[];
+      var p=DB.saveVehicles(Array.isArray(veh)?veh:[]);
       p.then(function(ok){
         if(ok===false){localStorage.removeItem('daf_v2_cloud_apply');reject(new Error('Les véhicules n’ont pas pu être enregistrés (mémoire navigateur / IndexedDB). Réessayez l’import, ou videz le cache du site puis recommencez.'));return;}
-        buildIndex();autoSave();
         restoreActivityFromBackup(data);
-        localStorage.removeItem('daf_v2_cloud_apply');
+        try{buildIndex();}catch(e){}
+        try{if(typeof window.invalidatePlanCaches==='function')window.invalidatePlanCaches();}catch(e){}
+        try{DB.touch();}catch(e){}
+        try{updateSaveStatus();}catch(e){}
+        // Render AVANT de lever le flag — tout autoSave déclenché par Plan/UI reste bloqué
         try{renderScreen(currentScreen);}catch(e){}
+        try{if(typeof window.v2CloudAfterLocalApply==='function')window.v2CloudAfterLocalApply();}catch(e){}
+        localStorage.removeItem('daf_v2_cloud_apply');
         resolve(true);
       }).catch(function(err){localStorage.removeItem('daf_v2_cloud_apply');reject(err);});
     }catch(err){try{localStorage.removeItem('daf_v2_cloud_apply');}catch(e){}reject(err);}
@@ -14379,6 +14389,8 @@ document.addEventListener('DOMContentLoaded',function(){
   var _cloudRev=0;
   var _reconcileBusy=false;
   var _postTakeoverPullTimer=null;
+  var _localDirty=false; // true seulement après une vraie édition locale (pas après un pull)
+  var _suppressSaveUntil=0; // empêche un push automatique juste après un apply cloud
 
   function lsGet(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
   function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
@@ -14920,9 +14932,14 @@ document.addEventListener('DOMContentLoaded',function(){
     if(_saving){if(force)scheduleRetry();return Promise.resolve();}
     if(!configured()){setStatus('error','Config Supabase V2 manquante','Config');return Promise.resolve();}
     if(!_lockHeld && _booted){setStatus('error','Autre appareil actif — sync bloquée','Verrou');return Promise.resolve();}
+    if(lsGet(LS_APPLY)==='1')return Promise.resolve();
+    // Fenêtre anti-push parasite : seulement s’il n’y a pas d’édition locale en attente
+    if(!force && !_localDirty && _suppressSaveUntil && Date.now()<_suppressSaveUntil){
+      setSyncStatus('ok','à jour','R'+(_cloudRev||localRev())+' · à jour');
+      return Promise.resolve();
+    }
     var data;
     try{
-      if(lsGet(LS_APPLY)==='1')return Promise.resolve();
       data=getBackupData();
     }catch(e){setStatus('error','Lecture locale impossible','Erreur');return Promise.resolve();}
     _saving=true;
@@ -14936,7 +14953,6 @@ document.addEventListener('DOMContentLoaded',function(){
             throw new Error('DEVICE_LOCK');
           }
           var cloudRev=Number(meta&&meta.revision||0)||0;
-          // Ne pas afficher cloudRev comme « à jour » avant apply — _cloudRev seulement après pull/push OK
           // 4A — si le cloud a avancé sans nous, il gagne : pull, pas push
           if(cloudHasSnapshot(meta) && cloudRev>localRev()){
             setSyncStatus('behind','en retard','R'+cloudRev+' · en retard');
@@ -14953,7 +14969,19 @@ document.addEventListener('DOMContentLoaded',function(){
               return {pulled:true, refusedEmpty:true};
             });
           }
+          // Pas d’édition locale : ne PAS republier (évite d’écraser le cloud avec un cache muté par Plan/UI)
+          if(!_localDirty){
+            if(force && cloudHasSnapshot(meta)){
+              // « Forcer sync » sans modif locale = recharger le cloud (cloud gagne)
+              return pullCloudAlways(s.access_token, uid, meta).then(function(){
+                refreshUiAfterCloudPull();
+                return {pulled:true, forcedPull:true};
+              });
+            }
+            return {pulled:false, skipped:true};
+          }
           return upsertCloud(s.access_token, uid, data, null, {meta:meta}).then(function(){
+            _localDirty=false;
             return {pulled:false};
           }).catch(function(err){
             if(err&&err.code==='REV_CONFLICT'){
@@ -14977,6 +15005,9 @@ document.addEventListener('DOMContentLoaded',function(){
       }
       if(res&&res.conflict){
         try{toast('Cloud plus récent — données rechargées');}catch(e){}
+      }
+      if(res&&res.forcedPull){
+        try{toast('Cloud rechargé');}catch(e){}
       }
       setSyncStatus('ok','à jour','R'+(_cloudRev||localRev())+' · à jour');
     }).catch(function(err){
@@ -15008,9 +15039,15 @@ document.addEventListener('DOMContentLoaded',function(){
       try{toast('Hors ligne — lecture seule');}catch(e){}
       return;
     }
+    _localDirty=true;
     clearTimeout(_timer);
     setSyncStatus('syncing','Sync…','R'+localRev()+' · Sync…');
-    _timer=setTimeout(function(){doSave(false);}, DEBOUNCE_MS);
+    var delay=DEBOUNCE_MS;
+    if(_suppressSaveUntil && Date.now()<_suppressSaveUntil){
+      // Reporte le push après la fenêtre anti-parasite, sans perdre l’édition
+      delay=Math.max(delay, _suppressSaveUntil-Date.now()+80);
+    }
+    _timer=setTimeout(function(){doSave(false);}, delay);
   }
   function flush(forceToast){
     clearTimeout(_timer);
@@ -15062,13 +15099,17 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   function refreshUiAfterCloudPull(){
+    try{buildIndex();}catch(e){}
+    try{if(typeof window.invalidatePlanCaches==='function')window.invalidatePlanCaches();}catch(e){}
     try{
       if(typeof currentScreen==='undefined')return;
-      if(currentScreen==='marche'&&typeof renderMarche==='function')renderMarche();
+      if(typeof renderScreen==='function')renderScreen(currentScreen);
+      else if(currentScreen==='marche'&&typeof renderMarche==='function')renderMarche();
       else if(currentScreen==='tours'&&typeof renderTours==='function')renderTours();
       else if(currentScreen==='affaires'&&typeof renderAffaires==='function')renderAffaires();
       else if(currentScreen==='projets'&&typeof renderProjets==='function')renderProjets();
       else if(currentScreen==='immat'&&typeof renderImmat==='function')renderImmat();
+      else if(currentScreen==='plan'&&typeof window.renderPlanVentes==='function')window.renderPlanVentes();
       else if(currentScreen==='more'&&typeof renderMore==='function')renderMore();
     }catch(e){}
   }
@@ -15403,7 +15444,7 @@ document.addEventListener('DOMContentLoaded',function(){
       html+='<input id="v2-device" class="form-input" value="'+escH(deviceName())+'" style="margin-bottom:8px;">';
       html+='<button type="button" class="btn btn-secondary" id="v2-force-sync" style="width:100%;margin-bottom:6px;"'+(_readOnly?' disabled':'')+'>Forcer sync maintenant</button>';
       html+='<button type="button" class="btn btn-ghost" id="v2-logout" style="width:100%;">Se déconnecter</button>';
-      html+='<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.4;">Cloud-first : chargement cloud au démarrage · chaque clic écrit vers le cloud (debounce) · hors ligne = lecture seule · conflit = cloud gagne · au retour sur l’app / après prise de session le cloud est rechargé · export JSON = secours manuel. Un seul appareil à la fois (poll ~10 s).</div>';
+      html+='<div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.4;">Cloud-first : pull au démarrage / focus / prise de session · push seulement après une vraie modification · « Forcer sync » sans modif = rechargement cloud · hors ligne = lecture seule · un seul appareil à la fois.</div>';
     }else{
       html+='<button type="button" class="btn btn-primary" id="v2-relogin" style="width:100%;">Se connecter</button>';
     }
@@ -15442,6 +15483,12 @@ document.addEventListener('DOMContentLoaded',function(){
   window.v2CloudFlush=flush;
   window.v2CloudGetStatus=function(){return _status;};
   window.v2CloudIsReadOnly=function(){return !!_readOnly || !online();};
+  // Appelé à la fin d’applyBackupData (avant levée du flag) — coupe les pushes parasites
+  window.v2CloudAfterLocalApply=function(){
+    _localDirty=false;
+    clearTimeout(_timer);
+    _suppressSaveUntil=Date.now()+4000;
+  };
 })();
 </script>
 <script>

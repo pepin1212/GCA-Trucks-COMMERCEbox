@@ -7,6 +7,7 @@ Copie isolée de l’app (ne modifie pas V1 à la racine du repo).
 - **Verrou 1 appareil** (heartbeat cloud + prise forcée si appareil perdu)
 - **Autosave cloud** debounced (~1,2 s) vers un projet Supabase Free dédié
 - **Rechargement cloud** au focus / si révision en retard / après prise de session (+ 2ᵉ pull ~3 s)
+- **Push seulement si édition locale** (pas de republication automatique après un pull)
 - **Hors ligne** : lecture seule (pas de file locale)
 - **Anti-écrasement** : refuse de pousser une base vide si un snapshot cloud existe ; en conflit le cloud gagne (CAS révision)
 - **SYNC** : révision + « à jour » / « en retard » (n° affiché seulement après apply)
