@@ -65,10 +65,11 @@ V2 enregistre un **deviceId** local + un **heartbeat** cloud (~10 s) sur `v2_sto
 | Moment | Comportement |
 |--------|----------------|
 | **Démarrage** | Auth → verrou appareil → **pull cloud** → puis affichage. Jamais d’affichage sur une base locale seule si le cloud est joignable. |
-| **Écriture** | Chaque clic → debounce ~1,2 s → upsert cloud. Révision incrémentée. Indicateur `R… · à jour`. |
+| **Écriture** | Chaque **modification** → debounce ~1,2 s → upsert cloud. Sans modification, aucun push automatique (évite d’écraser le cloud avec un cache local). |
+| **Forcer sync** | Sans modif locale en attente : **recharge le cloud**. Avec modifs : envoie puis aligne. |
 | **Conflit** | Si le cloud a une révision plus haute : **pull** (cloud gagne), pas de push local. Écriture refusée si la révision a changé pendant l’envoi (CAS). |
 | **Base vide** | Si le local est vide et le cloud a un snapshot : **refus d’écraser** + rechargement cloud. |
-| **Retour app / focus** | Si le cloud a avancé : **rechargement automatique** du payload (pas seulement le n° SYNC). |
+| **Retour app / focus** | Si le cloud a avancé : **rechargement automatique** du payload + invalidation caches écran (Plan inclus). |
 | **Prise de session** | Pull cloud immédiat + 2ᵉ pull ~3 s (flush de l’ancien appareil). |
 | **Hors ligne** | Lecture seule. Au retour réseau : reclaim verrou + **rechargement cloud** (pas de file locale). |
 | **Secours** | Nav Sync → **Exporter JSON** (manuel). |
@@ -92,7 +93,7 @@ V2 enregistre un **deviceId** local + un **heartbeat** cloud (~10 s) sur `v2_sto
 | Projet Free en pause (7 j) | Dashboard Supabase → Restore / unpause |
 | « Hors ligne — lecture seule » | Normal sans réseau ; reconnectez-vous pour modifier. Le cloud n’est pas touché. |
 | `R… · en retard` / cloud préservé | Le cloud a gagné ou une base vide a été refusée — l’app recharge le cloud |
-| Même n° SYNC sur 2 appareils mais données différentes | Un seul appareil actif. Sur le 2ᵉ : « Utiliser cet appareil à la place », attendre le rechargement cloud (et le 2ᵉ pull ~3 s). Forcer la mise à jour app si besoin. |
+| Même n° SYNC / SYNC OK mais données différentes | 1) Plus → **Forcer la mise à jour** (build récent). 2) Un seul appareil : sur le 2ᵉ taper « Utiliser cet appareil à la place », attendre ~3 s. 3) Nav Sync → **Forcer sync cloud** (= recharge cloud, ne réécrit pas par-dessus). 4) Vérifier le même écran (ex. Plan) sur les deux après prise de session. |
 | Base locale vide qui écrasait le cloud | Corrigé (3A) : push vide refusé si snapshot cloud présent |
 | « véhicules non enregistrés » / import échoué | Bug corrigé (IndexedDB avant import). Forcer la mise à jour V2 (Plus → Forcer la mise à jour, ou Safari → recharger `/v2/?v=…`). Puis réimporter le JSON. Si ça continue : Safari pas en navigation privée, libérer de l’espace iPhone. |
 
