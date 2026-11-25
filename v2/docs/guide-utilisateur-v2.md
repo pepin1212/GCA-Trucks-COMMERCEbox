@@ -66,6 +66,7 @@ V2 enregistre un **deviceId** local + un **heartbeat** cloud (~10 s) sur `v2_sto
 |--------|----------------|
 | **Démarrage** | Auth → verrou appareil → **pull cloud** → puis affichage. Jamais d’affichage sur une base locale seule si le cloud est joignable. |
 | **Écriture** | Chaque **modification** → debounce ~1,2 s → upsert cloud. Sans modification, aucun push automatique (évite d’écraser le cloud avec un cache local). |
+| **Vues (filtres / tris)** | Plan, IMMAT, Marché, Tournées (+ Affaires / Projets) : filtres, tris et filtres colonnes **suivent le cloud** avec la session. Position de scroll et menus ouverts restent locaux. |
 | **Forcer sync** | Sans modif locale en attente : **recharge le cloud**. Avec modifs : envoie puis aligne. |
 | **Conflit** | Si le cloud a une révision plus haute : **pull** (cloud gagne), pas de push local. Écriture refusée si la révision a changé pendant l’envoi (CAS). |
 | **Base vide** | Si le local est vide et le cloud a un snapshot : **refus d’écraser** + rechargement cloud. |
