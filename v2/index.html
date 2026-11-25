@@ -124,9 +124,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .plan-zero{color:var(--text3);font-weight:600;}
 .plan-num{cursor:pointer;}
 .plan-num:active{background:var(--daf-bg);}
-/* Encore un cran plus clair que les voisines (SCORE / TRACT. 4-6 / PORT. 5-7 / TOTAL 10 ANS) ; typo = SCORE */
+/* Encore un cran plus clair que les voisines (SCORE / TRACT. 4-6 / PORT. 5-7) ; typo = SCORE */
 .plan-table td.plan-col-soft{background:#1c222c;font-size:12px;font-weight:800;}
 .plan-table thead th.plan-col-soft{background:#2a313c;}
+/* TOTAL 10 ANS : fond blanc lisible sur thème sombre ; typo un cran au-dessus de SCORE (12px) */
+.plan-table td.plan-col-tot{background:#f4f6fa;font-size:13px;font-weight:800;color:#1a1e24;}
+.plan-table td.plan-col-tot.plan-daf{color:#b87000;}
+.plan-table td.plan-col-tot.plan-hors{color:#2a3040;}
+.plan-table td.plan-col-tot.plan-zero{color:#606880;}
+.plan-table thead th.plan-col-tot{background:#ffffff;color:#1a1e24;}
 .plan-obj{width:42px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--green);font-weight:800;font-size:11px;text-align:center;padding:4px 2px;}
 .plan-act{min-width:34px;height:28px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);font-weight:800;font-size:12px;cursor:pointer;padding:0 4px;}
 .plan-act.x{color:var(--daf);border-color:var(--daf-border);background:var(--daf-bg);}
@@ -138,8 +144,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .plan-cp-p{color:var(--blue);}
 .plan-included td{background:rgba(232,160,32,.04);}
 .plan-included td.plan-col-soft{background:rgba(232,160,32,.09);}
+.plan-included td.plan-col-tot{background:#fff8e8;}
 .plan-aside-row td{background:var(--red-bg);}
 .plan-aside-row td.plan-col-soft{background:rgba(224,80,80,.18);}
+.plan-aside-row td.plan-col-tot{background:#fff0f0;}
 .badge.b-pv{background:rgba(232,160,32,.22);color:var(--daf);border:1px solid rgba(232,160,32,.55);font-weight:800;}
 .c-info{flex:1;min-width:0}
 .c-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -507,7 +515,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-25-v2-plan-agg-click-001';
+const APP_BUILD='2026-11-25-v2-plan-total-10ans-white-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -15963,9 +15971,11 @@ document.addEventListener('DOMContentLoaded',function(){
   function numTd(pair, kind, meta){
     var n=pair?(pair[kind]||0):0;
     var soft=meta&&meta.soft?' plan-col-soft':'';
-    var label=meta&&meta.soft?'<strong>'+n+'</strong>':String(n);
-    if(!n)return '<td class="plan-zero'+soft+'">'+label+'</td>';
-    var cls=(kind==='d'?'plan-daf':'plan-hors')+soft;
+    var tot=meta&&meta.tot?' plan-col-tot':'';
+    var extra=tot||soft;
+    var label=meta&&(meta.soft||meta.tot)?'<strong>'+n+'</strong>':String(n);
+    if(!n)return '<td class="plan-zero'+extra+'">'+label+'</td>';
+    var cls=(kind==='d'?'plan-daf':'plan-hors')+extra;
     if(meta&&meta.clickable){
       return '<td class="plan-num '+cls+'" data-key="'+attr(meta.key||'')+'" data-year="'+attr(meta.year||'')+'" data-scope="'+attr(meta.scope||'')+'" data-kind="'+kind+'" title="Voir les immatriculations">'+label+'</td>';
     }
@@ -16136,14 +16146,14 @@ document.addEventListener('DOMContentLoaded',function(){
     }
     html+='<th colspan="2" class="plan-col-soft" title="Tracteurs immat. N-6 → N-4">'+colBtn('tr','TRACT. 4-6')+'</th>';
     html+='<th colspan="2" class="plan-col-soft" title="Porteurs immat. N-7 → N-5">'+colBtn('po','PORT. 5-7')+'</th>';
-    html+='<th colspan="2" class="plan-col-soft" title="Total immat. N-10 → N-1">'+colBtn('tot','TOTAL 10 ANS')+'</th>';
+    html+='<th colspan="2" class="plan-col-tot" title="Total immat. N-10 → N-1">'+colBtn('tot','TOTAL 10 ANS')+'</th>';
     sub.push(['tr','d'],['tr','h'],['po','d'],['po','h'],['tot','d'],['tot','h']);
     html+='<th rowspan="2">'+colBtn('objectif','OBJECTIF')+'</th>';
     acts.forEach(function(a){html+='<th rowspan="2" title="'+attr(a.label)+'">'+colBtn('act_'+a.id, escH(a.label))+'</th>';});
     html+='<th rowspan="2">'+colBtn('canton','CANTON')+'</th><th rowspan="2">'+colBtn('ville','VILLE')+'</th></tr><tr>';
     sub.forEach(function(p){
-      var soft=(p[0]==='tr'||p[0]==='po'||p[0]==='tot')?' class="plan-col-soft"':'';
-      html+='<th'+soft+'>'+colBtn(p[0]+p[1], p[1]==='d'?'DAF':'HORS')+'</th>';
+      var softCls=p[0]==='tot'?' class="plan-col-tot"':((p[0]==='tr'||p[0]==='po')?' class="plan-col-soft"':'');
+      html+='<th'+softCls+'>'+colBtn(p[0]+p[1], p[1]==='d'?'DAF':'HORS')+'</th>';
     });
     html+='</tr>';
     return html;
@@ -16209,7 +16219,7 @@ document.addEventListener('DOMContentLoaded',function(){
     });
     html+=numTd(r.tr,'d',{soft:true,clickable:true,key:r.key,scope:'tr'})+numTd(r.tr,'h',{soft:true,clickable:true,key:r.key,scope:'tr'});
     html+=numTd(r.po,'d',{soft:true,clickable:true,key:r.key,scope:'po'})+numTd(r.po,'h',{soft:true,clickable:true,key:r.key,scope:'po'});
-    html+=numTd(r.tot,'d',{soft:true,clickable:true,key:r.key,scope:'tot'})+numTd(r.tot,'h',{soft:true,clickable:true,key:r.key,scope:'tot'});
+    html+=numTd(r.tot,'d',{tot:true,clickable:true,key:r.key,scope:'tot'})+numTd(r.tot,'h',{tot:true,clickable:true,key:r.key,scope:'tot'});
     html+='<td><input class="plan-obj" type="number" min="0" step="1" data-key="'+attr(r.key)+'" value="'+(r.objectif||0)+'"></td>';
     acts.forEach(function(a){
       var st=r.actions[a.id]||'';
