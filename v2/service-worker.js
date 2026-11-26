@@ -1,6 +1,6 @@
 // COMMERCEbox V2 — Service Worker (cache shell distinct de V1)
 // Incrémenter CACHE à chaque release V2.
-const CACHE = 'daf-commercebox-v2-commissions-grouped-headers-2026-11-26-001';
+const CACHE = 'daf-commercebox-v2-commissions-hide-zeros-2026-11-26-001';
 
 function bustUrl(url) {
   if (!url || url.indexOf('http') !== 0) return url;

@@ -515,7 +515,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-26-v2-commissions-grouped-headers-001';
+const APP_BUILD='2026-11-26-v2-commissions-hide-zeros-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -12386,6 +12386,7 @@ document.addEventListener('DOMContentLoaded',function(){
     var names=['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
     return names[parseInt(p[1],10)]||p[1];
   }
+  function commBlankZero(n){var v=Number(n)||0; return v?String(v):'';}
   function clientAggKey(d){return String((d&&d.siteKey)||(d&&d.tva)||(d&&d.client)||'sans-client');}
   function clientAggName(d){var n=String((d&&d.client)||'').trim(); return n||'Client';}
   function yearAggRows(rows){
@@ -12476,10 +12477,10 @@ document.addEventListener('DOMContentLoaded',function(){
       var expanded=!!expandedMap[yStr];
       html+='<tr class="comm-year-row" data-year="'+esc(row.y)+'" style="cursor:pointer;border-top:1px solid var(--border);'+(active?'background:var(--daf-bg);outline:1px solid var(--daf);':'')+'">'
         +'<td style="padding:8px;font-weight:800;color:'+(active?'var(--daf)':'var(--text)')+';">'+(expanded?'▼':'▶')+' '+esc(row.y)+(active?' ✓':'')+'</td>'
-        +'<td style="padding:8px;text-align:right;font-weight:800;">'+row.cmdVO+'</td>'
-        +'<td style="padding:8px;text-align:right;font-weight:800;">'+row.cmdVN+'</td>'
-        +'<td style="padding:8px;text-align:right;font-weight:800;">'+row.livVO+'</td>'
-        +'<td style="padding:8px;text-align:right;font-weight:800;">'+row.livVN+'</td>'
+        +'<td style="padding:8px;text-align:right;font-weight:800;">'+commBlankZero(row.cmdVO)+'</td>'
+        +'<td style="padding:8px;text-align:right;font-weight:800;">'+commBlankZero(row.cmdVN)+'</td>'
+        +'<td style="padding:8px;text-align:right;font-weight:800;">'+commBlankZero(row.livVO)+'</td>'
+        +'<td style="padding:8px;text-align:right;font-weight:800;">'+commBlankZero(row.livVN)+'</td>'
         +'</tr>';
       if(expanded){
         var months=monthAggRowsForYear(rows, row.y);
@@ -12491,10 +12492,10 @@ document.addEventListener('DOMContentLoaded',function(){
             var mOpen=!!monthExpandedMap[mStr];
             html+='<tr class="comm-month-row" data-year="'+esc(row.y)+'" data-month="'+esc(mrow.m)+'" style="cursor:pointer;border-top:1px solid var(--border);background:var(--bg3);">'
               +'<td style="padding:6px 8px 6px 28px;font-weight:600;color:var(--text2);">'+(mOpen?'▼':'▶')+' '+esc(labelMonthOnly(mrow.m))+'</td>'
-              +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--text2);">'+mrow.cmdVO+'</td>'
-              +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--text2);">'+mrow.cmdVN+'</td>'
-              +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--text2);">'+mrow.livVO+'</td>'
-              +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--text2);">'+mrow.livVN+'</td>'
+              +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--text2);">'+commBlankZero(mrow.cmdVO)+'</td>'
+              +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--text2);">'+commBlankZero(mrow.cmdVN)+'</td>'
+              +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--text2);">'+commBlankZero(mrow.livVO)+'</td>'
+              +'<td style="padding:6px 8px;text-align:right;font-weight:700;color:var(--text2);">'+commBlankZero(mrow.livVN)+'</td>'
               +'</tr>';
             if(mOpen){
               var clients=clientAggRowsForMonth(rows, mrow.m);
@@ -12504,10 +12505,10 @@ document.addEventListener('DOMContentLoaded',function(){
                 clients.forEach(function(crow){
                   html+='<tr class="comm-client-row" data-month="'+esc(mrow.m)+'" data-sk="'+esc(crow.siteKey)+'" data-tva="'+esc(crow.tva)+'" style="border-top:1px solid var(--border);background:var(--bg2);">'
                     +'<td style="padding:5px 8px 5px 44px;font-weight:600;color:var(--text);">'+esc(crow.name)+'</td>'
-                    +'<td style="padding:5px 8px;text-align:right;font-weight:700;">'+crow.cmdVO+'</td>'
-                    +'<td style="padding:5px 8px;text-align:right;font-weight:700;">'+crow.cmdVN+'</td>'
-                    +'<td style="padding:5px 8px;text-align:right;font-weight:700;">'+crow.livVO+'</td>'
-                    +'<td style="padding:5px 8px;text-align:right;font-weight:700;">'+crow.livVN+'</td>'
+                    +'<td style="padding:5px 8px;text-align:right;font-weight:700;">'+commBlankZero(crow.cmdVO)+'</td>'
+                    +'<td style="padding:5px 8px;text-align:right;font-weight:700;">'+commBlankZero(crow.cmdVN)+'</td>'
+                    +'<td style="padding:5px 8px;text-align:right;font-weight:700;">'+commBlankZero(crow.livVO)+'</td>'
+                    +'<td style="padding:5px 8px;text-align:right;font-weight:700;">'+commBlankZero(crow.livVN)+'</td>'
                     +'</tr>';
                 });
               }
