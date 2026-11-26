@@ -515,7 +515,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-26-v2-commissions-month-clients-001';
+const APP_BUILD='2026-11-26-v2-commissions-grouped-headers-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -12456,12 +12456,17 @@ document.addEventListener('DOMContentLoaded',function(){
     html+='<div class="card" id="comm-year-summary" style="margin:8px 12px 10px;"><div class="card-title" id="comm-year-toggle" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;"><span>'+(hidden?'▶':'▼')+' Récapitulatif par année</span>'+(filterLabel?'<span style="font-size:9px;color:var(--daf);font-weight:800;letter-spacing:.3px;">'+esc(filterLabel)+'</span>':'')+'</div>';
     if(hidden)return html+'</div>';
     if(!years.length){html+='<div style="font-size:11px;color:var(--text3);">Aucune année détectée.</div>'; return html+'</div>';}
-    html+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="color:var(--text3);text-align:left;">'
-      +'<th style="padding:6px 8px;border-bottom:1px solid var(--border);">ANNÉE</th>'
-      +'<th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;">NB COMMANDES VO</th>'
-      +'<th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;">NB COMMANDES VN</th>'
-      +'<th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;">NB LIVRAISONS VO</th>'
-      +'<th style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;">NB LIVRAISONS VN</th>'
+    html+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;"><thead>'
+      +'<tr style="color:var(--text3);text-align:left;">'
+      +'<th rowspan="2" style="padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:bottom;">ANNÉE</th>'
+      +'<th colspan="2" style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center;">NB COMMANDES</th>'
+      +'<th colspan="2" style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center;">NB LIVRAISONS</th>'
+      +'</tr>'
+      +'<tr style="color:var(--text3);text-align:left;">'
+      +'<th style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;">VO</th>'
+      +'<th style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;">VN</th>'
+      +'<th style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;">VO</th>'
+      +'<th style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;">VN</th>'
       +'</tr></thead><tbody>';
     var expandedMap=getCommYearExpanded();
     var monthExpandedMap=getCommMonthExpanded();
