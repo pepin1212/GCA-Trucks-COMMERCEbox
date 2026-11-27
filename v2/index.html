@@ -353,6 +353,7 @@ input[type=file]{display:none}
     </select>
     <div style="display:flex;gap:5px;margin-left:auto;flex-wrap:wrap;">
       <button class="btn btn-sm" id="btn-mask-plan-pv" title="ON = inclus au Plan de ventes · OFF = hors Plan · neutre = tous">Plan</button>
+      <button class="btn btn-sm" id="btn-create-client-tours" style="background:var(--daf);color:#fff;font-weight:800;border:1px solid rgba(0,0,0,.12);">Créer client</button>
       <button class="btn btn-sm" id="btn-create-group-tours" style="background:#ffe600;color:#111;font-weight:800;border:1px solid rgba(255,230,0,.6);">+ Créer groupe</button>
       <button class="btn btn-secondary btn-sm" id="btn-expand">Ouvrir</button>
       <button class="btn btn-secondary btn-sm" id="btn-collapse">Fermer</button>
@@ -515,7 +516,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-26-v2-commissions-hide-zeros-001';
+const APP_BUILD='2026-11-27-v2-client-create-siret-001';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -558,6 +559,33 @@ function normSiret(s){
   return str;
 }
 function siretSiren(s){var n=normSiret(s);return n.length>=9?n.slice(0,9):'';}
+// TVA intracommunautaire FR à partir du SIREN (clé = (12 + 3×(SIREN mod 97)) mod 97)
+function tvaFromSiret(siret){
+  var siren=siretSiren(siret);
+  if(!siren||!/^\d{9}$/.test(siren))return '';
+  var n=parseInt(siren,10);
+  if(!isFinite(n))return '';
+  var key=(12+3*(n%97))%97;
+  return 'FR'+String(key).padStart(2,'0')+siren;
+}
+function findClientBySiret(siret){
+  var ns=normSiret(siret);
+  if(!ns)return null;
+  try{if(IDX&&IDX.cBySiret&&IDX.cBySiret[ns])return IDX.cBySiret[ns];}catch(e){}
+  var clients=DB.getClients()||[];
+  for(var i=0;i<clients.length;i++){
+    if(normSiret(clients[i].siret)===ns)return clients[i];
+  }
+  return null;
+}
+function findOrphanImmatBySiret(siret){
+  var ns=normSiret(siret);
+  if(!ns)return [];
+  return (DB.getVehicles()||[]).filter(function(v){
+    if(normSiret(v.siret)!==ns)return false;
+    try{return typeof vehicleHasClientFile==='function'?!vehicleHasClientFile(v):true;}catch(e){return true;}
+  });
+}
 function normClientName(s){return norm(String(s||'').replace(/\s+/g,' '));}
 function normTva(t){
   var s=String(t||'').trim().toUpperCase().replace(/[\s\.\-]/g,'');
@@ -4918,6 +4946,7 @@ function bindEvents(){
     data.forEach(function(c){toursExp['c_'+(c.canton||'Sans canton')]=true;toursExp['v_'+(c.canton||'Sans canton')+'_'+(c.ville||'Sans ville')]=true;});
     renderTours();
   });
+  safeOn('btn-create-client-tours','click',function(){openCreateClientFiche();});
   safeOn('btn-create-group-tours','click',createManualGroup);
   safeOn('btn-collapse','click',function(){toursExp={};renderTours();});
   safeOn('btn-tours-reset','click',function(){
@@ -6712,9 +6741,10 @@ function _ficheFormHtml(c, creating){
   function inp(id,label,val,extra){return '<div class="form-group"><label class="form-label">'+label+'</label><input class="form-input" id="'+id+'" value="'+escH(val||'')+'"'+(extra||'')+'></div>';}
   var html='';
   if(creating){
+    html+='<div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.45;">Minimum : <strong>Nom</strong> + <strong>SIRET</strong>. La TVA est calculée depuis le SIRET si elle est vide.</div>';
     html+=inp('fc-nom','Nom *',c.nom);
-    html+=inp('fc-tva','TVA *',c.tva);
-    html+=inp('fc-siret','SIRET',c.siret);
+    html+=inp('fc-siret','SIRET *',c.siret,' inputmode="numeric" autocomplete="off"');
+    html+=inp('fc-tva','TVA (auto si vide)',c.tva,' autocomplete="off"');
   }else{
     html+='<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">TVA '+escH(c.tva||'—')+' · SIRET '+escH(c.siret||'—')+'</div>';
     html+=inp('fc-nom','Nom *',c.nom);
@@ -6752,28 +6782,50 @@ function openEditClientFiche(sk){
     }}
   ]);
 }
-function openCreateClientFiche(){
-  openModal('Nouveau client',_ficheFormHtml({},true),[
-    {label:'Annuler',cls:'btn-ghost'},
+function openCreateClientFiche(prefill, opts){
+  prefill=prefill||{};
+  opts=opts||{};
+  openModal('Nouveau client',_ficheFormHtml(prefill,true),[
+    {label:'Annuler',cls:'btn-ghost',action:function(){if(typeof opts.onCancel==='function')opts.onCancel();}},
     {label:'Créer',cls:'btn-primary',close:false,action:function(){
       var f=_readFicheForm();
       if(!f.nom){toast('Le nom est obligatoire');return;}
-      if(!f.tva){toast('La TVA est obligatoire');return;}
-      var key=f.siret?(f.tva+'|'+f.siret):(f.tva+'|MANUEL|'+Date.now());
+      if(!f.siret||!/^\d{14}$/.test(f.siret)){toast('Le SIRET est obligatoire (14 chiffres)');return;}
+      var existing=typeof findClientBySiret==='function'?findClientBySiret(f.siret):null;
+      if(existing){
+        toast('⚠ Ce SIRET est déjà sur la fiche client « '+(existing.nom||existing.tva||'sans nom')+' »');
+        return;
+      }
+      var orphans=typeof findOrphanImmatBySiret==='function'?findOrphanImmatBySiret(f.siret):[];
+      if(orphans.length){
+        var ex=orphans[0]&&orphans[0].plaque?(' (ex. '+orphans[0].plaque+')'):'';
+        var ok=window.confirm('⚠ Ce SIRET figure déjà sur '+orphans.length+' immatriculation'+(orphans.length>1?'s':'')+' sans fiche client'+ex+'.\n\nCréer la fiche les rattachera. Continuer ?');
+        if(!ok)return;
+      }
+      var tva=normTva(f.tva)||tvaFromSiret(f.siret);
+      if(!tva){toast('TVA introuvable — saisissez la TVA ou un SIRET valide');return;}
+      f.tva=tva;
+      var tvaEl=$('fc-tva');if(tvaEl&&!String(tvaEl.value||'').trim())tvaEl.value=tva;
+      var key=f.tva+'|'+f.siret;
       var clients=DB.getClients()||[];
       for(var i=0;i<clients.length;i++){
         var ck=clients[i].manualKey||clients[i].ficheMatchKey||makeSiteKey(clients[i]);
-        if(ck===key||(f.siret&&normSiret(clients[i].siret)===f.siret&&String(clients[i].tva||'').trim()===f.tva)){toast('Ce client existe déjà');return;}
+        if(ck===key||(normSiret(clients[i].siret)===f.siret)){toast('Ce client existe déjà');return;}
       }
-      var c={tva:f.tva,siret:f.siret||'',siren:'',key:key,manualKey:key,ficheMatchKey:key,manuel:true,nom:f.nom,adresse:f.adresse,ville:f.ville,canton:f.canton,dept:f.dept,pays:f.pays,vendeur:f.vendeur,tel:f.tel,profil:'',groupement:'',accessible:'',exclu:'',etatProspection:''};
+      var c={tva:f.tva,siret:f.siret,siren:siretSiren(f.siret),key:key,manualKey:key,ficheMatchKey:key,manuel:true,nom:f.nom,adresse:f.adresse,ville:f.ville,canton:f.canton,dept:f.dept,pays:f.pays,vendeur:f.vendeur,tel:f.tel,profil:'',groupement:'',accessible:'',exclu:'',etatProspection:''};
       _persistClientFiche(c, key);
       closeModal();
-      toast('Client créé');
-      if(typeof showScreen==='function')showScreen('marche');
+      toast(orphans.length?('Client créé · '+orphans.length+' immat. rattachée'+(orphans.length>1?'s':'')):'Client créé');
+      if(typeof opts.onCreated==='function'){
+        opts.onCreated(c, key);
+        return;
+      }
+      if(!opts.skipNavigate&&typeof showScreen==='function')showScreen('marche');
       openSiteSheet(key);
     }}
   ]);
 }
+window.openCreateClientFiche=openCreateClientFiche;
 function _mergeManualClientFields(newClients, oldClients){
   var byKey={};
   (oldClients||[]).forEach(function(c){
@@ -6952,7 +7004,7 @@ function exportBackupJSONDirect(){
 
 function renderMore(){
   const xlsxOk=typeof XLSX!=='undefined';var html='';html+=renderXlsxStatus(xlsxOk);html+=renderImportCard(xlsxOk);html+=renderOriginExcelCard();html+=renderBasesCard();
-  html+=`<div class="card"><div class="card-title">Nouveau client</div><button class="btn btn-primary" id="btn-new-client" style="width:100%;">Créer un client</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Le client et les fiches modifiées (adresse, ville, téléphone…) sont inclus dans le JSON et le coffre. Un import CRM ne les efface pas.</div></div>`;
+  html+=`<div class="card"><div class="card-title">Nouveau client</div><button class="btn btn-primary" id="btn-new-client" style="width:100%;">Créer un client</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Minimum <strong>Nom + SIRET</strong> (TVA auto). Alerte si le SIRET existe déjà sur une fiche ou sur une immat. sans client. Même flux depuis Affaires et Tournées. Inclus dans le JSON et le coffre.</div></div>`;
   html+=`<div class="card"><div class="card-title">💾 Secours JSON</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Le cloud V2 enregistre tout seul. Ce JSON est un <strong>secours</strong> (clients, fiches, immatriculations, possession, projets, affaires, commissions, archives, groupes, contacts, exclusions, Plan de ventes, journal Activité). Charger un JSON remplace la base locale puis re-sync cloud.</div></div>`;
   html+=`<div class="card"><div class="card-title">🔍 Qualité</div><button class="btn btn-secondary" id="btn-open-qualite" style="width:100%;">Ouvrir Qualité complète</button></div>`;
   html+=`<div class="card"><div class="card-title">📖 Mode d'emploi</div><button class="btn btn-secondary" id="btn-mode-emploi" style="width:100%;">Ouvrir le mode d'emploi complet</button></div>`;
@@ -9114,11 +9166,11 @@ document.addEventListener('DOMContentLoaded',function(){
     html+=sec('3. Coffre','<p>Le coffre transporte une copie entre iPhone, iPad et Mac. Chaque envoi remplace la copie déjà là : une seule reste. La fenêtre d’envoi montre deux lignes en gris : <strong>Nouvelle copie enregistrée</strong>, puis <strong>Ancienne copie effacée</strong>. Chacune passe en blanc gras avec une coche verte quand elle est finie. <strong>Fermer</strong> apparaît ensuite. Rien ne remplace un appareil sans confirmation, avec la date, le nom de l’appareil, le nombre de clients et le nombre de véhicules. Un envoi sans client est refusé. Une base beaucoup plus petite demande une seconde confirmation. Si deux appareils ont changé chacun de leur côté, vous choisissez avant que le coffre soit remplacé.</p><p>Le coffre a besoin d’une connexion et d’un compte. S’il est injoignable, le JSON reste le moyen de récupérer la base.</p>');
     html+=sec('4. Marché','<p>Recherche client, ville, TVA ou immatriculation. Périmètre : site seul ou tout le groupe. Filtres EXCLUS, ACCESSIBLES, INACTIFS, en trois états : neutre, OFF (retire), ON (ne garde que). <strong>Sites sec.</strong> est neutre à l’ouverture : les sites secondaires restent visibles. Profils commerciaux, type tracteur ou porteur, cantons et villes. Un clic sur un chiffre du tableau ouvre la liste, avec export Excel. Cet export contient la colonne <strong>Possession</strong>, OUI ou NON.</p>');
     html+=sec('5. IMMAT','<p>Une ligne par site, avec les volumes par année et le score. La recherche, les filtres de page, les tris et les filtres de colonnes sont enregistrés avec le JSON et le coffre. Le défilement n’est pas enregistré.</p><p>Le filtre <strong>PROJET</strong> en OFF retire les projets de l’année en cours, les projets <strong>FUTUR</strong> quelle que soit leur date, et les pas de projet de l’année en cours. En ON, il ne garde que ces fiches.</p><p>La colonne visite distingue A visiter, Visité et Ne pas visiter. Le bouton <strong>P</strong> propose Projet, Pas de projet et Simple visite.</p><p>L’export Excel d’une case contient la colonne Possession.</p>');
-    html+=sec('6. Tournées','<p>Mêmes masques en trois états : EXCLUS, ACCESSIBLES, INACTIFS, Projets, Sites sec., Sans fiche. Le filtre Projets suit la même règle que sur IMMAT. Types : tous, tracteurs, porteurs. Profils commerciaux à la place des anciens boutons Flotte. Le bouton <strong>P</strong> ouvre Projet, Pas de projet ou Simple visite. + Créer groupe, Ouvrir et Fermer agissent sur la liste.</p>');
+    html+=sec('6. Tournées','<p>Mêmes masques en trois états : EXCLUS, ACCESSIBLES, INACTIFS, Projets, Sites sec., Sans fiche. Le filtre Projets suit la même règle que sur IMMAT. Types : tous, tracteurs, porteurs. Profils commerciaux à la place des anciens boutons Flotte. Le bouton <strong>P</strong> ouvre Projet, Pas de projet ou Simple visite. <strong>Créer client</strong> ouvre le même formulaire Nom + SIRET que Plus. + Créer groupe, Ouvrir et Fermer agissent sur la liste.</p>');
     html+=sec('7. Fiche client','<p><strong>Modifier la fiche</strong> change le nom, l’adresse, la ville, le canton, le département, le pays, le vendeur et le téléphone de ce site. La TVA et le SIRET d’une fiche déjà créée restent fixes. Un client créé dans l’application et ces modifications sont dans le JSON et le coffre. Un import CRM les réapplique.</p><p><strong>Projet détecté</strong> ouvre une affaire. <strong>Pas de projet</strong> concerne l’année en cours. <strong>Simple visite</strong> enregistre la date du jour et un commentaire. Elle ne crée ni projet, ni affaire, ni commission, et ne retire pas le client des tournées.</p><p>L’historique affiche ces trois événements, du plus récent au plus ancien, avec Supprimer après confirmation. Supprimer un projet retire aussi l’affaire et les commissions liées. Supprimer Pas de projet retire le masquage de l’année. Supprimer une simple visite ne retire que la ligne.</p><p>Possession OUI ou NON se règle sur chaque véhicule du parc. NON le sort des opportunités de renouvellement. Le véhicule reste exportable, avec Possession = NON.</p>');
-    html+=sec('8. Affaires et Commissions','<p>Affaires regroupe les projets et les affaires chaudes. Le bouton Créer un projet client ouvre le même formulaire que sur la fiche.</p><p>Commissions regroupe les livraisons. Le tableau de suivi, replié au départ, compte les camions en commande et en livraison, mois par mois. Un clic sur le client ouvre la fiche. Un clic sur le nombre de commandes ouvre l’affaire. Un clic sur le nombre de livraisons filtre les commissions de ce client pour ce mois.</p>');
+    html+=sec('8. Affaires et Commissions','<p>Affaires regroupe les projets et les affaires chaudes. Le bouton Créer un projet client ouvre la recherche client ; si le client est inconnu, <strong>Nouveau client</strong> en bas ouvre le flux Nom + SIRET, puis revient au projet.</p><p>Commissions regroupe les livraisons. Le tableau de suivi, replié au départ, compte les camions en commande et en livraison, mois par mois. Un clic sur le client ouvre la fiche. Un clic sur le nombre de commandes ouvre l’affaire. Un clic sur le nombre de livraisons filtre les commissions de ce client pour ce mois.</p>');
     html+=sec('9. Activité','<p>Le journal liste les actions de cet appareil. Chaque ligne a <strong>Fiche client</strong> et <strong>Supprimer</strong>. Le filtre <strong>Projet / Pas de projet / Visite</strong> garde aussi le résultat d’un projet. La création d’un projet laisse une ligne. Le passage de EN COURS à GAGNÉ, ou vers un autre résultat, laisse une deuxième ligne.</p><p>Le journal part dans le JSON et dans le coffre. Un appareil neuf le retrouve avec le reste de la base.</p>');
-    html+=sec('10. Plus','<p><strong>BASE CRM</strong> charge les clients. <strong>Nouvelles immatriculations</strong> ajoute une plaque qui n’est pas encore dans le parc. Si la plaque existe déjà, la fenêtre montre le véhicule déjà enregistré avant la validation. Cette plaque n’est pas ajoutée une seconde fois. Rattachement : SIRET exact, sinon SIREN, sinon TVA (fiche unique ou multi-sites via nom/ville/site principal). Aucune nouvelle fiche créée automatiquement. <strong>Remplacer tout le parc</strong> est à part et demande confirmation.</p><p><strong>Mémoriser les fichiers d’origine</strong> se fait une fois. Cela ne change pas les fiches ni le parc. <strong>Exporter les deux Excel</strong> reprend les colonnes de ces fichiers. Une cellule modifiée est en rouge. Une fiche créée ou une immatriculation ajoutée est en rouge sur toute la ligne. Les fichiers d’origine ne sont pas réécrits. Projets, affaires, commissions et journal restent dans le JSON et le coffre.</p><p><strong>Créer un client</strong> ajoute une fiche. <strong>Qualité</strong> signale les écarts de TVA, de SIRET et de rattachement. <strong>Forcer la mise à jour</strong> recharge la version de l’application. <strong>Tout effacer</strong> vide la base de cet appareil après confirmation. La copie déjà envoyée au coffre reste en ligne.</p>');
+    html+=sec('10. Plus','<p><strong>BASE CRM</strong> charge les clients. <strong>Nouvelles immatriculations</strong> ajoute une plaque qui n’est pas encore dans le parc. Si la plaque existe déjà, la fenêtre montre le véhicule déjà enregistré avant la validation. Cette plaque n’est pas ajoutée une seconde fois. Rattachement : SIRET exact, sinon SIREN, sinon TVA (fiche unique ou multi-sites via nom/ville/site principal). Aucune nouvelle fiche créée automatiquement. <strong>Remplacer tout le parc</strong> est à part et demande confirmation.</p><p><strong>Mémoriser les fichiers d’origine</strong> se fait une fois. Cela ne change pas les fiches ni le parc. <strong>Exporter les deux Excel</strong> reprend les colonnes de ces fichiers. Une cellule modifiée est en rouge. Une fiche créée ou une immatriculation ajoutée est en rouge sur toute la ligne. Les fichiers d’origine ne sont pas réécrits. Projets, affaires, commissions et journal restent dans le JSON et le coffre.</p><p><strong>Créer un client</strong> exige Nom + SIRET (TVA auto si vide). Alerte si le SIRET est déjà sur une fiche ou sur une immat. sans client. <strong>Qualité</strong> signale les écarts de TVA, de SIRET et de rattachement. <strong>Forcer la mise à jour</strong> recharge la version de l’application. <strong>Tout effacer</strong> vide la base de cet appareil après confirmation. La copie déjà envoyée au coffre reste en ligne.</p>');
     html+=sec('11. Récupérer un appareil neuf','<p>Installez l’application, puis Plus → Charger sauvegarde JSON, ou récupérez le coffre. La base revient telle qu’elle était à l’enregistrement : clients, fiches modifiées, clients créés, immatriculations, possession OUI/NON, projets, affaires, commissions, archives, groupes, contacts, exclusions, accessibles, réglages d’IMMAT et journal Activité.</p><p>Le coffre et le JSON portent le même contenu. Si le coffre est injoignable, le JSON suffit. La connexion au coffre, elle, se refait sur le nouvel appareil.</p>');
     html+='</div>';
     openSheet('Mode d’emploi complet',html);
@@ -10192,13 +10244,15 @@ document.addEventListener('DOMContentLoaded',function(){
   function getDeliveries(){try{return arr(DB.get('deliveries'))}catch(e){return[]}}
 
   // ── 1. CRÉER UN PROJET CLIENT modal ─────────────────────────
-  function openCreateProjectModal(){
+  function openCreateProjectModal(opts){
+    opts=opts||{};
+    var pre=opts.preselect||null;
     var cls=[];
     try{cls=arr(DB.getClients())}catch(e){}
     var listId='create-proj-client-list';
     var html='<div style="margin-bottom:10px;">'
       +'<div style="font-size:11px;color:var(--text3);margin-bottom:6px;">Rechercher un client</div>'
-      +'<div class="search-bar" style="margin:0 0 8px;"><span>🔍</span><input id="create-proj-search" placeholder="Nom, ville, TVA…" autocomplete="off" style="font-size:13px;"></div>'
+      +'<div class="search-bar" style="margin:0 0 8px;"><span>🔍</span><input id="create-proj-search" placeholder="Nom, ville, TVA, SIRET…" autocomplete="off" style="font-size:13px;"></div>'
       +'<div id="'+listId+'" style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);"></div>'
       +'</div>'
       +'<div id="create-proj-selected" style="display:none;background:var(--bg3);border-radius:var(--radius);padding:8px 10px;margin-bottom:10px;font-size:12px;font-weight:700;color:var(--daf);"></div>'
@@ -10209,18 +10263,37 @@ document.addEventListener('DOMContentLoaded',function(){
       +'<button class="btn btn-secondary" id="cpf-fut" style="flex:1;">FUTUR</button>'
       +'</div></div>'
       +'<div id="cpf-fields"></div>'
+      +'</div>'
+      +'<div id="create-proj-new-client-wrap" style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px;">'
+      +'<button type="button" class="btn btn-secondary" id="create-proj-new-client" style="width:100%;">Nouveau client</button>'
+      +'<div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.4;">Client inconnu ? Créez-le ici (Nom + SIRET), puis reprenez le projet.</div>'
       +'</div>';
 
     openModal('➕ Créer un projet client', html, [{label:'Fermer',cls:'btn-ghost'}]);
 
     var selTva='', selNom='', selSk='';
+    function selectClient(tva,nom,sk){
+      selTva=tva||''; selNom=nom||''; selSk=sk||'';
+      var sel=byId('create-proj-selected');
+      if(sel){sel.textContent='Client sélectionné : '+selNom;sel.style.display='block';}
+      var form=byId('create-proj-form');
+      if(form)form.style.display='block';
+      var list=byId(listId);if(list)list.style.display='none';
+      var si=byId('create-proj-search');if(si)si.style.display='none';
+      var wrap=byId('create-proj-new-client-wrap');if(wrap)wrap.style.display='none';
+    }
     function renderClientList(q){
       var list=byId(listId);if(!list)return;
       var filtered=cls.filter(function(cl){
-        var hay=(cl.nom||'')+' '+(cl.ville||'')+' '+(cl.tva||'');
+        var hay=(cl.nom||'')+' '+(cl.ville||'')+' '+(cl.tva||'')+' '+(cl.siret||'');
         return !q||hay.toLowerCase().includes(q.toLowerCase());
       }).slice(0,30);
-      if(!filtered.length){list.innerHTML='<div style="padding:8px 12px;font-size:11px;color:var(--text3);">Aucun client trouvé</div>';return;}
+      if(!filtered.length){
+        list.innerHTML='<div style="padding:8px 12px;font-size:11px;color:var(--text3);line-height:1.45;">Aucun client trouvé — utilisez <strong>Nouveau client</strong> ci-dessous.</div>';
+        var wrapEmpty=byId('create-proj-new-client-wrap');
+        if(wrapEmpty)wrapEmpty.style.display='block';
+        return;
+      }
       list.innerHTML=filtered.map(function(cl){
         return '<div class="create-proj-client-item" data-tva="'+esc(cl.tva)+'" data-sk="'+esc(cl._siteKey||makeSiteKey(cl))+'" data-nom="'+esc(cl.nom||'')+'" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px;">'
           +'<strong>'+esc(cl.nom||cl.tva)+'</strong>'
@@ -10229,13 +10302,7 @@ document.addEventListener('DOMContentLoaded',function(){
       }).join('');
       qsa('.create-proj-client-item').forEach(function(el){
         el.onclick=function(){
-          selTva=this.dataset.tva; selNom=this.dataset.nom; selSk=this.dataset.sk||'';
-          var sel=byId('create-proj-selected');
-          if(sel){sel.textContent='Client sélectionné : '+selNom;sel.style.display='block';}
-          var form=byId('create-proj-form');
-          if(form)form.style.display='block';
-          list.style.display='none';
-          var si=byId('create-proj-search');if(si)si.style.display='none';
+          selectClient(this.dataset.tva, this.dataset.nom, this.dataset.sk||'');
         };
       });
     }
@@ -10243,6 +10310,29 @@ document.addEventListener('DOMContentLoaded',function(){
 
     var si=byId('create-proj-search');
     if(si)si.oninput=function(){renderClientList(this.value)};
+
+    var newCli=byId('create-proj-new-client');
+    if(newCli)newCli.onclick=function(){
+      var q=(byId('create-proj-search')||{}).value||'';
+      closeModal();
+      setTimeout(function(){
+        openCreateClientFiche({nom:q}, {
+          skipNavigate:true,
+          onCreated:function(client, key){
+            setTimeout(function(){
+              openCreateProjectModal({preselect:{tva:client.tva||'',nom:client.nom||'',sk:key||''}});
+            },40);
+          },
+          onCancel:function(){
+            setTimeout(function(){openCreateProjectModal();},40);
+          }
+        });
+      },40);
+    };
+
+    if(pre&&(pre.tva||pre.sk)){
+      selectClient(pre.tva||'', pre.nom||'', pre.sk||'');
+    }
 
     function buildCpfFields(type){
       var flds=byId('cpf-fields');if(!flds)return;
@@ -10254,7 +10344,7 @@ document.addEventListener('DOMContentLoaded',function(){
         +'<button class="btn btn-green" id="cpf-save" style="width:100%;margin-top:3px;">💾 Enregistrer le projet</button>';
       var btn=byId('cpf-save');
       if(btn)btn.onclick=function(){
-        if(!selTva){alert('Sélectionnez un client');return;}
+        if(!selTva&&!selSk){toast('Sélectionnez un client');return;}
         var camions=parseInt((byId('cpf-cam')||{}).value)||1;
         var date=type==='FUTUR'?((byId('cpf-date')||{}).value||''):new Date().toISOString().split('T')[0];
         var commentaire=(byId('cpf-cmt')||{}).value||'';
@@ -10264,6 +10354,7 @@ document.addEventListener('DOMContentLoaded',function(){
         var pid='p'+Date.now();
         var selClient=selSk?(IDX.cBySite&&IDX.cBySite[selSk]):((DB.getClients()||[]).find(function(c){return c.tva===selTva;})||{tva:selTva,nom:selNom});
         if(!selSk&&selClient)selSk=selClient._siteKey||makeSiteKey(selClient);
+        if(!selTva&&selClient)selTva=selClient.tva||'';
         projects.push({id:pid,tva:selTva,siteKey:selSk||'',nom:selNom,status:type,camions:camions,date:date,commentaire:commentaire,created:new Date().toISOString()});
         try{DB.saveProjects(projects)}catch(e){}
         appendHistoryEntry(selClient||{tva:selTva},{date:new Date().toISOString(),type:'PROJET '+type,text:camions+' camion(s) · '+commentaire},selSk);
@@ -10286,6 +10377,7 @@ document.addEventListener('DOMContentLoaded',function(){
     buildCpfFields('EN_COURS');
     if(ecBtn)ecBtn.className='btn btn-blue';
   }
+  window.openCreateProjectModal=openCreateProjectModal;
 
   // ── 3. VOIR L'AFFAIRE → single deal filter ───────────────────
   window.openDealV213=function(dealId){
