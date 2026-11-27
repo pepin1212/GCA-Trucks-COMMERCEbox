@@ -52,44 +52,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(
 .tours-proj-quick.none{background:var(--bg4);color:var(--text3);border-color:var(--border)}
 .tours-pv-mark{cursor:pointer;color:var(--text3)}
 .tours-pv-mark.on{background:var(--daf-bg);color:var(--daf);border-color:var(--daf-border)}
-#screen-immat.screen.active{display:flex;flex-direction:column;overflow:hidden;padding-bottom:calc(var(--nav-h) + 28px);}
-#immat-filters{flex:0 1 auto;max-height:42vh;overflow:auto;background:var(--bg2);border-bottom:1px solid var(--border);}
-#immat-scroll{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;}
-.immat-table{border-collapse:separate;border-spacing:0;font-size:10px;min-width:max-content;}
-.immat-table th,.immat-table td{border-bottom:1px solid var(--border);border-right:1px solid var(--border);padding:3px 4px;text-align:center;white-space:nowrap;background:var(--bg);vertical-align:middle;}
-.immat-table thead th{position:sticky;background:var(--bg3);color:var(--text3);font-size:8px;font-weight:800;letter-spacing:.2px;z-index:3;}
-.immat-table thead tr:first-child th{top:0;}
-.immat-table thead tr:nth-child(2) th{top:20px;}
-.immat-table .c-aff{position:sticky;left:0;z-index:2;min-width:32px;width:32px;max-width:36px;padding:2px;background:var(--bg2);}
-.immat-table .c-prj{position:sticky;left:32px;z-index:2;min-width:34px;width:34px;max-width:38px;padding:2px;background:var(--bg2);}
-.immat-table .c-pv{position:sticky;left:66px;z-index:2;min-width:34px;width:34px;max-width:38px;padding:2px;background:var(--bg2);}
-.immat-table .c-nom{position:sticky;left:100px;z-index:2;min-width:148px;max-width:180px;text-align:left;background:var(--bg2);box-shadow:6px 0 8px rgba(0,0,0,.28);}
-.immat-table thead .c-aff,.immat-table thead .c-prj,.immat-table thead .c-pv,.immat-table thead .c-nom{z-index:6;background:var(--bg3);}
-.immat-table .tours-proj-quick,.immat-table .tours-pv-mark{width:30px;height:30px;margin:0;flex:none}
-.immat-name{background:none;border:none;color:var(--daf);font-weight:800;font-size:12px;cursor:pointer;padding:0;text-align:left;max-width:168px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;}
-.immat-ville{font-size:9px;color:var(--text3);font-weight:600;max-width:168px;overflow:hidden;text-overflow:ellipsis;}
-.immat-daf{color:var(--daf);font-weight:800;}
-.immat-hors{color:var(--text2);font-weight:700;}
-.immat-zero{color:var(--text3);font-weight:600;}
-.immat-pct{font-weight:800;color:var(--text);}
-.immat-score{font-weight:800;color:var(--daf);}
-.immat-visit{font-size:10px;padding:3px 2px;max-width:118px;background:var(--bg3);color:var(--text);border:1px solid var(--border2);border-radius:6px;}
-.immat-table input[type=checkbox]{width:16px;height:16px;accent-color:var(--daf);}
-.immat-table input[type=checkbox]:disabled{accent-color:var(--text3);opacity:.85;}
-.immat-table tbody tr{height:40px;}
-.immat-table tbody td{height:40px;max-height:40px;}
-.immat-table tr.immat-pad td{height:auto;max-height:none;padding:0;border:none;background:transparent;}
-.immat-num{cursor:pointer;}
-.immat-num:active{background:var(--daf-bg);}
-.immat-visit-btn,.plan-visit-btn,.immat-col,.plan-col{background:none;border:none;color:inherit;font:inherit;font-weight:800;cursor:pointer;padding:1px 2px;}
-.immat-visit-btn,.plan-visit-btn{font-size:9px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);max-width:108px;}
-.immat-col.on,.plan-col.on{color:var(--daf);}
+.plan-visit-btn,.plan-col{background:none;border:none;color:inherit;font:inherit;font-weight:800;cursor:pointer;padding:1px 2px;}
+.plan-visit-btn{font-size:9px;border:1px solid var(--border2);border-radius:6px;background:var(--bg3);color:var(--text);max-width:108px;}
+.plan-col.on{color:var(--daf);}
 .plan-score{font-weight:800;color:var(--daf);font-size:12px;}
 .plan-table input[type=checkbox]:disabled{accent-color:var(--text3);opacity:.85;}
-#immat-filters.collapsed{display:none;}
-#immat-detail:empty{display:none;}
-#immat-detail{flex:0 1 auto;max-height:38vh;overflow:auto;background:var(--bg);border-bottom:1px solid var(--border);}
-#immat-visit-menu,#immat-col-pop,#plan-col-pop,#plan-visit-menu{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
+#plan-col-pop,#plan-visit-menu{position:fixed;z-index:10000;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.55);min-width:190px;max-width:280px;max-height:70vh;overflow:auto;}
 #screen-plan.screen.active{display:flex;flex-direction:column;overflow:hidden;padding-bottom:calc(var(--nav-h) + 28px);}
 /* iOS : les menus position:fixed dans Plan peuvent rester cliquables après changement d’onglet */
 #screen-plan:not(.active){pointer-events:none!important;visibility:hidden!important;}
@@ -397,29 +365,6 @@ input[type=file]{display:none}
   <div id="more-content" style="padding-top:6px;"></div>
 </div>
 
-<div class="screen" id="screen-immat">
-  <div class="screen-header">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-      <div>
-        <div class="screen-title">IMMAT</div>
-        <div class="screen-sub" id="immat-sub">Immatriculations par site</div>
-      </div>
-      <button type="button" class="gf-chip" id="immat-projet-btn" title="OFF retire les projets de l’année en cours, les projets futurs quelle que soit leur date, et les pas de projet de l’année en cours.">PROJET</button>
-      <button type="button" class="gf-chip" id="immat-filter-toggle">Filtres</button>
-    </div>
-  </div>
-  <div class="search-bar" id="immat-search-bar" style="position:relative;z-index:12;margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;">
-    <span>🔍</span>
-    <input type="text" id="immat-search" placeholder="Client, ville, TVA, canton…" autocomplete="off">
-    <button type="button" class="btn btn-ghost btn-sm" id="immat-search-clear" title="Effacer la recherche" style="min-width:30px;height:30px;padding:0;border-radius:50%;font-size:13px;line-height:1;">✕</button>
-  </div>
-  <div id="immat-filters" class="collapsed"></div>
-  <div id="immat-detail"></div>
-  <div id="immat-scroll"></div>
-  <div id="immat-visit-menu" style="display:none;"></div>
-  <div id="immat-col-pop" style="display:none;"></div>
-</div>
-
 <div class="screen" id="screen-plan">
   <div class="screen-header">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
@@ -452,7 +397,6 @@ input[type=file]{display:none}
 
 <nav id="nav">
   <div class="nav-item active" data-screen="marche"><span class="nav-icon">&#128202;</span><span class="nav-label">March&#233;</span></div>
-  <div class="nav-item" data-screen="immat"><span class="nav-icon">&#128290;</span><span class="nav-label">IMMAT</span></div>
   <div class="nav-item" data-screen="plan"><span class="nav-icon">🎯</span><span class="nav-label">Plan</span></div>
   <div class="nav-item" data-screen="tours"><span class="nav-icon">&#128506;</span><span class="nav-label">Tourn&#233;es</span></div>
   <div class="nav-item" data-screen="affaires"><span class="nav-icon">🔥</span><span class="nav-label">Affaires</span></div>
@@ -516,7 +460,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-27-v2-suivi-propo-default-001';
+const APP_BUILD='2026-11-27-v2-verifier-contact-no-immat-001';
 const DEFAULT_VENDEUR_GCA='Alain GARGOULLEAU';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
@@ -3203,6 +3147,8 @@ function getDistinctCarrosseries(){const s=new Set();DB.getVehicles().forEach(v=
 // ===== NAVIGATION =====
 var currentScreen='marche';
 function showScreen(name){
+  // IMMAT page retirée : données immat. restent utilisées (Plan, Marché, import…)
+  if(name==='immat'){name='plan';}
   var leaving=currentScreen;
   try{dismissBlockingOverlays();}catch(e){}
   if(leaving==='plan'&&name!=='plan'){
@@ -4879,7 +4825,7 @@ function renderScreen(name){
     case 'qualite': renderQualite(); break;
     case 'more': renderMore(); break;
     case 'activite': if(typeof window.renderActivitePage==='function')window.renderActivitePage(); break;
-    case 'immat': if(typeof renderImmat==='function')renderImmat(); break;
+    case 'immat': if(typeof window.renderPlanVentes==='function')window.renderPlanVentes(); break;
     case 'plan': if(typeof window.renderPlanVentes==='function')window.renderPlanVentes(); break;
   }
 }
@@ -6302,6 +6248,46 @@ function applyVerifiedSiegeFromRegistry(c,data){
   if(!group||!group.auto||!data.siegeSiteKey)return;
   if(!groupHasExplicitPrincipal(group.id))setGroupSitePrincipal(group.id,data.siegeSiteKey,true);
 }
+function pickDirigeantPersonFromVerification(data){
+  var dirs=(data&&data.dirigeantsRaw)||[];
+  var i,d;
+  for(i=0;i<dirs.length;i++){
+    d=dirs[i];
+    if(!d)continue;
+    if(String(d.type_dirigeant||'').toLowerCase()==='personne morale')continue;
+    if(d.denomination&&!(d.nom||d.prenoms))continue;
+    if(d.nom||d.prenoms)return d;
+  }
+  return null;
+}
+function contactsMatchPerson(a,b){
+  if(!a||!b)return false;
+  return norm(a.nom)===norm(b.nom)&&norm(a.prenom)===norm(b.prenom);
+}
+/** VERIFIER : conserve l’autofill registre existant ; ajoute le dirigeant en contact.
+ *  Si un contact existe déjà → contact supplémentaire (ne jamais écraser le 1er). */
+function ensureDirigeantContactFromVerify(sk,data){
+  if(!sk)return {added:false,reason:'nosk'};
+  var dir=pickDirigeantPersonFromVerification(data);
+  if(!dir)return {added:false,reason:'nodir'};
+  var ct={
+    nom:String(dir.nom||'').trim(),
+    prenom:String(dir.prenoms||'').trim(),
+    tel:'',
+    mail:'',
+    poste:String(dir.qualite||'Dirigeant').trim()
+  };
+  if(!(ct.nom||ct.prenom))return {added:false,reason:'empty'};
+  var st=getAppSettings();
+  if(!st.siteContacts)st.siteContacts={};
+  if(!st.siteContacts[sk])st.siteContacts[sk]=[];
+  var list=st.siteContacts[sk];
+  if(list.some(function(x){return contactsMatchPerson(x,ct);}))return {added:false,reason:'dup',hadContacts:list.length>0};
+  // Toujours push : jamais d’écrasement du premier contact
+  list.push(ct);
+  saveAppSettings(st);
+  return {added:true,asAdditional:list.length>1,hadContacts:list.length>1};
+}
 function getVerifiedSiegeSiteKeyForGroup(group){
   if(!group||!group.auto)return '';
   var v=getCompanyVerificationForTva(group.tva);
@@ -6562,7 +6548,12 @@ function bindCompanyVerificationSheet(sk,c,reopenFn){
       if(!key)throw new Error('Impossible de mémoriser la vérification');
       applyVerifiedSiegeFromRegistry(c,data);
       saveCompanyVerification(key,data);
-      toast('Entreprise vérifiée');
+      var contactRes=ensureDirigeantContactFromVerify(sk,data);
+      if(contactRes&&contactRes.added){
+        toast(contactRes.asAdditional?'Entreprise vérifiée · dirigeant ajouté (contact supplémentaire)':'Entreprise vérifiée · contact dirigeant créé');
+      }else{
+        toast('Entreprise vérifiée');
+      }
       if(currentScreen==='tours')renderTours();
       reopenFn();
     }).catch(function(e){
@@ -15215,7 +15206,11 @@ document.addEventListener('DOMContentLoaded',function(){
   };
   var oldRS=window.renderScreen;
   window.renderScreen=function(name){
-    if(name==='immat'){renderImmat();return;}
+    // Page IMMAT retirée — bascule vers Plan (données immat. inchangées)
+    if(name==='immat'){
+      if(typeof window.renderPlanVentes==='function')window.renderPlanVentes();
+      return;
+    }
     return oldRS?oldRS.apply(this,arguments):undefined;
   };
   var sc=$('immat-scroll');
