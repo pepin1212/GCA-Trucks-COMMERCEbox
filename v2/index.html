@@ -516,7 +516,8 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-27-v2-client-create-siret-001';
+const APP_BUILD='2026-11-27-v2-client-remplir-auto-001';
+const DEFAULT_VENDEUR_GCA='Alain GARGOULLEAU';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
 const PDM_GOAL = 15; // objectif 15%
@@ -5019,7 +5020,7 @@ function getGroupStats(group){
   var principal=(group.siteKeys||[]).map(function(sk){return IDX.cBySite&&IDX.cBySite[sk];}).filter(Boolean).find(function(c){return groupSiteIsPrincipal(group.id,makeSiteKey(c));})||(IDX.cBySite&&IDX.cBySite[(group.siteKeys||[])[0]]);
   return {parc:veh.length,dafCount:veh.filter(isDaf).length,dafRenew:veh.filter(isRenewDaf).length,horsRenew:veh.filter(isRenewHors).length,allVehicles:all,score:computeScore(scoreVeh,function(v){return isRenewDaf(v)||isRenewHors(v);},isActifTours,principal)};
 }
-function renderQuickActions(c,group){var adresseStr=[c.adresse,c.ville,c.dept,c.pays].filter(Boolean).join(', ');var wazeUrl='https://waze.com/ul?q='+encodeURIComponent(adresseStr||c.ville||'');return `<div style="display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 10px;position:sticky;top:0;z-index:2;background:var(--bg2);padding:6px 0;border-bottom:1px solid var(--border);">
+function renderQuickActions(c,group){var adresseStr=[c.adresse,c.cp,c.ville,c.dept,c.pays].filter(Boolean).join(', ');var wazeUrl='https://waze.com/ul?q='+encodeURIComponent(adresseStr||c.ville||'');return `<div style="display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 10px;position:sticky;top:0;z-index:2;background:var(--bg2);padding:6px 0;border-bottom:1px solid var(--border);">
   ${adresseStr?`<button class="btn btn-secondary btn-sm" id="btn-copy-site-addr">📋 Copier adresse</button>`:''}
   ${c.siret?`<button class="btn btn-secondary btn-sm" id="btn-copy-site-siret">📋 Copier SIRET</button><a href="https://www.google.com/search?q=${encodeURIComponent(c.siret)}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none;">🔎 SIRET Safari</a>`:''}
   <a href="${wazeUrl}" target="_blank" class="btn btn-blue btn-sm" style="text-decoration:none;">🧭 Waze</a>
@@ -5161,7 +5162,7 @@ function openSiteSheet(sk){
   const hist=getHistoryEntries(c,sk);
   const projects=getProjectsForSite(c,sk);
   const isExcludedManual=isClientExcludedMarche(c), isUrgent=isClientUrgent(c), isInactif=isInactiveClientTours(c.tva,sk);
-  const adresseStr=[c.adresse,c.ville,c.dept,c.pays].filter(Boolean).join(', ');
+  const adresseStr=[c.adresse,c.cp,c.ville,c.dept,c.pays].filter(Boolean).join(', ');
   const badges=[];
   const _isSecondary=!!(info&&info.hasGroup&&!info.principal);
   if(!_isSecondary){
@@ -6370,6 +6371,19 @@ function parseRegistryHit(hit,c){
     adresseMatch:compareAddresses(localAddr,adresseOff)
   };
 }
+function fetchRegistryHit(q){
+  q=String(q||'').trim();
+  if(!q)return Promise.reject(new Error('SIREN, SIRET ou nom client requis'));
+  var url='https://recherche-entreprises.api.gouv.fr/search?q='+encodeURIComponent(q)+'&per_page=1';
+  return fetch(url).then(function(r){
+    if(!r.ok)throw new Error('Registre indisponible ('+r.status+')');
+    return r.json();
+  }).then(function(j){
+    var hit=(j&&j.results&&j.results[0])||null;
+    if(!hit)throw new Error('Aucune entreprise trouvée pour « '+q+' »');
+    return hit;
+  });
+}
 function fetchCompanyFromRegistry(c){
   var siren=siretSiren(normSiret(c&&c.siret))||String(c&&c.siren||'').replace(/\D/g,'').slice(0,9);
   var siret=normSiret(c&&c.siret);
@@ -6380,16 +6394,97 @@ function fetchCompanyFromRegistry(c){
     var nom=String(c&&c.nom||'').trim(),ville=String(c&&c.ville||'').trim();
     q=nom+(ville?' '+ville:'');
   }
-  if(!q)return Promise.reject(new Error('SIREN, SIRET ou nom client requis'));
-  var url='https://recherche-entreprises.api.gouv.fr/search?q='+encodeURIComponent(q)+'&per_page=1';
-  return fetch(url).then(function(r){
-    if(!r.ok)throw new Error('Registre indisponible ('+r.status+')');
-    return r.json();
-  }).then(function(j){
-    var hit=(j&&j.results&&j.results[0])||null;
-    if(!hit)throw new Error('Aucune entreprise trouvée pour « '+q+' »');
-    return parseRegistryHit(hit,c);
-  });
+  return fetchRegistryHit(q).then(function(hit){return parseRegistryHit(hit,c);});
+}
+function pickEtablissementFromHit(hit, siretWanted){
+  hit=hit||{};
+  var ns=normSiret(siretWanted);
+  var mets=hit.matching_etablissements||[];
+  var i;
+  if(ns){
+    for(i=0;i<mets.length;i++){if(normSiret(mets[i].siret)===ns)return mets[i];}
+    if(hit.siege&&normSiret(hit.siege.siret)===ns)return hit.siege;
+  }
+  return mets[0]||hit.siege||{};
+}
+function streetFromRegistryEtab(src){
+  src=src||{};
+  var cp=String(src.code_postal||'').trim();
+  var ville=String(src.libelle_commune||'').trim();
+  var parts=[src.numero_voie,src.type_voie,src.libelle_voie].filter(Boolean).join(' ').trim();
+  if(src.complement_adresse)parts=(parts?parts+' ':'')+String(src.complement_adresse).trim();
+  if(parts)return parts.trim();
+  var full=String(src.adresse||'').trim();
+  if(!full)return '';
+  if(cp){
+    try{
+      var re=new RegExp('\\s*'+cp+'\\s*'+ville.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*$','i');
+      full=full.replace(re,'').trim();
+    }catch(e){}
+  }
+  return full;
+}
+function inferCantonFromVille(ville){
+  var nv=norm(ville);
+  if(!nv)return '';
+  var counts={}, clients=DB.getClients()||[], i, can;
+  for(i=0;i<clients.length;i++){
+    if(norm(clients[i].ville)!==nv)continue;
+    can=String(clients[i].canton||'').trim();
+    if(!can)continue;
+    counts[can]=(counts[can]||0)+1;
+  }
+  var best='', n=0, k;
+  for(k in counts){if(counts[k]>n){n=counts[k];best=k;}}
+  return best;
+}
+function inferDeptFromVille(ville){
+  var nv=norm(ville);
+  if(!nv)return '';
+  var clients=DB.getClients()||[], i, d;
+  for(i=0;i<clients.length;i++){
+    if(norm(clients[i].ville)!==nv)continue;
+    d=String(clients[i].dept||'').trim();
+    if(d)return d;
+  }
+  return '';
+}
+function deptFromCodePostal(cp){
+  cp=String(cp||'').replace(/\D/g,'');
+  if(cp.length<2)return '';
+  if(/^97|^98/.test(cp))return cp.slice(0,3);
+  return cp.slice(0,2);
+}
+function buildAutoFillFromRegistryHit(hit, siretWanted){
+  hit=hit||{};
+  var src=pickEtablissementFromHit(hit, siretWanted);
+  var siege=hit.siege||{};
+  var cp=String(src.code_postal||siege.code_postal||'').trim();
+  var ville=String(src.libelle_commune||siege.libelle_commune||'').trim();
+  var dept=String(src.departement||siege.departement||'').trim()||deptFromCodePostal(cp)||inferDeptFromVille(ville);
+  var pays=String(src.libelle_pays_etranger||siege.libelle_pays_etranger||'').trim()||'France';
+  var siret=normSiret(siretWanted)||normSiret(src.siret)||normSiret(siege.siret);
+  var dir=(hit.dirigeants||[]).filter(function(d){return d&&d.type_dirigeant!=='personne morale'&&(d.nom||d.prenoms);})[0]||null;
+  return {
+    nom:String(hit.nom_complet||hit.nom_raison_sociale||'').trim(),
+    tva:tvaFromSiret(siret)||tvaFromSiret(hit.siren),
+    adresse:streetFromRegistryEtab(src),
+    cp:cp,
+    ville:ville,
+    canton:inferCantonFromVille(ville),
+    dept:dept,
+    pays:pays,
+    vendeur:DEFAULT_VENDEUR_GCA,
+    contactNom:dir?String(dir.nom||'').trim():'',
+    contactPrenom:dir?String(dir.prenoms||'').trim():'',
+    contactTel:'',
+    contactMail:''
+  };
+}
+function fetchAutoFillFromSiret(siret){
+  var ns=normSiret(siret);
+  if(!ns||ns.length!==14)return Promise.reject(new Error('SIRET requis (14 chiffres)'));
+  return fetchRegistryHit(ns).then(function(hit){return buildAutoFillFromRegistryHit(hit, ns);});
 }
 function renderCompanyVerificationBox(c,sk){
   var key=companyVerificationKey(c);
@@ -6589,7 +6684,8 @@ function renderModeEmploi(){
   openModal('📖 Mode d’emploi',html,[{label:'Fermer',cls:'btn-primary'}]);
 }
 
-var FICHE_EDIT_FIELDS=['nom','adresse','ville','canton','dept','pays','vendeur','tel'];
+var FICHE_EDIT_FIELDS=['nom','adresse','cp','ville','canton','dept','pays','vendeur','tel'];
+var FICHE_AUTOFILL_IDS=['fc-nom','fc-tva','fc-adresse','fc-cp','fc-ville','fc-canton','fc-dept','fc-pays','fc-vendeur','fc-contact-nom','fc-contact-prenom','fc-contact-tel','fc-contact-mail'];
 function ficheMatchKey(c){
   if(c&&c.ficheMatchKey)return String(c.ficheMatchKey);
   var t=String((c&&c.tva)||'').trim();
@@ -6741,26 +6837,145 @@ function _ficheFormHtml(c, creating){
   function inp(id,label,val,extra){return '<div class="form-group"><label class="form-label">'+label+'</label><input class="form-input" id="'+id+'" value="'+escH(val||'')+'"'+(extra||'')+'></div>';}
   var html='';
   if(creating){
-    html+='<div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.45;">Minimum : <strong>Nom</strong> + <strong>SIRET</strong>. La TVA est calculée depuis le SIRET si elle est vide.</div>';
+    html+='<div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.45;">Minimum : <strong>Nom</strong> + <strong>SIRET</strong>. <strong>Remplir auto</strong> interroge le registre officiel (même API que la fiche).</div>';
     html+=inp('fc-nom','Nom *',c.nom);
     html+=inp('fc-siret','SIRET *',c.siret,' inputmode="numeric" autocomplete="off"');
     html+=inp('fc-tva','TVA (auto si vide)',c.tva,' autocomplete="off"');
   }else{
     html+='<div style="font-size:11px;color:var(--text3);margin-bottom:8px;">TVA '+escH(c.tva||'—')+' · SIRET '+escH(c.siret||'—')+'</div>';
+    html+='<input type="hidden" id="fc-siret" value="'+escH(c.siret||'')+'">';
+    html+='<input type="hidden" id="fc-tva" value="'+escH(c.tva||'')+'">';
     html+=inp('fc-nom','Nom *',c.nom);
   }
+  html+='<div style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;">'
+    +'<button type="button" class="btn btn-primary btn-sm" id="fc-btn-remplir" style="flex:1;min-width:120px;">Remplir auto</button>'
+    +'<button type="button" class="btn btn-ghost btn-sm" id="fc-btn-effacer" style="flex:1;min-width:120px;">Effacer</button>'
+    +'</div>';
+  html+='<div id="fc-autofill-status" style="font-size:10px;color:var(--text3);margin:-4px 0 8px;line-height:1.4;min-height:14px;"></div>';
   html+='<div class="form-group"><label class="form-label">Adresse</label><textarea class="form-input form-textarea" id="fc-adresse" style="min-height:64px;">'+escH(c.adresse||'')+'</textarea></div>';
+  html+=inp('fc-cp','CP',c.cp||'',' inputmode="numeric" autocomplete="off"');
   html+=inp('fc-ville','Ville',c.ville);
   html+=inp('fc-canton','Canton',c.canton);
   html+=inp('fc-dept','Département',c.dept);
   html+=inp('fc-pays','Pays',c.pays);
   html+=inp('fc-vendeur','Vendeur',c.vendeur);
-  html+=inp('fc-tel','Téléphone',c.tel);
+  html+=inp('fc-tel','Téléphone fiche',c.tel);
+  html+='<div class="card-title" style="margin:10px 0 6px;font-size:11px;">Contact</div>';
+  html+=inp('fc-contact-nom','Nom',c.contactNom||'');
+  html+=inp('fc-contact-prenom','Prénom',c.contactPrenom||'');
+  html+=inp('fc-contact-tel','Téléphone',c.contactTel||'');
+  html+=inp('fc-contact-mail','E-mail',c.contactMail||'',' type="email" autocomplete="off"');
   return html;
 }
 function _readFicheForm(){
   function v(id){var el=$(id); return String((el&&el.value)||'').trim();}
-  return {nom:v('fc-nom'),adresse:v('fc-adresse'),ville:v('fc-ville'),canton:v('fc-canton'),dept:v('fc-dept'),pays:v('fc-pays'),vendeur:v('fc-vendeur'),tel:v('fc-tel'),tva:v('fc-tva'),siret:normSiret(v('fc-siret'))};
+  return {
+    nom:v('fc-nom'),adresse:v('fc-adresse'),cp:v('fc-cp'),ville:v('fc-ville'),canton:v('fc-canton'),dept:v('fc-dept'),pays:v('fc-pays'),vendeur:v('fc-vendeur'),tel:v('fc-tel'),
+    tva:v('fc-tva'),siret:normSiret(v('fc-siret')),
+    contactNom:v('fc-contact-nom'),contactPrenom:v('fc-contact-prenom'),contactTel:v('fc-contact-tel'),contactMail:v('fc-contact-mail')
+  };
+}
+function _captureFicheAutoFields(){
+  var out={};
+  (FICHE_AUTOFILL_IDS||[]).forEach(function(id){
+    var el=$(id);
+    if(!el)return;
+    out[id]=el.tagName==='TEXTAREA'?el.value:el.value;
+  });
+  return out;
+}
+function _applyFicheAutoFields(map){
+  map=map||{};
+  Object.keys(map).forEach(function(id){
+    var el=$(id);
+    if(!el)return;
+    el.value=map[id]==null?'':String(map[id]);
+  });
+}
+function _saveContactFromFicheForm(sk){
+  if(!sk)return false;
+  var f=_readFicheForm();
+  if(!(f.contactNom||f.contactPrenom||f.contactTel||f.contactMail))return false;
+  var st=getAppSettings();
+  if(!st.siteContacts)st.siteContacts={};
+  if(!st.siteContacts[sk])st.siteContacts[sk]=[];
+  st.siteContacts[sk].push({
+    nom:f.contactNom||'',
+    prenom:f.contactPrenom||'',
+    tel:f.contactTel||'',
+    mail:f.contactMail||'',
+    poste:''
+  });
+  saveAppSettings(st);
+  return true;
+}
+function bindFicheAutoFillButtons(opts){
+  opts=opts||{};
+  var snapshot=null;
+  var status=$('fc-autofill-status');
+  function setStatus(msg, warn){
+    if(!status)return;
+    status.style.color=warn?'var(--orange)':'var(--text3)';
+    status.textContent=msg||'';
+  }
+  var btnR=$('fc-btn-remplir');
+  var btnE=$('fc-btn-effacer');
+  if(btnR)btnR.onclick=function(){
+    var siret=normSiret(($('fc-siret')||{}).value||opts.siret||'');
+    if(!siret||siret.length!==14){toast('Saisissez un SIRET (14 chiffres) avant Remplir auto');setStatus('SIRET requis',true);return;}
+    snapshot=_captureFicheAutoFields();
+    setStatus('Interrogation du registre…');
+    btnR.disabled=true;
+    fetchAutoFillFromSiret(siret).then(function(data){
+      btnR.disabled=false;
+      if(!data){setStatus('Aucune donnée',true);return;}
+      var apply={
+        'fc-tva':data.tva||'',
+        'fc-adresse':data.adresse||'',
+        'fc-cp':data.cp||'',
+        'fc-ville':data.ville||'',
+        'fc-canton':data.canton||'',
+        'fc-dept':data.dept||'',
+        'fc-pays':data.pays||'France',
+        'fc-vendeur':DEFAULT_VENDEUR_GCA,
+        'fc-contact-nom':data.contactNom||'',
+        'fc-contact-prenom':data.contactPrenom||'',
+        'fc-contact-tel':data.contactTel||'',
+        'fc-contact-mail':data.contactMail||''
+      };
+      if(data.nom){
+        var nomEl=$('fc-nom');
+        if(nomEl&&(!String(nomEl.value||'').trim()||opts.creating))apply['fc-nom']=data.nom;
+      }
+      _applyFicheAutoFields(apply);
+      var bits=[];
+      if(data.ville)bits.push(data.ville);
+      if(data.cp)bits.push(data.cp);
+      setStatus('Rempli depuis le registre'+(bits.length?' · '+bits.join(' · '):'')+(data.canton?' · canton '+data.canton:''));
+      toast('Fiche remplie depuis le SIRET');
+    }).catch(function(e){
+      btnR.disabled=false;
+      setStatus(e.message||'Échec registre',true);
+      toast(e.message||'Remplir auto impossible');
+    });
+  };
+  if(btnE)btnE.onclick=function(){
+    if(snapshot){
+      _applyFicheAutoFields(snapshot);
+      snapshot=null;
+      setStatus('Données auto annulées');
+      toast('Auto-remplissage effacé');
+      return;
+    }
+    var clearMap={
+      'fc-adresse':'','fc-cp':'','fc-ville':'','fc-canton':'','fc-dept':'','fc-pays':'','fc-vendeur':'',
+      'fc-contact-nom':'','fc-contact-prenom':'','fc-contact-tel':'','fc-contact-mail':''
+    };
+    if(opts.creating)clearMap['fc-tva']='';
+    _applyFicheAutoFields(clearMap);
+    setStatus('Champs auto effacés');
+    toast('Champs auto effacés');
+  };
 }
 function openEditClientFiche(sk){
   var c=(IDX.cBySite&&IDX.cBySite[sk])||null;
@@ -6776,11 +6991,13 @@ function openEditClientFiche(sk){
       next.ficheMatchKey=match;
       FICHE_EDIT_FIELDS.forEach(function(k){ next[k]=f[k]; });
       var renamed=_persistClientFiche(next, match)||0;
+      var contactAdded=_saveContactFromFicheForm(next.manualKey||match);
       closeModal();
-      toast(renamed?('Fiche enregistrée · '+renamed+' dossier(s) renommé(s)'):'Fiche enregistrée');
+      toast(renamed?('Fiche enregistrée · '+renamed+' dossier(s) renommé(s)'):(contactAdded?'Fiche enregistrée · contact ajouté':'Fiche enregistrée'));
       openSiteSheet(next.manualKey||match);
     }}
   ]);
+  bindFicheAutoFillButtons({creating:false,siret:c.siret||''});
 }
 function openCreateClientFiche(prefill, opts){
   prefill=prefill||{};
@@ -6812,8 +7029,9 @@ function openCreateClientFiche(prefill, opts){
         var ck=clients[i].manualKey||clients[i].ficheMatchKey||makeSiteKey(clients[i]);
         if(ck===key||(normSiret(clients[i].siret)===f.siret)){toast('Ce client existe déjà');return;}
       }
-      var c={tva:f.tva,siret:f.siret,siren:siretSiren(f.siret),key:key,manualKey:key,ficheMatchKey:key,manuel:true,nom:f.nom,adresse:f.adresse,ville:f.ville,canton:f.canton,dept:f.dept,pays:f.pays,vendeur:f.vendeur,tel:f.tel,profil:'',groupement:'',accessible:'',exclu:'',etatProspection:''};
+      var c={tva:f.tva,siret:f.siret,siren:siretSiren(f.siret),key:key,manualKey:key,ficheMatchKey:key,manuel:true,nom:f.nom,adresse:f.adresse,cp:f.cp||'',ville:f.ville,canton:f.canton,dept:f.dept,pays:f.pays,vendeur:f.vendeur,tel:f.tel,profil:'',groupement:'',accessible:'',exclu:'',etatProspection:''};
       _persistClientFiche(c, key);
+      _saveContactFromFicheForm(key);
       closeModal();
       toast(orphans.length?('Client créé · '+orphans.length+' immat. rattachée'+(orphans.length>1?'s':'')):'Client créé');
       if(typeof opts.onCreated==='function'){
@@ -6824,6 +7042,7 @@ function openCreateClientFiche(prefill, opts){
       openSiteSheet(key);
     }}
   ]);
+  bindFicheAutoFillButtons({creating:true,siret:prefill.siret||''});
 }
 window.openCreateClientFiche=openCreateClientFiche;
 function _mergeManualClientFields(newClients, oldClients){
@@ -7004,7 +7223,7 @@ function exportBackupJSONDirect(){
 
 function renderMore(){
   const xlsxOk=typeof XLSX!=='undefined';var html='';html+=renderXlsxStatus(xlsxOk);html+=renderImportCard(xlsxOk);html+=renderOriginExcelCard();html+=renderBasesCard();
-  html+=`<div class="card"><div class="card-title">Nouveau client</div><button class="btn btn-primary" id="btn-new-client" style="width:100%;">Créer un client</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Minimum <strong>Nom + SIRET</strong> (TVA auto). Alerte si le SIRET existe déjà sur une fiche ou sur une immat. sans client. Même flux depuis Affaires et Tournées. Inclus dans le JSON et le coffre.</div></div>`;
+  html+=`<div class="card"><div class="card-title">Nouveau client</div><button class="btn btn-primary" id="btn-new-client" style="width:100%;">Créer un client</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Minimum <strong>Nom + SIRET</strong>. <strong>Remplir auto</strong> (registre) : TVA, adresse, CP, ville, canton, département, pays, vendeur Alain GARGOULLEAU + contact. <strong>Effacer</strong> annule l’auto. Même flux Affaires / Tournées / Modifier la fiche.</div></div>`;
   html+=`<div class="card"><div class="card-title">💾 Secours JSON</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Le cloud V2 enregistre tout seul. Ce JSON est un <strong>secours</strong> (clients, fiches, immatriculations, possession, projets, affaires, commissions, archives, groupes, contacts, exclusions, Plan de ventes, journal Activité). Charger un JSON remplace la base locale puis re-sync cloud.</div></div>`;
   html+=`<div class="card"><div class="card-title">🔍 Qualité</div><button class="btn btn-secondary" id="btn-open-qualite" style="width:100%;">Ouvrir Qualité complète</button></div>`;
   html+=`<div class="card"><div class="card-title">📖 Mode d'emploi</div><button class="btn btn-secondary" id="btn-mode-emploi" style="width:100%;">Ouvrir le mode d'emploi complet</button></div>`;
