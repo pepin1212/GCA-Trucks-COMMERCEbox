@@ -209,6 +209,8 @@ input[type=file]{display:none}
 .hist-date{font-size:9px;color:var(--text3);margin-bottom:1px}
 .hist-text{font-size:11px;color:var(--text2)}
 .hist-del{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:var(--red-bg);color:var(--red);border:none;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+/* Contact delete: same look as hist-del but in-flow (diag-row is flex, not position:relative — absolute × floated mid-sheet after VERIFIER) */
+.contact-del{position:static;transform:none;flex-shrink:0;margin-left:8px;background:var(--red-bg);color:var(--red);border:none;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .pdm-circle{display:flex;flex-direction:column;align-items:center;justify-content:center;width:84px;height:84px;border-radius:50%;border:4px solid var(--daf);margin:0 auto 10px}
 .pdm-pct{font-size:20px;font-weight:800;color:var(--daf)}
 .pdm-lbl{font-size:8px;color:var(--text3);font-weight:600;text-transform:uppercase}
@@ -460,7 +462,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-27-v2-verifier-contact-no-immat-001';
+const APP_BUILD='2026-11-27-v2-fix-verifier-red-cross-001';
 const DEFAULT_VENDEUR_GCA='Alain GARGOULLEAU';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
@@ -4990,7 +4992,7 @@ function renderQuickActions(c,group){var adresseStr=[c.adresse,c.cp,c.ville,c.de
   <button class="btn btn-primary btn-sm" id="btn-show-in-marche">📊 Afficher dans Marché</button>
   ${group?`<button class="btn btn-secondary btn-sm btn-open-group-sheet" data-gid="${escH(group.id)}">👥 Voir groupe</button>`:''}
 </div>`;}
-function renderContactsBlock(sk){var st=getAppSettings();var contacts=(st.siteContacts&&st.siteContacts[sk])||[];var html=contacts.map(function(ct,i){return `<div class="diag-row"><div><div style="font-size:11px;font-weight:700;color:var(--text);">${escH((ct.prenom||'')+' '+(ct.nom||''))}</div><div style="font-size:10px;color:var(--text3);">${escH(ct.poste||'')} ${ct.tel?' · '+escH(ct.tel):''} ${ct.mail?' · '+escH(ct.mail):''}</div></div><button class="hist-del contact-del" data-i="${i}">✕</button></div>`;}).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun contact renseigné</div>';return `<div class="card" style="margin:0 0 9px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="card-title" style="margin:0;">👤 Contacts</div><button class="btn btn-secondary btn-sm" id="btn-add-contact">+ Contact</button></div><div style="margin-top:8px;">${html}</div></div>`;}
+function renderContactsBlock(sk){var st=getAppSettings();var contacts=(st.siteContacts&&st.siteContacts[sk])||[];var html=contacts.map(function(ct,i){return `<div class="diag-row"><div style="min-width:0;flex:1;"><div style="font-size:11px;font-weight:700;color:var(--text);">${escH((ct.prenom||'')+' '+(ct.nom||''))}</div><div style="font-size:10px;color:var(--text3);">${escH(ct.poste||'')} ${ct.tel?' · '+escH(ct.tel):''} ${ct.mail?' · '+escH(ct.mail):''}</div></div><button type="button" class="contact-del" data-i="${i}" title="Supprimer le contact" aria-label="Supprimer le contact">✕</button></div>`;}).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun contact renseigné</div>';return `<div class="card" style="margin:0 0 9px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="card-title" style="margin:0;">👤 Contacts</div><button class="btn btn-secondary btn-sm" id="btn-add-contact">+ Contact</button></div><div style="margin-top:8px;">${html}</div></div>`;}
 // ===== FICHES ENTREPRISE / SITE (canonique) =====
 function addContactToSite(sk){openModal('Ajouter un contact',`<div class="form-group"><label class="form-label">Nom</label><input class="form-input" id="ct-nom"></div><div class="form-group"><label class="form-label">Prénom</label><input class="form-input" id="ct-prenom"></div><div class="form-group"><label class="form-label">Téléphone</label><input class="form-input" id="ct-tel"></div><div class="form-group"><label class="form-label">Mail</label><input class="form-input" id="ct-mail"></div><div class="form-group"><label class="form-label">Poste</label><input class="form-input" id="ct-poste"></div>`,[{label:'Annuler',cls:'btn-ghost'},{label:'Ajouter',cls:'btn-primary',action:function(){var st=getAppSettings();if(!st.siteContacts)st.siteContacts={};if(!st.siteContacts[sk])st.siteContacts[sk]=[];st.siteContacts[sk].push({nom:($('ct-nom')||{}).value||'',prenom:($('ct-prenom')||{}).value||'',tel:($('ct-tel')||{}).value||'',mail:($('ct-mail')||{}).value||'',poste:($('ct-poste')||{}).value||''});saveAppSettings(st);openSiteSheet(sk);}}]);}
 function renderVehicleRows(vehicles){
