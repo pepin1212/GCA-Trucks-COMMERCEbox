@@ -516,7 +516,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-27-v2-client-remplir-auto-001';
+const APP_BUILD='2026-11-27-v2-client-siret-dup-immat-001';
 const DEFAULT_VENDEUR_GCA='Alain GARGOULLEAU';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
@@ -569,15 +569,28 @@ function tvaFromSiret(siret){
   var key=(12+3*(n%97))%97;
   return 'FR'+String(key).padStart(2,'0')+siren;
 }
-function findClientBySiret(siret){
+function findClientsBySiret(siret){
   var ns=normSiret(siret);
-  if(!ns)return null;
-  try{if(IDX&&IDX.cBySiret&&IDX.cBySiret[ns])return IDX.cBySiret[ns];}catch(e){}
-  var clients=DB.getClients()||[];
-  for(var i=0;i<clients.length;i++){
-    if(normSiret(clients[i].siret)===ns)return clients[i];
+  if(!ns)return [];
+  var clients=DB.getClients()||[], out=[], seen={}, i, c, sk;
+  for(i=0;i<clients.length;i++){
+    c=clients[i];
+    if(normSiret(c.siret)!==ns)continue;
+    sk=c.manualKey||c.ficheMatchKey||(typeof makeSiteKey==='function'?makeSiteKey(c):'')||(String(c.tva||'')+'|'+ns);
+    if(seen[sk])continue;
+    seen[sk]=true;
+    out.push(c);
   }
-  return null;
+  return out;
+}
+function findClientBySiret(siret){
+  var list=findClientsBySiret(siret);
+  return list.length?list[0]:null;
+}
+function findVehiclesBySiret(siret){
+  var ns=normSiret(siret);
+  if(!ns)return [];
+  return (DB.getVehicles()||[]).filter(function(v){return normSiret(v.siret)===ns;});
 }
 function findOrphanImmatBySiret(siret){
   var ns=normSiret(siret);
@@ -586,6 +599,10 @@ function findOrphanImmatBySiret(siret){
     if(normSiret(v.siret)!==ns)return false;
     try{return typeof vehicleHasClientFile==='function'?!vehicleHasClientFile(v):true;}catch(e){return true;}
   });
+}
+function clientSiteKey(c){
+  if(!c)return '';
+  return c.manualKey||c.ficheMatchKey||c._siteKey||(typeof makeSiteKey==='function'?makeSiteKey(c):'')||'';
 }
 function normClientName(s){return norm(String(s||'').replace(/\s+/g,' '));}
 function normTva(t){
@@ -6865,6 +6882,9 @@ function _ficheFormHtml(c, creating){
   html+=inp('fc-contact-prenom','Prénom',c.contactPrenom||'');
   html+=inp('fc-contact-tel','Téléphone',c.contactTel||'');
   html+=inp('fc-contact-mail','E-mail',c.contactMail||'',' type="email" autocomplete="off"');
+  if(creating){
+    html+='<div id="fc-orphan-immat-hint" style="display:none;margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid rgba(224,120,48,.45);background:var(--orange-bg,rgba(224,120,48,.12));font-size:11px;color:var(--text2);line-height:1.45;"></div>';
+  }
   return html;
 }
 function _readFicheForm(){
@@ -6892,9 +6912,8 @@ function _applyFicheAutoFields(map){
     el.value=map[id]==null?'':String(map[id]);
   });
 }
-function _saveContactFromFicheForm(sk){
-  if(!sk)return false;
-  var f=_readFicheForm();
+function _saveContactFromData(sk, f){
+  if(!sk||!f)return false;
   if(!(f.contactNom||f.contactPrenom||f.contactTel||f.contactMail))return false;
   var st=getAppSettings();
   if(!st.siteContacts)st.siteContacts={};
@@ -6909,6 +6928,134 @@ function _saveContactFromFicheForm(sk){
   saveAppSettings(st);
   return true;
 }
+function _saveContactFromFicheForm(sk){
+  return _saveContactFromData(sk, _readFicheForm());
+}
+function updateCreateOrphanImmatHint(siret){
+  var el=$('fc-orphan-immat-hint');
+  if(!el)return;
+  var ns=normSiret(siret);
+  if(!ns||ns.length!==14){el.style.display='none';el.innerHTML='';return;}
+  if(findClientsBySiret(ns).length){el.style.display='none';el.innerHTML='';return;}
+  var vehs=findVehiclesBySiret(ns);
+  var orphans=findOrphanImmatBySiret(ns);
+  if(!vehs.length){el.style.display='none';el.innerHTML='';return;}
+  var n=orphans.length||vehs.length;
+  var samples=orphans.slice(0,3).map(function(v){return v.plaque||'?';}).filter(Boolean);
+  el.style.display='block';
+  el.innerHTML='⚠ <strong>'+n+'</strong> immatriculation'+(n>1?'s':'')+' avec ce SIRET'
+    +(samples.length?' ('+escH(samples.join(', '))+(n>samples.length?'…':'')+')':'')
+    +'. À la création, elles pourront être rattachées au parc de ce client.';
+}
+function openSiretExistingClientPicker(siret, clients, opts){
+  opts=opts||{};
+  clients=clients||[];
+  var html='<div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:12px;">'
+    +'⚠ Le SIRET <strong>'+escH(normSiret(siret))+'</strong> est déjà présent sur '
+    +(clients.length>1?('<strong>'+clients.length+' fiches client</strong>'):'une <strong>fiche client</strong>')
+    +'. Sélectionnez la fiche à utiliser — <strong>aucune nouvelle fiche</strong> ne sera créée.</div>';
+  html+='<div style="max-height:48vh;overflow:auto;margin-bottom:4px;">';
+  clients.forEach(function(c,i){
+    var sk=clientSiteKey(c);
+    html+='<button type="button" class="btn btn-secondary siret-pick-client" data-i="'+i+'" data-sk="'+escH(sk)+'" style="width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;line-height:1.45;">'
+      +'<div style="font-size:13px;font-weight:800;color:var(--text);">'+escH(c.nom||'Sans nom')+'</div>'
+      +'<div style="font-size:10px;color:var(--text3);margin-top:3px;">'
+      +(c.ville?escH(c.ville)+' · ':'')+'TVA '+escH(c.tva||'—')+' · SIRET '+escH(c.siret||'')
+      +'</div></button>';
+  });
+  html+='</div>';
+  var modal=$('modal');
+  if(modal)modal.style.maxWidth='420px';
+  openModal('SIRET déjà connu', html, [
+    {label:'Annuler',cls:'btn-ghost',action:function(){
+      if(modal)modal.style.maxWidth='';
+      if(typeof opts.onCancel==='function')opts.onCancel();
+    }}
+  ]);
+  QA('.siret-pick-client').forEach(function(b){
+    b.onclick=function(){
+      var c=clients[+this.dataset.i];
+      var sk=this.dataset.sk||clientSiteKey(c);
+      if(modal)modal.style.maxWidth='';
+      closeModal();
+      if(typeof opts.onSelect==='function')opts.onSelect(c, sk);
+    };
+  });
+}
+function openConfirmAttachOrphanImmat(siret, orphans, opts){
+  opts=opts||{};
+  orphans=orphans||[];
+  var samples=orphans.slice(0,8).map(function(v){
+    return '<div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:11px;">'
+      +'<strong>'+escH(v.plaque||'Sans plaque')+'</strong>'
+      +(v.marque?' · '+escH(v.marque):'')
+      +(v.date?' · '+escH(v.date):'')
+      +'</div>';
+  }).join('');
+  var html='<div style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:10px;">'
+    +'Ce SIRET figure sur <strong>'+orphans.length+'</strong> immatriculation'+(orphans.length>1?'s':'')
+    +' sans fiche client. Confirmez pour créer la fiche et les rattacher au parc.</div>'
+    +'<div style="max-height:36vh;overflow:auto;background:var(--bg3);border-radius:10px;padding:8px 10px;">'+samples
+    +(orphans.length>8?'<div style="font-size:10px;color:var(--text3);padding-top:6px;">… et '+(orphans.length-8)+' autre'+(orphans.length-8>1?'s':'')+'</div>':'')
+    +'</div>';
+  var modal=$('modal');
+  if(modal)modal.style.maxWidth='420px';
+  openModal('Rattacher les immatriculations', html, [
+    {label:'Annuler',cls:'btn-ghost',action:function(){
+      if(modal)modal.style.maxWidth='';
+      if(typeof opts.onCancel==='function')opts.onCancel();
+    }},
+    {label:'Créer et rattacher',cls:'btn-primary',close:false,action:function(){
+      if(modal)modal.style.maxWidth='';
+      closeModal();
+      if(typeof opts.onConfirm==='function')opts.onConfirm();
+    }}
+  ]);
+}
+function handleExistingClientSelection(client, sk, opts){
+  opts=opts||{};
+  sk=sk||clientSiteKey(client);
+  if(typeof opts.onExistingSelected==='function'){
+    opts.onExistingSelected(client, sk);
+    return;
+  }
+  if(opts.resumeProjet&&typeof window.openCreateProjectModal==='function'){
+    setTimeout(function(){
+      window.openCreateProjectModal({preselect:{tva:client.tva||'',nom:client.nom||'',sk:sk||''}});
+    },40);
+    return;
+  }
+  toast('Fiche existante sélectionnée');
+  if(!opts.skipNavigate&&typeof showScreen==='function')showScreen('marche');
+  openSiteSheet(sk);
+}
+function performCreateClientFromForm(f, opts, orphanCount){
+  opts=opts||{};
+  orphanCount=orphanCount||0;
+  var tva=normTva(f.tva)||tvaFromSiret(f.siret);
+  if(!tva){toast('TVA introuvable — saisissez la TVA ou un SIRET valide');return;}
+  f.tva=tva;
+  var key=f.tva+'|'+f.siret;
+  var still=findClientsBySiret(f.siret);
+  if(still.length){
+    openSiretExistingClientPicker(f.siret, still, {
+      onSelect:function(c, sk){handleExistingClientSelection(c, sk, opts);},
+      onCancel:function(){setTimeout(function(){openCreateClientFiche(f, opts);},40);}
+    });
+    return;
+  }
+  var c={tva:f.tva,siret:f.siret,siren:siretSiren(f.siret),key:key,manualKey:key,ficheMatchKey:key,manuel:true,nom:f.nom,adresse:f.adresse,cp:f.cp||'',ville:f.ville,canton:f.canton,dept:f.dept,pays:f.pays,vendeur:f.vendeur,tel:f.tel,profil:'',groupement:'',accessible:'',exclu:'',etatProspection:''};
+  _persistClientFiche(c, key);
+  _saveContactFromData(key, f);
+  try{buildIndex();}catch(e){}
+  toast(orphanCount?('Client créé · '+orphanCount+' immat. rattachée'+(orphanCount>1?'s':'')):'Client créé');
+  if(typeof opts.onCreated==='function'){
+    opts.onCreated(c, key);
+    return;
+  }
+  if(!opts.skipNavigate&&typeof showScreen==='function')showScreen('marche');
+  openSiteSheet(key);
+}
 function bindFicheAutoFillButtons(opts){
   opts=opts||{};
   var snapshot=null;
@@ -6917,6 +7064,24 @@ function bindFicheAutoFillButtons(opts){
     if(!status)return;
     status.style.color=warn?'var(--orange)':'var(--text3)';
     status.textContent=msg||'';
+  }
+  function afterSiretKnown(siret, fromRemplir){
+    var existing=findClientsBySiret(siret);
+    if(existing.length){
+      updateCreateOrphanImmatHint('');
+      var formSnap=_readFicheForm();
+      openSiretExistingClientPicker(siret, existing, {
+        onSelect:function(c, sk){handleExistingClientSelection(c, sk, opts);},
+        onCancel:function(){
+          setTimeout(function(){
+            openCreateClientFiche(formSnap, opts);
+          },40);
+        }
+      });
+      return;
+    }
+    if(opts.creating)updateCreateOrphanImmatHint(siret);
+    if(fromRemplir)toast('Fiche remplie depuis le SIRET');
   }
   var btnR=$('fc-btn-remplir');
   var btnE=$('fc-btn-effacer');
@@ -6952,7 +7117,8 @@ function bindFicheAutoFillButtons(opts){
       if(data.ville)bits.push(data.ville);
       if(data.cp)bits.push(data.cp);
       setStatus('Rempli depuis le registre'+(bits.length?' · '+bits.join(' · '):'')+(data.canton?' · canton '+data.canton:''));
-      toast('Fiche remplie depuis le SIRET');
+      if(opts.creating)afterSiretKnown(siret, true);
+      else toast('Fiche remplie depuis le SIRET');
     }).catch(function(e){
       btnR.disabled=false;
       setStatus(e.message||'Échec registre',true);
@@ -6965,6 +7131,7 @@ function bindFicheAutoFillButtons(opts){
       snapshot=null;
       setStatus('Données auto annulées');
       toast('Auto-remplissage effacé');
+      if(opts.creating)updateCreateOrphanImmatHint(($('fc-siret')||{}).value||'');
       return;
     }
     var clearMap={
@@ -6975,7 +7142,16 @@ function bindFicheAutoFillButtons(opts){
     _applyFicheAutoFields(clearMap);
     setStatus('Champs auto effacés');
     toast('Champs auto effacés');
+    if(opts.creating)updateCreateOrphanImmatHint(($('fc-siret')||{}).value||'');
   };
+  if(opts.creating){
+    var siretInp=$('fc-siret');
+    if(siretInp){
+      siretInp.addEventListener('input',function(){updateCreateOrphanImmatHint(this.value);});
+      siretInp.addEventListener('change',function(){updateCreateOrphanImmatHint(this.value);});
+      updateCreateOrphanImmatHint(siretInp.value||opts.siret||'');
+    }
+  }
 }
 function openEditClientFiche(sk){
   var c=(IDX.cBySite&&IDX.cBySite[sk])||null;
@@ -7008,43 +7184,39 @@ function openCreateClientFiche(prefill, opts){
       var f=_readFicheForm();
       if(!f.nom){toast('Le nom est obligatoire');return;}
       if(!f.siret||!/^\d{14}$/.test(f.siret)){toast('Le SIRET est obligatoire (14 chiffres)');return;}
-      var existing=typeof findClientBySiret==='function'?findClientBySiret(f.siret):null;
-      if(existing){
-        toast('⚠ Ce SIRET est déjà sur la fiche client « '+(existing.nom||existing.tva||'sans nom')+' »');
+      var existing=findClientsBySiret(f.siret);
+      if(existing.length){
+        openSiretExistingClientPicker(f.siret, existing, {
+          onSelect:function(c, sk){handleExistingClientSelection(c, sk, opts);},
+          onCancel:function(){/* reste sur le formulaire via close:true puis… form already closed */
+            setTimeout(function(){openCreateClientFiche(f, opts);},40);
+          }
+        });
         return;
       }
-      var orphans=typeof findOrphanImmatBySiret==='function'?findOrphanImmatBySiret(f.siret):[];
+      var orphans=findOrphanImmatBySiret(f.siret);
+      if(!orphans.length)orphans=findVehiclesBySiret(f.siret).filter(function(v){
+        try{return !resolveClientForVehicle(v);}catch(e){return true;}
+      });
       if(orphans.length){
-        var ex=orphans[0]&&orphans[0].plaque?(' (ex. '+orphans[0].plaque+')'):'';
-        var ok=window.confirm('⚠ Ce SIRET figure déjà sur '+orphans.length+' immatriculation'+(orphans.length>1?'s':'')+' sans fiche client'+ex+'.\n\nCréer la fiche les rattachera. Continuer ?');
-        if(!ok)return;
-      }
-      var tva=normTva(f.tva)||tvaFromSiret(f.siret);
-      if(!tva){toast('TVA introuvable — saisissez la TVA ou un SIRET valide');return;}
-      f.tva=tva;
-      var tvaEl=$('fc-tva');if(tvaEl&&!String(tvaEl.value||'').trim())tvaEl.value=tva;
-      var key=f.tva+'|'+f.siret;
-      var clients=DB.getClients()||[];
-      for(var i=0;i<clients.length;i++){
-        var ck=clients[i].manualKey||clients[i].ficheMatchKey||makeSiteKey(clients[i]);
-        if(ck===key||(normSiret(clients[i].siret)===f.siret)){toast('Ce client existe déjà');return;}
-      }
-      var c={tva:f.tva,siret:f.siret,siren:siretSiren(f.siret),key:key,manualKey:key,ficheMatchKey:key,manuel:true,nom:f.nom,adresse:f.adresse,cp:f.cp||'',ville:f.ville,canton:f.canton,dept:f.dept,pays:f.pays,vendeur:f.vendeur,tel:f.tel,profil:'',groupement:'',accessible:'',exclu:'',etatProspection:''};
-      _persistClientFiche(c, key);
-      _saveContactFromFicheForm(key);
-      closeModal();
-      toast(orphans.length?('Client créé · '+orphans.length+' immat. rattachée'+(orphans.length>1?'s':'')):'Client créé');
-      if(typeof opts.onCreated==='function'){
-        opts.onCreated(c, key);
+        openConfirmAttachOrphanImmat(f.siret, orphans, {
+          onCancel:function(){
+            setTimeout(function(){openCreateClientFiche(f, opts);},40);
+          },
+          onConfirm:function(){
+            performCreateClientFromForm(f, opts, orphans.length);
+          }
+        });
         return;
       }
-      if(!opts.skipNavigate&&typeof showScreen==='function')showScreen('marche');
-      openSiteSheet(key);
+      closeModal();
+      performCreateClientFromForm(f, opts, 0);
     }}
   ]);
-  bindFicheAutoFillButtons({creating:true,siret:prefill.siret||''});
+  bindFicheAutoFillButtons(Object.assign({}, opts, {creating:true,siret:prefill.siret||''}));
 }
 window.openCreateClientFiche=openCreateClientFiche;
+window.openSiretExistingClientPicker=openSiretExistingClientPicker;
 function _mergeManualClientFields(newClients, oldClients){
   var byKey={};
   (oldClients||[]).forEach(function(c){
@@ -7223,7 +7395,7 @@ function exportBackupJSONDirect(){
 
 function renderMore(){
   const xlsxOk=typeof XLSX!=='undefined';var html='';html+=renderXlsxStatus(xlsxOk);html+=renderImportCard(xlsxOk);html+=renderOriginExcelCard();html+=renderBasesCard();
-  html+=`<div class="card"><div class="card-title">Nouveau client</div><button class="btn btn-primary" id="btn-new-client" style="width:100%;">Créer un client</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Minimum <strong>Nom + SIRET</strong>. <strong>Remplir auto</strong> (registre) : TVA, adresse, CP, ville, canton, département, pays, vendeur Alain GARGOULLEAU + contact. <strong>Effacer</strong> annule l’auto. Même flux Affaires / Tournées / Modifier la fiche.</div></div>`;
+  html+=`<div class="card"><div class="card-title">Nouveau client</div><button class="btn btn-primary" id="btn-new-client" style="width:100%;">Créer un client</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Minimum <strong>Nom + SIRET</strong>. <strong>Remplir auto</strong> via registre. Si SIRET déjà connu → choisir la fiche (reprise projet). Si immat. orphelines → indicateur + confirmation de rattachement. <strong>Effacer</strong> annule l’auto.</div></div>`;
   html+=`<div class="card"><div class="card-title">💾 Secours JSON</div><button class="btn btn-primary" id="btn-export-json" style="width:100%;margin-bottom:6px;">Exporter sauvegarde JSON</button><input type="file" id="file-restore" accept=".json" style="display:none;"><button class="btn btn-secondary" id="btn-restore-json" style="width:100%;">Charger sauvegarde JSON</button><div style="font-size:10px;color:var(--text3);margin-top:7px;line-height:1.4;">Le cloud V2 enregistre tout seul. Ce JSON est un <strong>secours</strong> (clients, fiches, immatriculations, possession, projets, affaires, commissions, archives, groupes, contacts, exclusions, Plan de ventes, journal Activité). Charger un JSON remplace la base locale puis re-sync cloud.</div></div>`;
   html+=`<div class="card"><div class="card-title">🔍 Qualité</div><button class="btn btn-secondary" id="btn-open-qualite" style="width:100%;">Ouvrir Qualité complète</button></div>`;
   html+=`<div class="card"><div class="card-title">📖 Mode d'emploi</div><button class="btn btn-secondary" id="btn-mode-emploi" style="width:100%;">Ouvrir le mode d'emploi complet</button></div>`;
@@ -10535,13 +10707,16 @@ document.addEventListener('DOMContentLoaded',function(){
       var q=(byId('create-proj-search')||{}).value||'';
       closeModal();
       setTimeout(function(){
+        function resumeProjetWithClient(client, key){
+          setTimeout(function(){
+            openCreateProjectModal({preselect:{tva:(client&&client.tva)||'',nom:(client&&client.nom)||'',sk:key||''}});
+          },40);
+        }
         openCreateClientFiche({nom:q}, {
           skipNavigate:true,
-          onCreated:function(client, key){
-            setTimeout(function(){
-              openCreateProjectModal({preselect:{tva:client.tva||'',nom:client.nom||'',sk:key||''}});
-            },40);
-          },
+          resumeProjet:true,
+          onCreated:resumeProjetWithClient,
+          onExistingSelected:resumeProjetWithClient,
           onCancel:function(){
             setTimeout(function(){openCreateProjectModal();},40);
           }
