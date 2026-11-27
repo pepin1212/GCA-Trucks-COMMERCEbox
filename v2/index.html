@@ -211,6 +211,8 @@ input[type=file]{display:none}
 .hist-del{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:var(--red-bg);color:var(--red);border:none;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 /* Contact delete: same look as hist-del but in-flow (diag-row is flex, not position:relative — absolute × floated mid-sheet after VERIFIER) */
 .contact-del{position:static;transform:none;flex-shrink:0;margin-left:8px;background:var(--red-bg);color:var(--red);border:none;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.contact-edit{flex:1;min-width:0;cursor:pointer;text-align:left;background:transparent;border:none;padding:0;color:inherit}
+.contact-edit:active{opacity:.85}
 .pdm-circle{display:flex;flex-direction:column;align-items:center;justify-content:center;width:84px;height:84px;border-radius:50%;border:4px solid var(--daf);margin:0 auto 10px}
 .pdm-pct{font-size:20px;font-weight:800;color:var(--daf)}
 .pdm-lbl{font-size:8px;color:var(--text3);font-weight:600;text-transform:uppercase}
@@ -462,7 +464,7 @@ input[type=file]{display:none}
 // ============================================================
 // DAF PRO V5 PREMIUM TERRAIN — JAVASCRIPT CORE
 // ============================================================
-const APP_BUILD='2026-11-27-v2-fix-verifier-red-cross-001';
+const APP_BUILD='2026-11-27-v2-contact-edit-multi-gerants-001';
 const DEFAULT_VENDEUR_GCA='Alain GARGOULLEAU';
 const YEAR=(new Date()).getFullYear();
 const INACTIVE_PURCHASE_YEARS=6; // inactif = aucun achat (immat.) sur les 6 dernières années calendaires, année courante incluse
@@ -4992,9 +4994,55 @@ function renderQuickActions(c,group){var adresseStr=[c.adresse,c.cp,c.ville,c.de
   <button class="btn btn-primary btn-sm" id="btn-show-in-marche">📊 Afficher dans Marché</button>
   ${group?`<button class="btn btn-secondary btn-sm btn-open-group-sheet" data-gid="${escH(group.id)}">👥 Voir groupe</button>`:''}
 </div>`;}
-function renderContactsBlock(sk){var st=getAppSettings();var contacts=(st.siteContacts&&st.siteContacts[sk])||[];var html=contacts.map(function(ct,i){return `<div class="diag-row"><div style="min-width:0;flex:1;"><div style="font-size:11px;font-weight:700;color:var(--text);">${escH((ct.prenom||'')+' '+(ct.nom||''))}</div><div style="font-size:10px;color:var(--text3);">${escH(ct.poste||'')} ${ct.tel?' · '+escH(ct.tel):''} ${ct.mail?' · '+escH(ct.mail):''}</div></div><button type="button" class="contact-del" data-i="${i}" title="Supprimer le contact" aria-label="Supprimer le contact">✕</button></div>`;}).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun contact renseigné</div>';return `<div class="card" style="margin:0 0 9px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="card-title" style="margin:0;">👤 Contacts</div><button class="btn btn-secondary btn-sm" id="btn-add-contact">+ Contact</button></div><div style="margin-top:8px;">${html}</div></div>`;}
+function renderContactsBlock(sk){var st=getAppSettings();var contacts=(st.siteContacts&&st.siteContacts[sk])||[];var html=contacts.map(function(ct,i){return `<div class="diag-row"><button type="button" class="contact-edit" data-i="${i}" title="Modifier le contact"><div style="font-size:11px;font-weight:700;color:var(--text);">${escH((ct.prenom||'')+' '+(ct.nom||''))}</div><div style="font-size:10px;color:var(--text3);">${escH(ct.poste||'')} ${ct.tel?' · '+escH(ct.tel):''} ${ct.mail?' · '+escH(ct.mail):''}</div></button><button type="button" class="contact-del" data-i="${i}" title="Supprimer le contact" aria-label="Supprimer le contact">✕</button></div>`;}).join('')||'<div style="font-size:11px;color:var(--text3);padding:8px 0;">Aucun contact renseigné</div>';return `<div class="card" style="margin:0 0 9px;"><div style="display:flex;justify-content:space-between;align-items:center;"><div class="card-title" style="margin:0;">👤 Contacts</div><button class="btn btn-secondary btn-sm" id="btn-add-contact">+ Contact</button></div><div style="margin-top:8px;">${html}</div></div>`;}
 // ===== FICHES ENTREPRISE / SITE (canonique) =====
-function addContactToSite(sk){openModal('Ajouter un contact',`<div class="form-group"><label class="form-label">Nom</label><input class="form-input" id="ct-nom"></div><div class="form-group"><label class="form-label">Prénom</label><input class="form-input" id="ct-prenom"></div><div class="form-group"><label class="form-label">Téléphone</label><input class="form-input" id="ct-tel"></div><div class="form-group"><label class="form-label">Mail</label><input class="form-input" id="ct-mail"></div><div class="form-group"><label class="form-label">Poste</label><input class="form-input" id="ct-poste"></div>`,[{label:'Annuler',cls:'btn-ghost'},{label:'Ajouter',cls:'btn-primary',action:function(){var st=getAppSettings();if(!st.siteContacts)st.siteContacts={};if(!st.siteContacts[sk])st.siteContacts[sk]=[];st.siteContacts[sk].push({nom:($('ct-nom')||{}).value||'',prenom:($('ct-prenom')||{}).value||'',tel:($('ct-tel')||{}).value||'',mail:($('ct-mail')||{}).value||'',poste:($('ct-poste')||{}).value||''});saveAppSettings(st);openSiteSheet(sk);}}]);}
+function contactFormHtml(ct){
+  ct=ct||{};
+  return '<div class="form-group"><label class="form-label">Nom</label><input class="form-input" id="ct-nom" value="'+escH(ct.nom||'')+'"></div>'
+    +'<div class="form-group"><label class="form-label">Prénom</label><input class="form-input" id="ct-prenom" value="'+escH(ct.prenom||'')+'"></div>'
+    +'<div class="form-group"><label class="form-label">Téléphone</label><input class="form-input" id="ct-tel" type="tel" inputmode="tel" autocomplete="tel" value="'+escH(ct.tel||'')+'"></div>'
+    +'<div class="form-group"><label class="form-label">E-mail</label><input class="form-input" id="ct-mail" type="email" autocomplete="email" value="'+escH(ct.mail||'')+'"></div>'
+    +'<div class="form-group"><label class="form-label">Poste</label><input class="form-input" id="ct-poste" value="'+escH(ct.poste||'')+'"></div>';
+}
+function readContactFormValues(){
+  return {
+    nom:($('ct-nom')||{}).value||'',
+    prenom:($('ct-prenom')||{}).value||'',
+    tel:($('ct-tel')||{}).value||'',
+    mail:($('ct-mail')||{}).value||'',
+    poste:($('ct-poste')||{}).value||''
+  };
+}
+function addContactToSite(sk){
+  openModal('Ajouter un contact',contactFormHtml(),[
+    {label:'Annuler',cls:'btn-ghost'},
+    {label:'Ajouter',cls:'btn-primary',action:function(){
+      var st=getAppSettings();
+      if(!st.siteContacts)st.siteContacts={};
+      if(!st.siteContacts[sk])st.siteContacts[sk]=[];
+      st.siteContacts[sk].push(readContactFormValues());
+      saveAppSettings(st);
+      openSiteSheet(sk);
+    }}
+  ]);
+}
+function editContactOnSite(sk,idx){
+  var st=getAppSettings();
+  var list=(st.siteContacts&&st.siteContacts[sk])||[];
+  var ct=list[idx];
+  if(!ct){toast('Contact introuvable');return;}
+  openModal('Modifier le contact',contactFormHtml(ct),[
+    {label:'Annuler',cls:'btn-ghost'},
+    {label:'Enregistrer',cls:'btn-primary',action:function(){
+      var st2=getAppSettings();
+      if(!st2.siteContacts||!st2.siteContacts[sk]||!st2.siteContacts[sk][idx]){toast('Contact introuvable');return;}
+      st2.siteContacts[sk][idx]=readContactFormValues();
+      saveAppSettings(st2);
+      openSiteSheet(sk);
+      toast('Contact mis à jour');
+    }}
+  ]);
+}
 function renderVehicleRows(vehicles){
   vehicles=(vehicles||[]).slice().sort(function(a,b){
     var ya=getYear(a.date)||0,yb=getYear(b.date)||0;
@@ -5212,6 +5260,7 @@ function openSiteSheet(sk){
   let parcVisible=false;
   safeOn('btn-toggle-parc','click',function(){parcVisible=!parcVisible;var pl=$('parc-list');if(pl)pl.style.display=parcVisible?'block':'none';this.textContent=parcVisible?'Réduire ▲':'Développer ▼';bindSheetEvents();});
   safeOn('btn-add-contact','click',function(){addContactToSite(sk);});
+  QA('#sheet-body .contact-edit').forEach(function(b){b.onclick=function(){editContactOnSite(sk,parseInt(this.dataset.i,10));};});
   QA('#sheet-body .contact-del').forEach(function(b){b.onclick=function(){var st=getAppSettings();if(st.siteContacts&&st.siteContacts[sk]){st.siteContacts[sk].splice(parseInt(this.dataset.i),1);saveAppSettings(st);openSiteSheet(sk);}};});
   bindSheetEvents();
 }
@@ -6250,45 +6299,104 @@ function applyVerifiedSiegeFromRegistry(c,data){
   if(!group||!group.auto||!data.siegeSiteKey)return;
   if(!groupHasExplicitPrincipal(group.id))setGroupSitePrincipal(group.id,data.siegeSiteKey,true);
 }
-function pickDirigeantPersonFromVerification(data){
+function listDirigeantPersonsFromVerification(data){
   var dirs=(data&&data.dirigeantsRaw)||[];
-  var i,d;
+  var out=[],i,d;
   for(i=0;i<dirs.length;i++){
     d=dirs[i];
     if(!d)continue;
     if(String(d.type_dirigeant||'').toLowerCase()==='personne morale')continue;
     if(d.denomination&&!(d.nom||d.prenoms))continue;
-    if(d.nom||d.prenoms)return d;
+    if(!(d.nom||d.prenoms))continue;
+    out.push(d);
   }
-  return null;
+  return out;
 }
-function contactsMatchPerson(a,b){
-  if(!a||!b)return false;
-  return norm(a.nom)===norm(b.nom)&&norm(a.prenom)===norm(b.prenom);
+function pickDirigeantPersonFromVerification(data){
+  var list=listDirigeantPersonsFromVerification(data);
+  return list.length?list[0]:null;
 }
-/** VERIFIER : conserve l’autofill registre existant ; ajoute le dirigeant en contact.
- *  Si un contact existe déjà → contact supplémentaire (ne jamais écraser le 1er). */
-function ensureDirigeantContactFromVerify(sk,data){
-  if(!sk)return {added:false,reason:'nosk'};
-  var dir=pickDirigeantPersonFromVerification(data);
-  if(!dir)return {added:false,reason:'nodir'};
-  var ct={
+function contactFromDirigeant(dir){
+  if(!dir)return null;
+  return {
     nom:String(dir.nom||'').trim(),
     prenom:String(dir.prenoms||'').trim(),
     tel:'',
     mail:'',
     poste:String(dir.qualite||'Dirigeant').trim()
   };
-  if(!(ct.nom||ct.prenom))return {added:false,reason:'empty'};
+}
+function contactsMatchPerson(a,b){
+  if(!a||!b)return false;
+  return norm(a.nom)===norm(b.nom)&&norm(a.prenom)===norm(b.prenom);
+}
+function addDirigeantContactIfNew(sk,dir){
+  var ct=contactFromDirigeant(dir);
+  if(!ct||!(ct.nom||ct.prenom))return {added:false,reason:'empty'};
   var st=getAppSettings();
   if(!st.siteContacts)st.siteContacts={};
   if(!st.siteContacts[sk])st.siteContacts[sk]=[];
   var list=st.siteContacts[sk];
-  if(list.some(function(x){return contactsMatchPerson(x,ct);}))return {added:false,reason:'dup',hadContacts:list.length>0};
-  // Toujours push : jamais d’écrasement du premier contact
+  if(list.some(function(x){return contactsMatchPerson(x,ct);}))return {added:false,reason:'dup',hadContacts:list.length>0,contact:ct};
   list.push(ct);
   saveAppSettings(st);
-  return {added:true,asAdditional:list.length>1,hadContacts:list.length>1};
+  return {added:true,asAdditional:list.length>1,hadContacts:list.length>1,contact:ct};
+}
+/** VERIFIER : conserve l’autofill registre existant ; ajoute le dirigeant en contact.
+ *  Si un contact existe déjà → contact supplémentaire (ne jamais écraser le 1er).
+ *  Si plusieurs gérants → ne pas choisir à l’aveugle (voir promptDirigeantContactsFromVerify). */
+function ensureDirigeantContactFromVerify(sk,data){
+  if(!sk)return {added:false,reason:'nosk'};
+  var persons=listDirigeantPersonsFromVerification(data);
+  if(!persons.length)return {added:false,reason:'nodir'};
+  if(persons.length>1)return {added:false,reason:'multi',persons:persons};
+  return addDirigeantContactIfNew(sk,persons[0]);
+}
+function promptDirigeantContactsFromVerify(sk,persons,reopenFn){
+  persons=persons||[];
+  if(!sk||!persons.length)return;
+  var st=getAppSettings();
+  var existing=(st.siteContacts&&st.siteContacts[sk])||[];
+  var rows=persons.map(function(d,i){
+    var ct=contactFromDirigeant(d)||{nom:'',prenom:'',poste:''};
+    var already=existing.some(function(x){return contactsMatchPerson(x,ct);});
+    var label=[ct.prenom,ct.nom].filter(Boolean).join(' ')+(ct.poste?' · '+ct.poste:'');
+    return '<label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text2);margin:6px 0;line-height:1.35;">'
+      +'<input type="checkbox" class="cb-dir-pick" data-i="'+i+'" '+(already?'':'checked')+(already?' disabled':'')
+      +' style="accent-color:var(--daf);width:15px;height:15px;margin-top:2px;flex-shrink:0;">'
+      +'<span>'+escH(label)+(already?' <span style="color:var(--text3);">(déjà contact)</span>':'')+'</span></label>';
+  }).join('');
+  var selectable=persons.some(function(d){
+    var ct=contactFromDirigeant(d);
+    return ct&&!existing.some(function(x){return contactsMatchPerson(x,ct);});
+  });
+  if(!selectable){
+    toast('Tous les dirigeants sont déjà en contacts');
+    return;
+  }
+  openModal('Choisir le(s) gérant(s)',
+    '<div style="font-size:11px;color:var(--text3);line-height:1.4;margin-bottom:8px;">Plusieurs dirigeants trouvés au registre. Cochez ceux à ajouter comme contacts (téléphone et e-mail à compléter ensuite).</div>'
+    +'<div style="max-height:240px;overflow:auto;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;">'+rows+'</div>',
+    [
+      {label:'Passer',cls:'btn-ghost'},
+      {label:'Ajouter la sélection',cls:'btn-primary',action:function(){
+        var picked=QA('#modal-body .cb-dir-pick:checked:not([disabled])');
+        var n=0,hadBefore=existing.length>0;
+        Array.prototype.forEach.call(picked,function(cb){
+          var dir=persons[parseInt(cb.dataset.i,10)];
+          var res=addDirigeantContactIfNew(sk,dir);
+          if(res&&res.added)n++;
+        });
+        if(n){
+          toast(n>1?(n+' contacts dirigeants ajoutés'):(hadBefore?'Dirigeant ajouté (contact supplémentaire)':'Contact dirigeant créé'));
+          if(typeof reopenFn==='function')reopenFn();
+          else openSiteSheet(sk);
+        }else{
+          toast('Aucun nouveau contact sélectionné');
+        }
+      }}
+    ]
+  );
 }
 function getVerifiedSiegeSiteKeyForGroup(group){
   if(!group||!group.auto)return '';
@@ -6551,13 +6659,16 @@ function bindCompanyVerificationSheet(sk,c,reopenFn){
       applyVerifiedSiegeFromRegistry(c,data);
       saveCompanyVerification(key,data);
       var contactRes=ensureDirigeantContactFromVerify(sk,data);
-      if(contactRes&&contactRes.added){
+      if(currentScreen==='tours')renderTours();
+      reopenFn();
+      if(contactRes&&contactRes.reason==='multi'&&contactRes.persons&&contactRes.persons.length>1){
+        toast('Entreprise vérifiée · plusieurs gérants');
+        setTimeout(function(){promptDirigeantContactsFromVerify(sk,contactRes.persons,reopenFn);},60);
+      }else if(contactRes&&contactRes.added){
         toast(contactRes.asAdditional?'Entreprise vérifiée · dirigeant ajouté (contact supplémentaire)':'Entreprise vérifiée · contact dirigeant créé');
       }else{
         toast('Entreprise vérifiée');
       }
-      if(currentScreen==='tours')renderTours();
-      reopenFn();
     }).catch(function(e){
       toast(e.message||'Vérification impossible');
       reopenFn();
